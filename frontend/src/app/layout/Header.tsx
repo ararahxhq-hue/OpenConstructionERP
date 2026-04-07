@@ -12,6 +12,7 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { CountryFlag } from '@/shared/ui';
 import { apiGet } from '@/shared/lib/api';
 import { exportErrorReport, getErrorCount } from '@/shared/lib/errorLogger';
+import { APP_VERSION } from '@/shared/lib/version';
 
 /** Map English page titles (passed from App.tsx routes) to i18n keys. */
 const TITLE_I18N_MAP: Record<string, string> = {
@@ -153,7 +154,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
             // Variant B: Open form with URL params
             const params = new URLSearchParams({
               report: 'true',
-              app_version: '0.4.0',
+              app_version: APP_VERSION,
               error_count: String(getErrorCount()),
               platform: navigator.userAgent.includes('Win') ? 'Windows' : navigator.userAgent.includes('Mac') ? 'macOS' : 'Linux',
             });
@@ -168,7 +169,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                 body: JSON.stringify({
                   _subject: 'Bug Report from OpenConstructionERP App',
-                  'App Version': data.app_version || '0.1.0',
+                  'App Version': data.app_version || APP_VERSION,
                   'Error Count': data.total_errors || 0,
                   Platform: data.platform || '',
                   Locale: data.locale || '',
@@ -227,7 +228,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
             // Variant B: Open feedback form with params
             const params = new URLSearchParams({
               feedback: 'true',
-              app_version: '0.4.0',
+              app_version: APP_VERSION,
               error_count: String(getErrorCount()),
             });
             window.open(`https://openconstructionerp.com/contact.html?${params}`, '_blank');

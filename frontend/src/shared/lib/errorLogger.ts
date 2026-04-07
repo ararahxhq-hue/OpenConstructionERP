@@ -7,6 +7,8 @@
  * The collected log can be exported as a JSON file for bug reports.
  */
 
+import { APP_VERSION } from './version';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -53,7 +55,6 @@ export interface ErrorReport {
 const MAX_MEMORY_ENTRIES = 100;
 const MAX_STORAGE_ENTRIES = 50;
 const STORAGE_KEY = 'oe_error_log';
-const APP_VERSION = '0.1.0';
 
 // ---------------------------------------------------------------------------
 // Internal state

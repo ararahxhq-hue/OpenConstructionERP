@@ -37,6 +37,7 @@ import { useModuleStore } from '@/stores/useModuleStore';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
 import { useViewModeStore } from '@/stores/useViewModeStore';
 import { getModuleNavItems } from '@/modules/_registry';
+import { APP_VERSION } from '@/shared/lib/version';
 
 
 interface NavItem {
@@ -328,7 +329,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
         {/* Version + AGPL notice */}
         <div className="px-3 pb-2 text-center">
-          <span className="text-2xs text-content-quaternary/50">v0.7.0</span>
+          <span className="text-2xs text-content-quaternary/50">v{APP_VERSION}</span>
           <span className="text-2xs text-content-quaternary/30 mx-1">·</span>
           <a href="/api/source" target="_blank" className="text-2xs text-content-quaternary/40 hover:text-content-quaternary transition-colors">
             AGPL-3.0

@@ -8,8 +8,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUpCircle, X, ExternalLink, Gift, ChevronDown, ChevronUp } from 'lucide-react';
+import { APP_VERSION } from '@/shared/lib/version';
 
-const CURRENT_VERSION = '0.2.1';
+const CURRENT_VERSION = APP_VERSION;
 const CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
 const GITHUB_RELEASES_API =
   'https://api.github.com/repos/datadrivenconstruction/OpenConstructionERP/releases/latest';

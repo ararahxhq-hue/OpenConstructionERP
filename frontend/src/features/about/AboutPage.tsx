@@ -9,6 +9,7 @@ import {
   Linkedin, Youtube, Star, Coffee, Rocket, ArrowRight, Handshake,
 } from 'lucide-react';
 import { Card, Button, Badge } from '@/shared/ui';
+import { APP_VERSION } from '@/shared/lib/version';
 import { Changelog } from './Changelog';
 
 export function AboutPage() {
@@ -30,7 +31,7 @@ export function AboutPage() {
           {t('about.tagline', { defaultValue: 'The #1 open-source platform for construction cost estimation' })}
         </p>
         <div className="mt-3 flex items-center justify-center gap-3 text-sm text-content-tertiary">
-          <span>v0.7.0</span>
+          <span className="font-mono">v{APP_VERSION}</span>
           <span>&middot;</span>
           <span>2026</span>
           <span>&middot;</span>

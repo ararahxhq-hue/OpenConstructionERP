@@ -4,6 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/shared/ui';
+import { APP_VERSION } from '@/shared/lib/version';
 
 interface ChangelogEntry {
   version: string;
@@ -12,6 +13,59 @@ interface ChangelogEntry {
 }
 
 const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.7.0',
+    date: '2026-04-07',
+    changes: [
+      'New: Custom Columns in BOQ — define your own dynamic fields (text, number, date, select), stored per BOQ',
+      'New: Hierarchical BOQ — multi-level sections with recursive tree builder and depth-aware indentation',
+      'New: Excel Round-Trip foundation — original column metadata preserved on import for faithful re-export',
+      'New: Parametric Assembly formula engine — variables, conditionals, lookup tables, math functions',
+      'New: "Continue your work" card on Dashboard — jump straight back to your most recent BOQ',
+      'New: Quick Start Estimate button — one-click project + BOQ creation with sensible defaults',
+      'New: Simplified sidebar mode — beginner view shows only the 7 essential modules',
+      'New: User-friendly error messages — toasts now show actionable text instead of "API 500"',
+      'New: Keyboard shortcuts dialog (press ?) cleaned up to only list shortcuts that actually work',
+      'Fix: BOQ drag-and-drop 500 errors — session corruption from activity logging removed',
+      'Fix: BOQGrid runtime crash — customColumns prop now properly destructured',
+      'Fix: 4D Schedule + 5D Cost Model — 27/27 endpoints pass after MissingGreenlet and Monte Carlo fixes',
+      'Fix: Mobile sidebar now locks body scroll when open',
+      'Fix: New BOQ position highlight + auto-scroll for instant visual feedback',
+    ],
+  },
+  {
+    version: '0.6.0',
+    date: '2026-04-07',
+    changes: [
+      'New: Resource quantities scale proportionally when position quantity changes',
+      'New: Professional resource-position pricing logic — unit rate auto-derived from resources',
+      'New: BOQ drag-drop now updates parent_id when moving positions between sections',
+      'New: Settings page two-column layout on wide screens for better space usage',
+      'New: Data Explorer heatmap visualization + pivot CSV/Excel export',
+      'Fix: Critical business logic — project validation, total exclusion of section rows, bulk import safety',
+      'Fix: Resource total uses pre-computed values for accuracy across edge cases',
+      'Fix: BOQ qty/rate cells switched to single-click numeric editors',
+      'Fix: TypeScript build — zero errors on tsc --noEmit',
+      'Polish: i18n consistency, dynamic column alignment, quality polish across the app',
+    ],
+  },
+  {
+    version: '0.5.0',
+    date: '2026-04-06',
+    changes: [
+      'New: PDF Takeoff — server sync, Documents integration, professional measurement workflow',
+      'New: Professional export formatting — Excel header block + PDF cover page with signature lines',
+      'New: CAD/BIM module — Create BOQ from Pivot, exports include resources',
+      'New: Deep UX improvements across 7 pages — search bars, empty states, redesigned reports & modules',
+      'New: Privacy Policy + Terms of Service pages',
+      'New: Modal dialogs for creating BOQ, Projects, and Assemblies — no more separate creation pages',
+      'New: BOQ list auto-filters by the active project from the header context',
+      'New: Data Explorer landing — dashed dropzone, compact 12-card recent models grid, delete from landing',
+      'Fix: Pivot/Charts smart column selection — quantity keywords prioritized for sums',
+      'Fix: New BOQ now appears in the list immediately (cache invalidation)',
+      'Cleanup: Removed 76 test/smoke projects from the seed database',
+    ],
+  },
   {
     version: '0.4.0',
     date: '2026-04-06',
@@ -106,18 +160,28 @@ export function Changelog() {
         <div className="absolute left-[18px] top-3 bottom-3 w-px bg-border-light" />
 
         <div className="space-y-6">
-          {CHANGELOG.map((entry) => (
+          {CHANGELOG.map((entry) => {
+            const isCurrent = entry.version === APP_VERSION;
+            return (
             <div key={entry.version} className="relative flex gap-4">
-              {/* Timeline dot */}
-              <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-oe-blue/10 border-2 border-oe-blue">
-                <div className="h-2.5 w-2.5 rounded-full bg-oe-blue" />
+              {/* Timeline dot — emerald + pulse for the current release, blue for older */}
+              <div className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 ${isCurrent ? 'bg-emerald-50 border-emerald-500 dark:bg-emerald-900/20' : 'bg-oe-blue/10 border-oe-blue'}`}>
+                {isCurrent && (
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-30 animate-ping" />
+                )}
+                <div className={`h-2.5 w-2.5 rounded-full ${isCurrent ? 'bg-emerald-500' : 'bg-oe-blue'}`} />
               </div>
 
               {/* Content */}
               <div className="flex-1 pt-0.5">
-                <div className="flex items-center gap-3 mb-2">
-                  <Badge variant="blue" size="sm">v{entry.version}</Badge>
-                  <span className="text-xs text-content-tertiary">{entry.date}</span>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant={isCurrent ? 'success' : 'blue'} size="sm">v{entry.version}</Badge>
+                  {isCurrent && (
+                    <span className="text-2xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                      {t('about.current_version', { defaultValue: 'Current' })}
+                    </span>
+                  )}
+                  <span className="text-xs text-content-tertiary ml-auto">{entry.date}</span>
                 </div>
 
                 <ul className="space-y-1.5">
@@ -130,7 +194,8 @@ export function Changelog() {
                 </ul>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
