@@ -98,6 +98,27 @@ const TasksPage = lazy(() =>
 const RFIPage = lazy(() =>
   import('@/features/rfi/RFIPage').then((m) => ({ default: m.RFIPage }))
 );
+const SubmittalsPage = lazy(() =>
+  import('@/features/submittals/SubmittalsPage').then((m) => ({ default: m.SubmittalsPage }))
+);
+const CorrespondencePage = lazy(() =>
+  import('@/features/correspondence/CorrespondencePage').then((m) => ({ default: m.CorrespondencePage }))
+);
+const CDEPage = lazy(() =>
+  import('@/features/cde/CDEPage').then((m) => ({ default: m.CDEPage }))
+);
+const TransmittalsPage = lazy(() =>
+  import('@/features/transmittals/TransmittalsPage').then((m) => ({ default: m.TransmittalsPage }))
+);
+const MeetingsPage = lazy(() =>
+  import('@/features/meetings/MeetingsPage').then((m) => ({ default: m.MeetingsPage }))
+);
+const InspectionsPage = lazy(() =>
+  import('@/features/inspections/InspectionsPage').then((m) => ({ default: m.InspectionsPage }))
+);
+const NCRPage = lazy(() =>
+  import('@/features/ncr/NCRPage').then((m) => ({ default: m.NCRPage }))
+);
 
 function LoadingScreen() {
   return (
@@ -306,6 +327,20 @@ export default function App() {
         <Route path="/tasks" element={<P title="Tasks"><TasksPage /></P>} />
         <Route path="/projects/:projectId/rfi" element={<P title="RFI"><RFIPage /></P>} />
         <Route path="/rfi" element={<P title="RFI"><RFIPage /></P>} />
+        <Route path="/projects/:projectId/submittals" element={<P title="Submittals"><SubmittalsPage /></P>} />
+        <Route path="/submittals" element={<P title="Submittals"><SubmittalsPage /></P>} />
+        <Route path="/projects/:projectId/correspondence" element={<P title="Correspondence"><CorrespondencePage /></P>} />
+        <Route path="/correspondence" element={<P title="Correspondence"><CorrespondencePage /></P>} />
+        <Route path="/projects/:projectId/cde" element={<P title="CDE"><CDEPage /></P>} />
+        <Route path="/cde" element={<P title="CDE"><CDEPage /></P>} />
+        <Route path="/projects/:projectId/transmittals" element={<P title="Transmittals"><TransmittalsPage /></P>} />
+        <Route path="/transmittals" element={<P title="Transmittals"><TransmittalsPage /></P>} />
+        <Route path="/projects/:projectId/meetings" element={<P title="Meetings"><MeetingsPage /></P>} />
+        <Route path="/meetings" element={<P title="Meetings"><MeetingsPage /></P>} />
+        <Route path="/projects/:projectId/inspections" element={<P title="Inspections"><InspectionsPage /></P>} />
+        <Route path="/inspections" element={<P title="Inspections"><InspectionsPage /></P>} />
+        <Route path="/projects/:projectId/ncr" element={<P title="NCR"><NCRPage /></P>} />
+        <Route path="/ncr" element={<P title="NCR"><NCRPage /></P>} />
 
         <Route path="/modules" element={<P title="Modules"><ModulesPage /></P>} />
 

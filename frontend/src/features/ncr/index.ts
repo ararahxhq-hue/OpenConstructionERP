@@ -1,0 +1,1 @@
+export { NCRPage } from './NCRPage';

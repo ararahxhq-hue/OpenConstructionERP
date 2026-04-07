@@ -1,0 +1,1 @@
+export { CorrespondencePage } from './CorrespondencePage';

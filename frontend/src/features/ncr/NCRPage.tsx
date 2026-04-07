@@ -1,0 +1,817 @@
+import { useState, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
+import clsx from 'clsx';
+import {
+  AlertOctagon,
+  Search,
+  Plus,
+  X,
+  ChevronDown,
+  ChevronRight,
+  DollarSign,
+  CheckCircle2,
+  ClipboardCheck,
+} from 'lucide-react';
+import { Button, Card, Badge, EmptyState, Breadcrumb } from '@/shared/ui';
+import { DateDisplay } from '@/shared/ui/DateDisplay';
+import { apiGet } from '@/shared/lib/api';
+import { useToastStore } from '@/stores/useToastStore';
+import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import {
+  fetchNCRs,
+  createNCR,
+  closeNCR,
+  type NCR,
+  type NCRType,
+  type NCRSeverity,
+  type NCRStatus,
+  type CreateNCRPayload,
+} from './api';
+
+/* -- Constants ------------------------------------------------------------- */
+
+interface Project {
+  id: string;
+  name: string;
+}
+
+const NCR_TYPE_COLORS: Record<
+  NCRType,
+  'neutral' | 'blue' | 'success' | 'warning' | 'error'
+> = {
+  material: 'blue',
+  workmanship: 'warning',
+  design: 'neutral',
+  documentation: 'neutral',
+  safety: 'error',
+};
+
+const SEVERITY_CONFIG: Record<
+  NCRSeverity,
+  { variant: 'neutral' | 'blue' | 'success' | 'error' | 'warning'; cls: string }
+> = {
+  critical: { variant: 'error', cls: '' },
+  major: { variant: 'warning', cls: '' },
+  minor: {
+    variant: 'warning',
+    cls: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+  },
+  observation: {
+    variant: 'neutral',
+    cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  },
+};
+
+const STATUS_CONFIG: Record<
+  NCRStatus,
+  { variant: 'neutral' | 'blue' | 'success' | 'error' | 'warning'; cls: string }
+> = {
+  open: { variant: 'error', cls: '' },
+  under_review: { variant: 'warning', cls: '' },
+  corrective_action: { variant: 'blue', cls: '' },
+  closed: { variant: 'success', cls: '' },
+  void: {
+    variant: 'neutral',
+    cls: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  },
+};
+
+const inputCls =
+  'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
+const textareaCls =
+  'w-full rounded-lg border border-border bg-surface-primary px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue resize-none';
+
+const NCR_TYPES: NCRType[] = ['material', 'workmanship', 'design', 'documentation', 'safety'];
+
+const NCR_SEVERITIES: NCRSeverity[] = ['critical', 'major', 'minor', 'observation'];
+
+const NCR_STATUSES: NCRStatus[] = [
+  'open',
+  'under_review',
+  'corrective_action',
+  'closed',
+  'void',
+];
+
+/* -- Create NCR Modal ------------------------------------------------------ */
+
+interface NCRFormData {
+  title: string;
+  ncr_type: NCRType;
+  severity: NCRSeverity;
+  description: string;
+  location: string;
+}
+
+const EMPTY_FORM: NCRFormData = {
+  title: '',
+  ncr_type: 'material',
+  severity: 'minor',
+  description: '',
+  location: '',
+};
+
+function CreateNCRModal({
+  onClose,
+  onSubmit,
+  isPending,
+}: {
+  onClose: () => void;
+  onSubmit: (data: NCRFormData) => void;
+  isPending: boolean;
+}) {
+  const { t } = useTranslation();
+  const [form, setForm] = useState<NCRFormData>(EMPTY_FORM);
+  const [touched, setTouched] = useState(false);
+
+  const set = <K extends keyof NCRFormData>(key: K, value: NCRFormData[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const titleError = touched && form.title.trim().length === 0;
+  const descError = touched && form.description.trim().length === 0;
+  const canSubmit = form.title.trim().length > 0 && form.description.trim().length > 0;
+
+  const handleSubmit = () => {
+    setTouched(true);
+    if (canSubmit) onSubmit(form);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in">
+      <div className="w-full max-w-2xl bg-surface-primary rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
+          <h2 className="text-lg font-semibold text-content-primary">
+            {t('ncr.new_ncr', { defaultValue: 'New NCR' })}
+          </h2>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Form */}
+        <div className="px-6 py-4 space-y-4">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-content-secondary mb-1">
+              {t('ncr.field_title', { defaultValue: 'Title' })}{' '}
+              <span className="text-semantic-error">*</span>
+            </label>
+            <input
+              value={form.title}
+              onChange={(e) => {
+                set('title', e.target.value);
+                setTouched(true);
+              }}
+              placeholder={t('ncr.title_placeholder', {
+                defaultValue: 'e.g. Concrete strength below specification at Column C3',
+              })}
+              className={clsx(
+                inputCls,
+                titleError &&
+                  'border-semantic-error focus:ring-red-300 focus:border-semantic-error',
+              )}
+              autoFocus
+            />
+            {titleError && (
+              <p className="mt-1 text-xs text-semantic-error">
+                {t('ncr.title_required', { defaultValue: 'Title is required' })}
+              </p>
+            )}
+          </div>
+
+          {/* Two-column: Type + Severity */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-content-secondary mb-1">
+                {t('ncr.field_type', { defaultValue: 'Type' })}
+              </label>
+              <div className="relative">
+                <select
+                  value={form.ncr_type}
+                  onChange={(e) => set('ncr_type', e.target.value as NCRType)}
+                  className={inputCls + ' appearance-none pr-9'}
+                >
+                  {NCR_TYPES.map((nt) => (
+                    <option key={nt} value={nt}>
+                      {t(`ncr.type_${nt}`, {
+                        defaultValue: nt.charAt(0).toUpperCase() + nt.slice(1),
+                      })}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+                  <ChevronDown size={14} />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-content-secondary mb-1">
+                {t('ncr.field_severity', { defaultValue: 'Severity' })}
+              </label>
+              <div className="relative">
+                <select
+                  value={form.severity}
+                  onChange={(e) => set('severity', e.target.value as NCRSeverity)}
+                  className={inputCls + ' appearance-none pr-9'}
+                >
+                  {NCR_SEVERITIES.map((sev) => (
+                    <option key={sev} value={sev}>
+                      {t(`ncr.severity_${sev}`, {
+                        defaultValue: sev.charAt(0).toUpperCase() + sev.slice(1),
+                      })}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+                  <ChevronDown size={14} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-content-secondary mb-1">
+              {t('ncr.field_description', { defaultValue: 'Description' })}{' '}
+              <span className="text-semantic-error">*</span>
+            </label>
+            <textarea
+              value={form.description}
+              onChange={(e) => {
+                set('description', e.target.value);
+                setTouched(true);
+              }}
+              rows={3}
+              className={clsx(
+                textareaCls,
+                descError &&
+                  'border-semantic-error focus:ring-red-300 focus:border-semantic-error',
+              )}
+              placeholder={t('ncr.description_placeholder', {
+                defaultValue: 'Describe the non-conformance in detail...',
+              })}
+            />
+            {descError && (
+              <p className="mt-1 text-xs text-semantic-error">
+                {t('ncr.description_required', { defaultValue: 'Description is required' })}
+              </p>
+            )}
+          </div>
+
+          {/* Location */}
+          <div>
+            <label className="block text-sm font-medium text-content-secondary mb-1">
+              {t('ncr.field_location', { defaultValue: 'Location' })}
+            </label>
+            <input
+              value={form.location}
+              onChange={(e) => set('location', e.target.value)}
+              className={inputCls}
+              placeholder={t('ncr.location_placeholder', {
+                defaultValue: 'e.g. Building A, Level 2, Zone C',
+              })}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border-light">
+          <Button variant="ghost" onClick={onClose} disabled={isPending}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={isPending}>
+            {isPending ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent mr-2 shrink-0" />
+            ) : (
+              <Plus size={16} className="mr-1.5 shrink-0" />
+            )}
+            <span>{t('ncr.create_ncr', { defaultValue: 'Create NCR' })}</span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -- NCR Row (expandable) -------------------------------------------------- */
+
+function NCRRow({
+  ncr,
+  onClose,
+}: {
+  ncr: NCR;
+  onClose: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const statusCfg = STATUS_CONFIG[ncr.status] ?? STATUS_CONFIG.open;
+  const typeCfg = NCR_TYPE_COLORS[ncr.ncr_type] ?? 'neutral';
+  const severityCfg = SEVERITY_CONFIG[ncr.severity] ?? SEVERITY_CONFIG.minor;
+
+  return (
+    <div className="border-b border-border-light last:border-b-0">
+      {/* Main row */}
+      <div
+        className={clsx(
+          'flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-secondary/50 transition-colors',
+          expanded && 'bg-surface-secondary/30',
+        )}
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        <ChevronRight
+          size={14}
+          className={clsx(
+            'text-content-tertiary transition-transform shrink-0',
+            expanded && 'rotate-90',
+          )}
+        />
+
+        {/* NCR # */}
+        <span className="text-sm font-mono font-semibold text-content-secondary w-20 shrink-0">
+          NCR-{String(ncr.ncr_number).padStart(3, '0')}
+        </span>
+
+        {/* Title */}
+        <span className="text-sm text-content-primary truncate flex-1 min-w-0">
+          {ncr.title}
+        </span>
+
+        {/* Type badge */}
+        <Badge variant={typeCfg} size="sm">
+          {t(`ncr.type_${ncr.ncr_type}`, {
+            defaultValue: ncr.ncr_type.charAt(0).toUpperCase() + ncr.ncr_type.slice(1),
+          })}
+        </Badge>
+
+        {/* Severity badge */}
+        <Badge variant={severityCfg.variant} size="sm" className={severityCfg.cls}>
+          {t(`ncr.severity_${ncr.severity}`, {
+            defaultValue: ncr.severity.charAt(0).toUpperCase() + ncr.severity.slice(1),
+          })}
+        </Badge>
+
+        {/* Cost Impact */}
+        <span className="text-xs text-content-tertiary w-20 text-right shrink-0 hidden md:block tabular-nums">
+          {ncr.cost_impact != null && ncr.cost_impact > 0 ? (
+            <span className="flex items-center justify-end gap-0.5 text-amber-500 font-medium">
+              <DollarSign size={12} />
+              {ncr.cost_impact.toLocaleString()}
+            </span>
+          ) : (
+            '\u2014'
+          )}
+        </span>
+
+        {/* Status badge */}
+        <Badge variant={statusCfg.variant} size="sm" className={statusCfg.cls}>
+          {t(`ncr.status_${ncr.status}`, {
+            defaultValue: ncr.status.replace(/_/g, ' '),
+          })}
+        </Badge>
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div className="px-4 pb-4 pl-12 space-y-3 animate-fade-in">
+          {/* Description */}
+          <div className="rounded-lg bg-surface-secondary p-3">
+            <p className="text-xs text-content-tertiary mb-1 font-medium uppercase tracking-wide">
+              {t('ncr.label_description', { defaultValue: 'Description' })}
+            </p>
+            <p className="text-sm text-content-primary whitespace-pre-wrap">{ncr.description}</p>
+          </div>
+
+          {/* Root Cause */}
+          {ncr.root_cause && (
+            <div className="rounded-lg bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 p-3">
+              <p className="text-xs text-orange-700 dark:text-orange-400 mb-1 font-medium uppercase tracking-wide">
+                {t('ncr.label_root_cause', { defaultValue: 'Root Cause' })}
+              </p>
+              <p className="text-sm text-content-primary whitespace-pre-wrap">{ncr.root_cause}</p>
+            </div>
+          )}
+
+          {/* Corrective Action */}
+          {ncr.corrective_action && (
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3">
+              <p className="text-xs text-blue-700 dark:text-blue-400 mb-1 font-medium uppercase tracking-wide">
+                {t('ncr.label_corrective_action', { defaultValue: 'Corrective Action' })}
+              </p>
+              <p className="text-sm text-content-primary whitespace-pre-wrap">
+                {ncr.corrective_action}
+              </p>
+            </div>
+          )}
+
+          {/* Preventive Action */}
+          {ncr.preventive_action && (
+            <div className="rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 p-3">
+              <p className="text-xs text-green-700 dark:text-green-400 mb-1 font-medium uppercase tracking-wide">
+                {t('ncr.label_preventive_action', { defaultValue: 'Preventive Action' })}
+              </p>
+              <p className="text-sm text-content-primary whitespace-pre-wrap">
+                {ncr.preventive_action}
+              </p>
+            </div>
+          )}
+
+          {/* Linked Inspection */}
+          {ncr.linked_inspection_number != null && (
+            <div className="flex items-center gap-2">
+              <ClipboardCheck size={13} className="text-content-tertiary" />
+              <span className="text-xs text-content-tertiary">
+                {t('ncr.linked_inspection', { defaultValue: 'Linked Inspection' })}:
+              </span>
+              <Badge variant="neutral" size="sm">
+                INS-{String(ncr.linked_inspection_number).padStart(3, '0')}
+              </Badge>
+            </div>
+          )}
+
+          {/* Location + Dates */}
+          <div className="flex items-center gap-4 text-xs text-content-tertiary flex-wrap">
+            {ncr.location && (
+              <span>
+                {t('ncr.label_location', { defaultValue: 'Location' })}: {ncr.location}
+              </span>
+            )}
+            <span>
+              {t('ncr.label_created', { defaultValue: 'Created' })}:{' '}
+              <DateDisplay value={ncr.created_at} />
+            </span>
+            {ncr.closed_at && (
+              <span>
+                {t('ncr.label_closed', { defaultValue: 'Closed' })}:{' '}
+                <DateDisplay value={ncr.closed_at} />
+              </span>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            {ncr.status !== 'closed' && ncr.status !== 'void' && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose(ncr.id);
+                }}
+              >
+                <CheckCircle2 size={14} className="mr-1.5" />
+                {t('ncr.action_close', { defaultValue: 'Close NCR' })}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -- Main Page ------------------------------------------------------------- */
+
+export function NCRPage() {
+  const { t } = useTranslation();
+  const { projectId: routeProjectId } = useParams<{ projectId: string }>();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
+
+  // State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<NCRStatus | ''>('');
+
+  // Data
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<Project[]>('/v1/projects/'),
+  });
+
+  const projectId = routeProjectId || activeProjectId || projects[0]?.id || '';
+  const projectName = projects.find((p) => p.id === projectId)?.name || '';
+
+  const { data: ncrs = [], isLoading } = useQuery({
+    queryKey: ['ncrs', projectId, statusFilter],
+    queryFn: () =>
+      fetchNCRs({
+        project_id: projectId,
+        status: statusFilter || undefined,
+      }),
+    enabled: !!projectId,
+  });
+
+  // Client-side search
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return ncrs;
+    const q = searchQuery.toLowerCase();
+    return ncrs.filter(
+      (n) =>
+        n.title.toLowerCase().includes(q) ||
+        String(n.ncr_number).includes(q) ||
+        n.description.toLowerCase().includes(q),
+    );
+  }, [ncrs, searchQuery]);
+
+  // Stats
+  const stats = useMemo(() => {
+    const total = ncrs.length;
+    const open = ncrs.filter((n) => n.status === 'open').length;
+    const underReview = ncrs.filter((n) => n.status === 'under_review').length;
+    const closed = ncrs.filter((n) => n.status === 'closed').length;
+    return { total, open, underReview, closed };
+  }, [ncrs]);
+
+  // Invalidation
+  const invalidateAll = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['ncrs'] });
+  }, [qc]);
+
+  // Mutations
+  const createMut = useMutation({
+    mutationFn: (data: CreateNCRPayload) => createNCR(data),
+    onSuccess: () => {
+      invalidateAll();
+      setShowCreateModal(false);
+      addToast({
+        type: 'success',
+        title: t('ncr.created', { defaultValue: 'NCR created' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  const closeMut = useMutation({
+    mutationFn: (id: string) => closeNCR(id),
+    onSuccess: () => {
+      invalidateAll();
+      addToast({
+        type: 'success',
+        title: t('ncr.closed', { defaultValue: 'NCR closed' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  const handleCreateSubmit = useCallback(
+    (formData: NCRFormData) => {
+      createMut.mutate({
+        project_id: projectId,
+        title: formData.title,
+        ncr_type: formData.ncr_type,
+        severity: formData.severity,
+        description: formData.description,
+        location: formData.location || undefined,
+      });
+    },
+    [createMut, projectId],
+  );
+
+  const handleClose = useCallback(
+    (id: string) => {
+      closeMut.mutate(id);
+    },
+    [closeMut],
+  );
+
+  return (
+    <div className="mx-auto max-w-7xl px-6 py-6">
+      {/* Breadcrumb */}
+      <Breadcrumb
+        items={[
+          { label: t('nav.dashboard', { defaultValue: 'Dashboard' }), to: '/' },
+          ...(projectName ? [{ label: projectName, to: `/projects/${projectId}` }] : []),
+          { label: t('ncr.title', { defaultValue: 'NCR' }) },
+        ]}
+      />
+
+      {/* Header */}
+      <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-lg font-bold text-content-primary flex items-center gap-2 shrink-0">
+          <AlertOctagon size={20} className="text-oe-blue" />
+          {t('ncr.page_title', { defaultValue: 'Non-Conformance Reports' })}
+        </h1>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {!routeProjectId && projects.length > 0 && (
+            <select
+              value={projectId}
+              onChange={(e) => {
+                const p = projects.find((pr) => pr.id === e.target.value);
+                if (p) {
+                  useProjectContextStore.getState().setActiveProject(p.id, p.name);
+                }
+              }}
+              className={inputCls + ' !h-8 !text-xs max-w-[180px]'}
+            >
+              <option value="" disabled>
+                {t('ncr.select_project', { defaultValue: 'Project...' })}
+              </option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setShowCreateModal(true)}
+            disabled={!projectId}
+            className="shrink-0 whitespace-nowrap"
+          >
+            <Plus size={14} className="mr-1 shrink-0" />
+            <span>{t('ncr.new_ncr', { defaultValue: 'New NCR' })}</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+        <Card className="p-4 animate-card-in">
+          <p className="text-2xs text-content-tertiary uppercase tracking-wide">
+            {t('ncr.stat_total', { defaultValue: 'Total' })}
+          </p>
+          <p className="text-xl font-bold mt-1 tabular-nums text-content-primary">{stats.total}</p>
+        </Card>
+        <Card className="p-4 animate-card-in">
+          <p className="text-2xs text-content-tertiary uppercase tracking-wide">
+            {t('ncr.stat_open', { defaultValue: 'Open' })}
+          </p>
+          <p
+            className={clsx(
+              'text-xl font-bold mt-1 tabular-nums',
+              stats.open > 0 ? 'text-semantic-error' : 'text-content-primary',
+            )}
+          >
+            {stats.open}
+          </p>
+        </Card>
+        <Card className="p-4 animate-card-in">
+          <p className="text-2xs text-content-tertiary uppercase tracking-wide">
+            {t('ncr.stat_under_review', { defaultValue: 'Under Review' })}
+          </p>
+          <p className="text-xl font-bold mt-1 tabular-nums text-amber-500">{stats.underReview}</p>
+        </Card>
+        <Card className="p-4 animate-card-in">
+          <p className="text-2xs text-content-tertiary uppercase tracking-wide">
+            {t('ncr.stat_closed', { defaultValue: 'Closed' })}
+          </p>
+          <p className="text-xl font-bold mt-1 tabular-nums text-semantic-success">
+            {stats.closed}
+          </p>
+        </Card>
+      </div>
+
+      {/* Toolbar */}
+      <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+        {/* Search */}
+        <div className="relative flex-1 max-w-sm">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
+          />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('ncr.search_placeholder', {
+              defaultValue: 'Search NCRs...',
+            })}
+            className={inputCls + ' pl-9'}
+          />
+        </div>
+
+        {/* Status filter */}
+        <div className="relative">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as NCRStatus | '')}
+            className="h-10 appearance-none rounded-lg border border-border bg-surface-primary pl-3 pr-9 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue sm:w-40"
+          >
+            <option value="">
+              {t('ncr.filter_all_statuses', { defaultValue: 'All Statuses' })}
+            </option>
+            {NCR_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {t(`ncr.status_${s}`, {
+                  defaultValue: s.replace(/_/g, ' '),
+                })}
+              </option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+            <ChevronDown size={14} />
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="mt-6">
+        {isLoading ? (
+          <Card padding="none">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-4 px-4 py-3 border-b border-border-light"
+              >
+                <div className="h-4 w-16 animate-pulse rounded bg-surface-tertiary" />
+                <div className="h-4 flex-1 animate-pulse rounded bg-surface-tertiary" />
+                <div className="h-5 w-20 animate-pulse rounded-full bg-surface-tertiary" />
+                <div className="h-4 w-20 animate-pulse rounded bg-surface-tertiary hidden md:block" />
+              </div>
+            ))}
+          </Card>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<AlertOctagon size={24} strokeWidth={1.5} />}
+            title={
+              searchQuery || statusFilter
+                ? t('ncr.no_results', { defaultValue: 'No matching NCRs' })
+                : t('ncr.no_ncrs', { defaultValue: 'No NCRs yet' })
+            }
+            description={
+              searchQuery || statusFilter
+                ? t('ncr.no_results_hint', {
+                    defaultValue: 'Try adjusting your search or filters',
+                  })
+                : t('ncr.no_ncrs_hint', {
+                    defaultValue: 'Create your first Non-Conformance Report',
+                  })
+            }
+            action={
+              !searchQuery && !statusFilter
+                ? {
+                    label: t('ncr.new_ncr', { defaultValue: 'New NCR' }),
+                    onClick: () => setShowCreateModal(true),
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-content-tertiary">
+              {t('ncr.showing_count', {
+                defaultValue: '{{count}} NCRs',
+                count: filtered.length,
+              })}
+            </p>
+            <Card padding="none">
+              {/* Table header */}
+              <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-surface-secondary/50 text-xs font-medium text-content-tertiary uppercase tracking-wide">
+                <span className="w-5" />
+                <span className="w-20">#</span>
+                <span className="flex-1">
+                  {t('ncr.col_title', { defaultValue: 'Title' })}
+                </span>
+                <span className="w-24 text-center">
+                  {t('ncr.col_type', { defaultValue: 'Type' })}
+                </span>
+                <span className="w-20 text-center">
+                  {t('ncr.col_severity', { defaultValue: 'Severity' })}
+                </span>
+                <span className="w-20 text-right hidden md:block">
+                  {t('ncr.col_cost_impact', { defaultValue: 'Cost Impact' })}
+                </span>
+                <span className="w-28 text-center">
+                  {t('ncr.col_status', { defaultValue: 'Status' })}
+                </span>
+              </div>
+
+              {/* Rows */}
+              {filtered.map((ncr) => (
+                <NCRRow key={ncr.id} ncr={ncr} onClose={handleClose} />
+              ))}
+            </Card>
+          </>
+        )}
+      </div>
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <CreateNCRModal
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateSubmit}
+          isPending={createMut.isPending}
+        />
+      )}
+    </div>
+  );
+}

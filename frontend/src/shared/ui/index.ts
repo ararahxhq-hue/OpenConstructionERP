@@ -71,3 +71,6 @@ export { QuantityDisplay } from './QuantityDisplay';
 export type { QuantityDisplayProps } from './QuantityDisplay';
 
 export { NotificationBell } from './NotificationBell';
+
+export { CommentThread } from './CommentThread';
+export type { CommentThreadProps } from './CommentThread';

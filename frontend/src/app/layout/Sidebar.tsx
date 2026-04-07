@@ -35,6 +35,10 @@ import {
   HardHat,
   Users,
   HelpCircle,
+  AlertOctagon,
+  FileCheck,
+  Mail,
+  Send,
   type LucideIcon,
 } from 'lucide-react';
 import { useModuleStore } from '@/stores/useModuleStore';
@@ -117,6 +121,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'schedule.title', to: '/schedule', icon: CalendarDays, moduleKey: 'schedule' },
       { labelKey: 'tasks.title', to: '/tasks', icon: ClipboardList },
+      { labelKey: 'meetings.title', to: '/meetings', icon: CalendarDays },
       { labelKey: 'nav.5d_cost_model', to: '/5d', icon: TrendingUp, moduleKey: '5d', advancedOnly: true },
     ],
   },
@@ -130,6 +135,8 @@ const navGroups: NavGroup[] = [
       { labelKey: 'finance.title', to: '/finance', icon: Wallet, advancedOnly: true },
       { labelKey: 'tendering.title', to: '/tendering', icon: FileText, moduleKey: 'tendering', advancedOnly: true },
       { labelKey: 'rfi.title', to: '/rfi', icon: HelpCircle, advancedOnly: true },
+      { labelKey: 'submittals.title', to: '/submittals', icon: FileCheck, advancedOnly: true },
+      { labelKey: 'transmittals.title', to: '/transmittals', icon: Send, advancedOnly: true },
       { labelKey: 'procurement.title', to: '/procurement', icon: Package, advancedOnly: true },
       { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
       { labelKey: 'nav.reports', to: '/reports', icon: FileBarChart, advancedOnly: true },
@@ -142,6 +149,8 @@ const navGroups: NavGroup[] = [
     hideInSimple: true,
     items: [
       { labelKey: 'nav.documents', to: '/documents', icon: FolderOpen },
+      { labelKey: 'correspondence.title', to: '/correspondence', icon: Mail },
+      { labelKey: 'cde.title', to: '/cde', icon: Database },
       { labelKey: 'nav.photos', to: '/photos', icon: Camera },
       { labelKey: 'nav.markups', to: '/markups', icon: PenTool },
       { labelKey: 'nav.field_reports', to: '/field-reports', icon: ClipboardList },
@@ -158,6 +167,8 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.punchlist', to: '/punchlist', icon: ListChecks },
       { labelKey: 'nav.risk_register', to: '/risks', icon: ShieldAlert },
       { labelKey: 'safety.title', to: '/safety', icon: HardHat },
+      { labelKey: 'inspections.title', to: '/inspections', icon: ClipboardCheck },
+      { labelKey: 'ncr.title', to: '/ncr', icon: AlertOctagon },
       // sustainability + cost-benchmark injected dynamically from module registry
     ],
   },

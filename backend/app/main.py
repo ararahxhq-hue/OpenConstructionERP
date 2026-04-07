@@ -733,6 +733,11 @@ def create_app() -> FastAPI:
         except Exception:
             logger.debug("OpenCDE API router not available (non-fatal)")
 
+        # Register cross-module event handlers (dataflow wiring)
+        from app.core.event_handlers import register_event_handlers
+
+        register_event_handlers()
+
         # Register built-in validation rules
         from app.core.validation.rules import register_builtin_rules
 
