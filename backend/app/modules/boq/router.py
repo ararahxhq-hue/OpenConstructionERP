@@ -48,10 +48,11 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.dependencies import CurrentUserId, CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.boq.schemas import (
