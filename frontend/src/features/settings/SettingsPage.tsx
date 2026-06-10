@@ -221,33 +221,15 @@ const AI_PROVIDERS: ProviderInfo[] = [
     docsUrl: 'https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application',
     region: 'global',
   },
-  {
-    id: 'ollama',
-    name: 'Ollama (Local)',
-    description: 'settings.ai_desc_ollama',
-    descriptionDefault: 'Ollama - run local LLMs via OpenAI-compatible API. No API key required.',
-    keyPrefix: '',
-    docsUrl: 'https://ollama.ai/',
-    region: 'global',
-  },
-  {
-    id: 'kimi',
-    name: 'Kimi (Moonshot AI)',
-    description: 'settings.ai_desc_kimi',
-    descriptionDefault: 'Kimi 2.6 - Moonshot AI with strong reasoning and long context for construction documents.',
-    keyPrefix: 'sk-',
-    docsUrl: 'https://platform.moonshot.cn/console/api-keys',
-    region: 'global',
-  },
-  {
-    id: 'vllm',
-    name: 'vLLM (Local)',
-    description: 'settings.ai_desc_vllm',
-    descriptionDefault: 'vLLM - high-throughput local LLM inference server with OpenAI-compatible API. No API key required by default.',
-    keyPrefix: '',
-    docsUrl: 'https://docs.vllm.ai/',
-    region: 'global',
-  },
+  { id: 'ollama', region: 'global', name: 'Ollama (Local)',
+    keyPrefix: '', docsUrl: 'https://ollama.ai/', description: 'settings.ai_desc_ollama',
+    descriptionDefault: 'Ollama - run local LLMs via OpenAI-compatible API. No API key required.' },
+  { id: 'kimi', region: 'global', name: 'Kimi (Moonshot AI)', keyPrefix: 'sk-',
+    docsUrl: 'https://platform.moonshot.cn/console/api-keys', description: 'settings.ai_desc_kimi',
+    descriptionDefault: 'Kimi 2.6 - Moonshot AI with strong reasoning and long context for construction documents.' },
+  { id: 'vllm', region: 'global', name: 'vLLM (Local)',
+    keyPrefix: '', docsUrl: 'https://docs.vllm.ai/', description: 'settings.ai_desc_vllm',
+    descriptionDefault: 'vLLM - high-throughput local LLM inference server with OpenAI-compatible API. No API key required by default.' },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -337,9 +319,10 @@ function AIConfigurationCard() {
   // Per-provider model-id override. Empty string = use the platform default.
   const [modelInput, setModelInput] = useState('');
   const [modelTouched, setModelTouched] = useState(false);
-  // Custom base URL for local providers (Ollama, vLLM)
-  const [baseUrlInput, setBaseUrlInput] = useState('');
-  const [baseUrlTouched, setBaseUrlTouched] = useState(false);
+  // Endpoint field shown only for the self-hosted runtimes; the *Touched flag
+  // tracks whether the user edited it so we know to persist it.
+  const [baseUrlInput, setBaseUrlInput] = useState<string>('');
+  const [baseUrlTouched, setBaseUrlTouched] = useState<boolean>(false);
 
   // Fetch current settings
   const { data: settings } = useQuery({
@@ -368,10 +351,8 @@ function AIConfigurationCard() {
         xai: 'xai', grok: 'xai',
         zhipu: 'zhipu', glm: 'zhipu',
         baidu: 'baidu', ernie: 'baidu',
-        yandex: 'yandex',
-        ollama: 'ollama',
-        vllm: 'vllm',
-        kimi: 'kimi', moonshot: 'kimi',
+        yandex: 'yandex', ollama: 'ollama',
+        vllm: 'vllm', kimi: 'kimi', moonshot: 'kimi',
       };
       const matched = Object.entries(providerMap).find(([key]) => model.includes(key));
       if (matched) setSelectedProvider(matched[1]);
@@ -388,18 +369,22 @@ function AIConfigurationCard() {
     setModelTouched(false);
   }, [selectedProvider, settings?.model_overrides]);
 
-  // Reflect the saved custom base URL for local providers
-  useEffect(() => {
-    if (selectedProvider === 'ollama') {
-      setBaseUrlInput(settings?.ollama_base_url ?? '');
-    } else if (selectedProvider === 'vllm') {
-      setBaseUrlInput(settings?.vllm_base_url ?? '');
-    } else {
-      setBaseUrlInput('');
-    }
-    setBaseUrlTouched(false);
-  }, [selectedProvider, settings?.ollama_base_url, settings?.vllm_base_url]);
-
+  // Load the stored endpoint into the field when a self-hosted runtime is
+  // picked; any other provider leaves the field empty.
+  const ollamaUrl = settings?.ollama_base_url;
+  const vllmUrl = settings?.vllm_base_url;
+  useEffect(
+    function syncSavedEndpoint() {
+      const savedByProvider: Partial<Record<AIProvider, string | null | undefined>> = {
+        ollama: ollamaUrl,
+        vllm: vllmUrl,
+      };
+      setBaseUrlInput(savedByProvider[selectedProvider] ?? '');
+      setBaseUrlTouched(false); // freshly loaded value is not a user edit
+    },
+    [selectedProvider, ollamaUrl, vllmUrl],
+  );
+  // Derived values for the currently selected provider.
   const defaultModel = settings?.default_models?.[selectedProvider] ?? '';
   const hasKeySet = isKeySetForProvider(settings, selectedProvider);
 
@@ -408,8 +393,8 @@ function AIConfigurationCard() {
   // calls will use (this is what surfaces stale-model failures early).
   const testMutation = useMutation({
     mutationFn: async () => {
-      const needsSave =
-        (hasUnsavedKey && apiKeyInput.trim()) || modelTouched || baseUrlTouched;
+      const hasNewKey = hasUnsavedKey && Boolean(apiKeyInput.trim());
+      const needsSave = modelTouched || baseUrlTouched || hasNewKey;
       if (needsSave) {
         const update: Record<string, unknown> = { preferred_model: selectedProvider };
         if (hasUnsavedKey && apiKeyInput.trim()) {
@@ -419,10 +404,7 @@ function AIConfigurationCard() {
           // Blank string clears the override (server falls back to default).
           update.model_overrides = { [selectedProvider]: modelInput.trim() };
         }
-        if (baseUrlTouched) {
-          const urlKey = `${selectedProvider}_base_url`;
-          update[urlKey] = baseUrlInput.trim() || null;
-        }
+        if (baseUrlTouched) update[`${selectedProvider}_base_url`] = baseUrlInput.trim() || null;
         await aiApi.updateSettings(update as Parameters<typeof aiApi.updateSettings>[0]);
       }
       return aiApi.testConnection(selectedProvider);
@@ -434,9 +416,8 @@ function AIConfigurationCard() {
         setHasUnsavedKey(false);
         setShowKey(false);
       }
-      setModelTouched(false);
-      setBaseUrlTouched(false);
-      // Same broadcast as the Save handler — the test path can also save.
+      setModelTouched(false); setBaseUrlTouched(false);
+      // Same broadcast as the Save handler - the test path can also save.
       try {
         window.dispatchEvent(new CustomEvent('oe:ai-settings-updated'));
       } catch {
@@ -498,10 +479,7 @@ function AIConfigurationCard() {
         // Blank string clears the override (server uses the default).
         update.model_overrides = { [selectedProvider]: modelInput.trim() };
       }
-      if (baseUrlTouched) {
-        const urlKey = `${selectedProvider}_base_url`;
-        update[urlKey] = baseUrlInput.trim() || null;
-      }
+      if (baseUrlTouched) update[`${selectedProvider}_base_url`] = baseUrlInput.trim() || null;
       return aiApi.updateSettings(update as Parameters<typeof aiApi.updateSettings>[0]);
     },
     onSuccess: () => {
@@ -509,8 +487,7 @@ function AIConfigurationCard() {
       setApiKeyInput('');
       setHasUnsavedKey(false);
       setShowKey(false);
-      setModelTouched(false);
-      setBaseUrlTouched(false);
+      setModelTouched(false); setBaseUrlTouched(false);
       addToast({
         type: 'success',
         title: t('settings.ai_saved', { defaultValue: 'AI settings saved' }),
@@ -535,11 +512,11 @@ function AIConfigurationCard() {
 
   const handleProviderChange = useCallback((provider: AIProvider) => {
     setSelectedProvider(provider);
+    setBaseUrlInput('');
+    setBaseUrlTouched(false);
     setApiKeyInput('');
     setHasUnsavedKey(false);
     setShowKey(false);
-    setBaseUrlInput('');
-    setBaseUrlTouched(false);
     aiApi.updateSettings({ preferred_model: provider }).then(() => {
       queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
     }).catch(() => { /* ignore — will save on next explicit Save */ });
@@ -559,6 +536,16 @@ function AIConfigurationCard() {
     : hasKeySet
       ? 'sk-••••••••••••••••'
       : '';
+
+  // Shared utility-class strings for the endpoint field, hoisted so the markup
+  // below stays readable. Values are the exact class lists Tailwind emits.
+  const baseUrlLabelClass = 'text-sm font-medium text-content-primary block mb-1.5';
+  const baseUrlInputClass =
+    'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 font-mono text-sm ' +
+    'text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 ' +
+    'focus:ring-oe-blue/30 focus:border-oe-blue transition-all duration-normal ease-oe ' +
+    'hover:border-content-tertiary';
+  const baseUrlHintClass = 'mt-1.5 text-xs text-content-tertiary';
 
   return (
     <Card className="lg:col-span-2">
@@ -686,41 +673,25 @@ function AIConfigurationCard() {
             </p>
           </div>
 
-          {/* Custom base URL for local providers (Ollama, vLLM) */}
-          {(selectedProvider === 'ollama' || selectedProvider === 'vllm') && (
-            <div>
-              <label
-                htmlFor="ai-base-url"
-                className="text-sm font-medium text-content-primary block mb-1.5"
-              >
-                {t('settings.ai_base_url', { defaultValue: 'Server URL' })}
-              </label>
-              <input
-                id="ai-base-url"
-                type="text"
-                value={baseUrlInput}
-                onChange={(e) => {
-                  setBaseUrlInput(e.target.value);
-                  setBaseUrlTouched(true);
-                }}
-                placeholder={
-                  selectedProvider === 'ollama'
-                    ? 'http://localhost:11434'
-                    : 'http://localhost:8000'
-                }
-                spellCheck={false}
-                autoComplete="off"
-                className="h-10 w-full rounded-lg border border-border bg-surface-primary px-3 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue transition-all duration-normal ease-oe hover:border-content-tertiary"
-              />
-              <p className="mt-1.5 text-xs text-content-tertiary">
-                {t('settings.ai_base_url_hint', {
-                  defaultValue:
-                    'Enter the server address including port. The /v1/chat/completions path is appended automatically.',
-                })}
-              </p>
-            </div>
-          )}
-
+          {/* The endpoint input only appears for self-hosted runtimes. */}
+          {['ollama', 'vllm'].includes(selectedProvider) ? (
+            <div><label htmlFor="ai-base-url" className={baseUrlLabelClass}>{
+                t('settings.ai_base_url', { defaultValue: 'Server URL' })
+              }</label>
+              <input id="ai-base-url" type="text" autoComplete="off" spellCheck={false}
+                value={baseUrlInput} className={baseUrlInputClass}
+                placeholder={selectedProvider === 'vllm' ? 'http://localhost:8000' : 'http://localhost:11434'}
+                onChange={(event) => {
+                  setBaseUrlInput(event.currentTarget.value);
+                  setBaseUrlTouched(true); // mark the field as user-edited
+                }} />
+              <p className={baseUrlHintClass}>{
+                t('settings.ai_base_url_hint', {
+                  defaultValue: 'Enter the server address including port. ' +
+                    'The /v1/chat/completions path is appended automatically.',
+                })
+              }</p></div>
+          ) : null}
           {/* Model name override — lets users track provider model
               renames/retirements without waiting for an app update. */}
           <div>
@@ -775,7 +746,13 @@ function AIConfigurationCard() {
           variant="secondary"
           onClick={() => testMutation.mutate()}
           disabled={testMutation.isPending || (!hasKeySet && !hasUnsavedKey)}
-          title={hasUnsavedKey || modelTouched || baseUrlTouched ? t('settings.ai_test_save_hint', { defaultValue: 'Save changes and test connection' }) : t('settings.ai_test', { defaultValue: 'Test Connection' })}
+          title={
+            baseUrlTouched || modelTouched || hasUnsavedKey
+              ? t('settings.ai_test_save_hint', {
+                  defaultValue: 'Save changes and test connection',
+                })
+              : t('settings.ai_test', { defaultValue: 'Test Connection' })
+          }
           icon={
             testMutation.isPending ? (
               <Loader2 size={14} className="animate-spin" />
@@ -789,7 +766,11 @@ function AIConfigurationCard() {
         <Button
           variant="primary"
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || (!hasUnsavedKey && !modelTouched && !baseUrlTouched && selectedProvider === settings?.provider)}
+          disabled={
+            saveMutation.isPending ||
+            (!(hasUnsavedKey || modelTouched || baseUrlTouched) &&
+              selectedProvider === settings?.provider)
+          }
           loading={saveMutation.isPending}
         >
           {t('settings.ai_save_btn', { defaultValue: 'Save Settings' })}

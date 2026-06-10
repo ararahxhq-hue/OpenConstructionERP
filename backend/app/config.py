@@ -386,6 +386,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     gemini_api_key: str | None = None
+    kimi_api_key: str | None = None
     openrouter_api_key: str | None = None
     mistral_api_key: str | None = None
     groq_api_key: str | None = None
@@ -400,7 +401,6 @@ class Settings(BaseSettings):
     baidu_api_key: str | None = None
     yandex_api_key: str | None = None
     gigachat_api_key: str | None = None
-    kimi_api_key: str | None = None
 
     # ── Email ────────────────────────────────────────────────────────────
     # ``email_backend`` picks the transport for outbound email.  Dev

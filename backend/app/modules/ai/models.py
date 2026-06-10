@@ -27,6 +27,7 @@ class AISettings(Base):
     anthropic_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     openai_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     gemini_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+    kimi_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     openrouter_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     mistral_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     groq_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
@@ -41,7 +42,6 @@ class AISettings(Base):
     baidu_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     yandex_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     gigachat_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
-    kimi_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     preferred_model: Mapped[str] = mapped_column(String(100), nullable=False, default="claude-sonnet")
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
