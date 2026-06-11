@@ -253,6 +253,17 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
   const [activeDb, setActiveDb] = useState<string | null>(() => getActiveDatabase());
   const addToast = useToastStore((s) => s.addToast);
 
+  // The timeout-recovery poll below can run for ~a minute after a slow import.
+  // If the user navigates away from /costs/import during that window we must
+  // not keep polling and then setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Region filter — added 2026-04-28 when the registry grew from 11 to 30
   // entries. Without it the grid scrolls past one viewport on small laptops.
   const [regionQuery, setRegionQuery] = useState('');
@@ -373,6 +384,44 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
           if (import.meta.env.DEV) console.error('Vector indexing failed (non-critical):', err);
         });
       } catch (err: unknown) {
+        // A regional import is a long single request (read parquet, expand to
+        // ~55K items, bulk-load). On a slow machine it can outrun even the
+        // 5-min long-running budget and the client aborts - but the server
+        // keeps going and commits. Before crying failure, poll the backend for
+        // up to ~a minute: if the region lands, the load actually succeeded and
+        // we show success instead of a misleading timeout (GitHub #171 follow-up).
+        const landed = await (async () => {
+          for (let attempt = 0; attempt < 7; attempt++) {
+            if (!mountedRef.current) return null;
+            try {
+              const stats = await apiGet<RegionStat[]>('/v1/costs/regions/stats/');
+              const hit = stats.find((s) => s.region === db.id && s.count > 0);
+              if (hit) return hit;
+            } catch {
+              // transient - keep polling
+            }
+            if (attempt < 6) await new Promise((r) => setTimeout(r, 10000));
+          }
+          return null;
+        })();
+        if (!mountedRef.current) return;
+        if (landed) {
+          setLoaded((prev) => new Set(prev).add(db.id));
+          addLoadedDatabase(db.id);
+          if (getLoadedDatabases().length === 1 || !getActiveDatabase()) {
+            setActiveDatabase(db.id);
+            setActiveDb(db.id);
+          }
+          setResult({ id: db.id, imported: landed.count, skipped: 0, file: '' });
+          addToast({
+            type: 'success',
+            title: t('costs.db_installed', { defaultValue: 'Database installed successfully' }),
+            message: `${landed.count.toLocaleString()} cost items imported`,
+          });
+          queryClient.invalidateQueries({ queryKey: ['costs'] });
+          apiPost('/v1/costs/vector/index/').catch(() => {});
+          return;
+        }
         const detail =
           err instanceof Error ? err.message : 'Failed to load database';
         addToast({
@@ -381,7 +430,7 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
           message: detail,
         });
       } finally {
-        setLoading(null);
+        if (mountedRef.current) setLoading(null);
       }
     },
     [addToast, t, queryClient],
