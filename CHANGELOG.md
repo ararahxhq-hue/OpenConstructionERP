@@ -5,6 +5,23 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.8.0] - 2026-06-12
+
+### Added
+
+- Optional Material, Labor and Equipment columns in the bill of quantities. A button in the grid settings turns on three percentage columns that show, per position, how the unit rate splits across material, labour and equipment, so you can see the cost driver of every line at a glance and sort or filter on it. The columns are off by default and your choice is remembered. The same split also reads correctly straight after you edit a resource quantity or rate, recomputing from the live figures instead of an old cached value.
+- Worked retail-market example projects for three German cities. Each one is a full discount-store estimate built from real trades with named crews, materials and equipment at regional rates, from earthworks and shell through drywall, screed, tiling and painting to refrigeration, ventilation, electrical, photovoltaics and external works, so the resources reflect how the work is actually priced rather than placeholder lines.
+
+### Fixed
+
+- Consolidated general ledger statements are now limited to administrators. A trial balance, income statement, balance sheet or cash flow requested without a project used to span every project on the instance for any finance reader; it now requires an administrator, and everyone else passes a project to see that project's books.
+- Imported IDS validation rules are kept separate per project. A rule set imported into one project can no longer collide with, or be applied to, another project's data.
+- The bill of quantities Excel export reconciles again. The sheet now writes the direct cost and each markup line above the grand total, so the total column adds up to the grand total instead of the markups quietly disappearing from the file.
+- The AI estimate no longer lets a broken number reach your money. A non-numeric quantity or rate is rejected before it becomes a position, and a catalogue rate only replaces the estimated rate when the match is confident enough.
+- Model validation is honest about an empty check. Validating a model where nothing matched the rules now reports as not checked rather than a green hundred percent pass.
+- The 3D viewer no longer turns black after opening several models in a row, the cost-database import recovers cleanly if you leave the page mid-load, and the validation dashboard shows information-level findings in their own style instead of as warnings.
+- Validation messages and suggestions now appear in your language, and the run result tells you which requested rule sets actually ran. Comment threads are checked against project access. A markup type that had no real effect is no longer accepted, and the demo sign-in shortcut is refused on a production install.
+
 ## [7.7.0] - 2026-06-11
 
 ### Added
