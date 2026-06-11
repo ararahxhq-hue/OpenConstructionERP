@@ -5,6 +5,21 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.7.0] - 2026-06-11
+
+### Added
+
+- A multi-line description view for the bill of quantities. A position description can now carry a full specification text with paragraphs and line breaks, the way a German LV Langtext reads, and a toolbar button cycles the row height between compact, comfortable and tall so you can read the long text in place. Editing a description opens a large text box.
+- Import a country standard straight from the New BOQ window. When you create a bill of quantities you can pick a file and have it imported on the spot, with the common national exchange formats recognised automatically: GAEB for the German-speaking countries, FIEBDC-3 (BC3) for Spain and Latin America, and Excel or CSV anywhere, while PDF and CAD are routed to the AI import.
+- A worked retail-market example project. A new discount-store build estimate covers the popular trades, from earthworks, shell and roof through drywall partitions, screed, tiling, painting, internal doors and suspended ceilings to sanitary, ventilation, CO2 refrigeration, electrical, photovoltaics and external works, with a DIN 276 budget and a 303-position detailed bill that closes to the cent on every procurement unit.
+- The Packs umbrella. Partner packs, country standard packs and industry template packs now sit under one Packs tab with a type badge on each card. The old partner-pack entry points, environment variable and state file keep working unchanged, so any pack already applied loads exactly as before.
+
+### Fixed
+
+- GAEB import no longer zeros out money. A GAEB X84 file used to import with a grand total of 0.00; the direct cost is now read cent-exact, and an export followed by a re-import preserves the total. Export also emits schema-valid GAEB DA XML 3.3, and the GAEB rule set no longer flags the official test file with dozens of false errors.
+- Point cloud upload no longer fails at the final step. Finishing a large scan upload could return a 500 from the finalise call; it now completes and records the scan.
+- Validation reports honestly on rule sets it does not run. An advertised but not-yet-implemented rule set now reports as unsupported with no score instead of silently passing, so a project can never look checked against a standard the engine does not actually enforce.
+
 ## [7.6.0] - 2026-06-11
 
 ### Added
