@@ -1673,9 +1673,7 @@ class FinanceService:
         total_actual = _to_base(budget_agg["actual_by_currency"])
 
         total_variance = total_budget_revised - total_actual
-        budget_consumed_pct = (
-            total_actual / total_budget_revised * 100 if total_budget_revised > 0 else Decimal("0")
-        )
+        budget_consumed_pct = total_actual / total_budget_revised * 100 if total_budget_revised > 0 else Decimal("0")
 
         # Budget warning level
         if budget_consumed_pct >= 95:

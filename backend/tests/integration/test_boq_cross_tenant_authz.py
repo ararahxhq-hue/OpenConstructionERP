@@ -447,8 +447,7 @@ async def test_ai_estimator_unfiltered_runs_excludes_other_tenant(http_client, o
     assert b_list.status_code == 200, b_list.text
     b_run_ids = {r["id"] for r in b_list.json()["runs"]}
     assert run_id not in b_run_ids, (
-        f"LEAK: outsider B's unfiltered /runs listing contains A's run {run_id}. "
-        f"Returned ids: {sorted(b_run_ids)}"
+        f"LEAK: outsider B's unfiltered /runs listing contains A's run {run_id}. Returned ids: {sorted(b_run_ids)}"
     )
 
     # A's own unfiltered listing DOES contain it (sanity: the scope is not
