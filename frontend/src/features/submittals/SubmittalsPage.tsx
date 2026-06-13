@@ -172,21 +172,43 @@ function SubmittalFormModal({
           spec_section: existing.spec_section ?? '',
           type: existing.type,
           date_required: existing.date_required ?? '',
+          // Pre-fill from the normalised API response: `description` is read
+          // back out of the backend `metadata` blob by `normaliseSubmittal()`
+          // (it is not a dedicated column), so the form data already sees a
+          // flat string here and never has to know about the metadata shape.
           description: existing.description ?? '',
         }
       : EMPTY_FORM,
   );
-  const [touched, setTouched] = useState(false);
+  // Per-field touched tracking so validation surfaces as the user leaves each
+  // field (onBlur) instead of only after a submit attempt. Submitting marks
+  // every field touched so any still-empty required field lights up.
+  const [touched, setTouched] = useState<Record<keyof SubmittalFormData, boolean>>({
+    title: false,
+    spec_section: false,
+    type: false,
+    date_required: false,
+    description: false,
+  });
 
   const set = <K extends keyof SubmittalFormData>(key: K, value: SubmittalFormData[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const titleError = touched && form.title.trim().length === 0;
-  const specError = touched && form.spec_section.trim().length === 0;
+  const markTouched = (key: keyof SubmittalFormData) =>
+    setTouched((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+
+  const titleError = touched.title && form.title.trim().length === 0;
+  const specError = touched.spec_section && form.spec_section.trim().length === 0;
   const canSubmit = form.title.trim().length > 0 && form.spec_section.trim().length > 0;
 
   const handleSubmit = () => {
-    setTouched(true);
+    setTouched({
+      title: true,
+      spec_section: true,
+      type: true,
+      date_required: true,
+      description: true,
+    });
     if (canSubmit) onSubmit(form);
   };
 
@@ -236,10 +258,8 @@ function SubmittalFormModal({
           <input
             id={`${idPrefix}-title`}
             value={form.title}
-            onChange={(e) => {
-              set('title', e.target.value);
-              setTouched(true);
-            }}
+            onChange={(e) => set('title', e.target.value)}
+            onBlur={() => markTouched('title')}
             placeholder={t('submittals.title_placeholder', {
               defaultValue: 'e.g. Structural Steel Shop Drawings - Level 3',
             })}
@@ -264,10 +284,8 @@ function SubmittalFormModal({
           <input
             id={`${idPrefix}-spec-section`}
             value={form.spec_section}
-            onChange={(e) => {
-              set('spec_section', e.target.value);
-              setTouched(true);
-            }}
+            onChange={(e) => set('spec_section', e.target.value)}
+            onBlur={() => markTouched('spec_section')}
             placeholder={t('submittals.spec_placeholder', {
               defaultValue: 'e.g. 05 12 00',
             })}
@@ -829,6 +847,17 @@ export function SubmittalsPage() {
     qc.invalidateQueries({ queryKey: ['submittals'] });
   }, [qc]);
 
+  // Resolve a submittal id to its human-facing number for error toasts, so a
+  // failed submit/review/save names the specific row even after rapid actions.
+  // Falls back to a short id slice when the row is no longer in the list.
+  const submittalLabelById = useCallback(
+    (id: string): string => {
+      const row = submittals.find((s) => s.id === id);
+      return row?.submittal_number || id.slice(0, 8);
+    },
+    [submittals],
+  );
+
   // Mutations
   const createMut = useMutation({
     mutationFn: (data: CreateSubmittalPayload) => createSubmittal(data),
@@ -840,10 +869,15 @@ export function SubmittalsPage() {
         title: t('submittals.created', { defaultValue: 'Submittal created' }),
       });
     },
-    onError: (e: Error) =>
+    // Surface the title the user was creating so a failed create is
+    // traceable even after the toast is gone from the screen.
+    onError: (e: Error, vars) =>
       addToast({
         type: 'error',
-        title: t('common.error', { defaultValue: 'Error' }),
+        title: t('submittals.create_failed', {
+          defaultValue: 'Failed to create "{{title}}"',
+          title: vars.title,
+        }),
         message: e.message,
       }),
   });
@@ -857,10 +891,15 @@ export function SubmittalsPage() {
         title: t('submittals.submitted', { defaultValue: 'Submittal submitted' }),
       });
     },
-    onError: (e: Error) =>
+    // `vars` is the submittal id passed to mutate(); recover the row so the
+    // failure names the specific submittal number, not a generic "Error".
+    onError: (e: Error, id) =>
       addToast({
         type: 'error',
-        title: t('common.error', { defaultValue: 'Error' }),
+        title: t('submittals.submit_failed', {
+          defaultValue: 'Failed to submit {{number}}',
+          number: submittalLabelById(id),
+        }),
         message: e.message,
       }),
   });
@@ -876,10 +915,13 @@ export function SubmittalsPage() {
         title: t('submittals.reviewed', { defaultValue: 'Review submitted' }),
       });
     },
-    onError: (e: Error) =>
+    onError: (e: Error, vars) =>
       addToast({
         type: 'error',
-        title: t('common.error', { defaultValue: 'Error' }),
+        title: t('submittals.review_failed', {
+          defaultValue: 'Failed to review {{number}}',
+          number: submittalLabelById(vars.id),
+        }),
         message: e.message,
       }),
   });
@@ -895,10 +937,13 @@ export function SubmittalsPage() {
         title: t('submittals.updated', { defaultValue: 'Submittal updated' }),
       });
     },
-    onError: (e: Error) =>
+    onError: (e: Error, vars) =>
       addToast({
         type: 'error',
-        title: t('common.error', { defaultValue: 'Error' }),
+        title: t('submittals.update_failed', {
+          defaultValue: 'Failed to save {{number}}',
+          number: submittalLabelById(vars.id),
+        }),
         message: e.message,
       }),
   });
