@@ -34,6 +34,7 @@ import {
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useToastStore } from '@/stores/useToastStore';
 import { apiGet, apiPost, API_BASE, getAuthToken, ApiError } from '@/shared/lib/api';
 import { projectsApi, type Project } from '@/features/projects/api';
 
@@ -358,6 +359,7 @@ export function ReportingPage() {
   const navigate = useNavigate();
   const { activeProjectId, activeProjectName } = useProjectContextStore();
   const userRole = useAuthStore((s) => s.userRole);
+  const addToast = useToastStore((s) => s.addToast);
   const canRecalculate = RECALC_ROLES.has((userRole ?? '').toLowerCase());
 
   const [tab, setTab] = useState<DashboardTab>('executive');
@@ -497,14 +499,41 @@ export function ReportingPage() {
     setRecalcError(false);
     try {
       await apiPost('/v1/reporting/kpi/recalculate-all/', {});
+      // The endpoint is fire-and-forget: a 200 means the recompute was
+      // ACCEPTED, not that every project's snapshot already exists. Be honest
+      // about that — a toast tells the user the job was queued and that the
+      // numbers below will refresh as snapshots land (rather than implying an
+      // instant, guaranteed-complete result for all projects).
+      addToast({
+        type: 'success',
+        title: t('reporting.recalculate_queued_title', {
+          defaultValue: 'KPI recalculation queued',
+        }),
+        message: t('reporting.recalculate_queued_msg', {
+          defaultValue:
+            'Snapshots are being recomputed and the dashboard will refresh as they arrive. Projects still showing a dash had no data to snapshot yet.',
+        }),
+      });
       // Refresh just the KPI map (and the active project's stats) — no need
-      // to refetch the whole project list, which never changes here.
+      // to refetch the whole project list, which never changes here. This
+      // picks up whatever snapshots already completed; the toast sets the
+      // expectation that more may follow.
       await loadKpiMap(projects);
       if (selectedProjectId) await loadProjectStats(selectedProjectId);
     } catch {
       // No error boundary wraps this page — a swallowed failure left
-      // the button looking like it succeeded. Surface it inline.
+      // the button looking like it succeeded. Surface it inline AND as a
+      // toast so a user who has scrolled past the header still notices.
       setRecalcError(true);
+      addToast({
+        type: 'error',
+        title: t('reporting.recalculate_failed_title', {
+          defaultValue: 'KPI recalculation failed',
+        }),
+        message: t('reporting.recalculate_failed', {
+          defaultValue: 'KPI recalculation failed. Please try again.',
+        }),
+      });
     } finally {
       setRecalculating(false);
     }
@@ -1051,11 +1080,23 @@ function TrafficDot({ color, label }: { color: TrafficLight; label: string }) {
   if (label === EMPTY) {
     return <span className="text-sm text-content-tertiary">{EMPTY}</span>;
   }
-  const dotColors: Record<TrafficLight, string> = {
+  // A genuine status (green/yellow/red) renders a solid, confident dot. The
+  // `gray` case (a value is present but its status is indeterminate) instead
+  // renders a hollow ring so it never reads as a confident "on-track" light —
+  // it signals "not classified", visually distinct from a real green dot and
+  // from the bare dash used for missing data above.
+  if (color === 'gray') {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block h-2.5 w-2.5 rounded-full border border-gray-300 dark:border-gray-600" />
+        <span className="text-sm text-content-secondary">{label}</span>
+      </span>
+    );
+  }
+  const dotColors: Record<Exclude<TrafficLight, 'gray'>, string> = {
     green: 'bg-emerald-500',
     yellow: 'bg-amber-500',
     red: 'bg-red-500',
-    gray: 'bg-gray-300 dark:bg-gray-600',
   };
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -1239,6 +1280,15 @@ function EstimatorDashboard({
   const [boqsError, setBoqsError] = useState(false);
   const projectId = project?.id;
 
+  // Single guarded navigation into the BOQ editor. The component already
+  // early-returns RequiresProject when `project` is falsy, but projectId is
+  // derived (project?.id), so the rows guard against an undefined id rather
+  // than ever navigating to `/projects/undefined/boq`.
+  const goToBoq = useCallback(() => {
+    if (!projectId) return;
+    navigate(`/projects/${projectId}/boq`);
+  }, [projectId, navigate]);
+
   const loadBoqs = useCallback(() => {
     if (!projectId) return undefined;
     let cancelled = false;
@@ -1324,7 +1374,7 @@ function EstimatorDashboard({
               })}
               action={{
                 label: t('reporting.open_boq', { defaultValue: 'Open BOQ editor' }),
-                onClick: () => navigate(`/projects/${projectId}/boq`),
+                onClick: goToBoq,
               }}
             />
           ) : (
@@ -1342,12 +1392,12 @@ function EstimatorDashboard({
                   {boqs.map((b) => (
                     <tr
                       key={b.id}
-                      onClick={() => navigate(`/projects/${projectId}/boq`)}
+                      onClick={goToBoq}
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          navigate(`/projects/${projectId}/boq`);
+                          goToBoq();
                         }
                       }}
                       className="group cursor-pointer border-b border-border-light last:border-0 transition-colors hover:bg-surface-secondary/50 focus-visible:bg-surface-secondary/50 focus-visible:outline-none"
@@ -2003,7 +2053,9 @@ function ReportViewerModal({
   const { t } = useTranslation();
   const [html, setHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [errorKind, setErrorKind] = useState<'not_rendered' | 'not_found' | 'network' | null>(null);
+  const [errorKind, setErrorKind] = useState<
+    'not_rendered' | 'not_found' | 'permission' | 'server' | 'network' | null
+  >(null);
 
   // Fetch the rendered HTML body. We bypass apiGet because it always parses
   // JSON — this endpoint returns text/html.
@@ -2039,7 +2091,17 @@ function ReportViewerModal({
           return;
         }
         if (!res.ok) {
-          setErrorKind('network');
+          // Distinguish failure classes so the user knows whether to retry,
+          // check their access, or report a bug. A 500/503 is the server's
+          // fault and retrying may help; a 401/403 means missing permission;
+          // anything else falls back to the generic connectivity message.
+          if (res.status >= 500) {
+            setErrorKind('server');
+          } else if (res.status === 401 || res.status === 403) {
+            setErrorKind('permission');
+          } else {
+            setErrorKind('network');
+          }
           setLoading(false);
           return;
         }
@@ -2187,6 +2249,36 @@ function ReportViewerModal({
                 {t('reporting.report_not_found', {
                   defaultValue:
                     'This report was not found. It may have been deleted by another user.',
+                })}
+              </p>
+            </div>
+          )}
+
+          {!loading && errorKind === 'permission' && (
+            <div
+              role="alert"
+              className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+            >
+              <AlertTriangle size={36} className="text-amber-500" />
+              <p className="max-w-md text-sm text-content-secondary">
+                {t('reporting.report_permission_error', {
+                  defaultValue:
+                    'You do not have permission to view this report. Ask a project administrator for access.',
+                })}
+              </p>
+            </div>
+          )}
+
+          {!loading && errorKind === 'server' && (
+            <div
+              role="alert"
+              className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+            >
+              <AlertTriangle size={36} className="text-red-500" />
+              <p className="max-w-md text-sm text-content-secondary">
+                {t('reporting.report_server_error', {
+                  defaultValue:
+                    'The server encountered an error rendering this report. Try again in a moment, or contact support if it persists.',
                 })}
               </p>
             </div>
