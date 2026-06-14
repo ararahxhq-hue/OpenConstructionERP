@@ -29,6 +29,7 @@ import { isModuleLoaded } from '@/shared/lib/moduleProbe';
 import { Breadcrumb, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { quantitiesGuide } from './quantitiesGuide';
+import { QuantitiesWorkflowRibbon } from './QuantitiesWorkflowRibbon';
 import { useToastStore } from '@/stores/useToastStore';
 import {
   fetchConverterVersionCheck,
@@ -966,6 +967,8 @@ export function QuantitiesPage() {
         })}
         actions={<ModuleGuideButton content={quantitiesGuide} />}
       />
+
+      <QuantitiesWorkflowRibbon />
 
       <DismissibleInfo
         storageKey="quantities"
