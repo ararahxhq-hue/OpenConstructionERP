@@ -5,6 +5,20 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.2.0] - 2026-06-14
+
+### Added
+
+- A project journey map in the top bar. A small control names the lifecycle phase the screen you are on belongs to, so you always know where you are, and opening it lays out the whole project from first lead to handover: three arcs and eleven numbered phases, with every major module placed on its phase as a link, plus an always-on band for the cross-cutting AI, collaboration and pipeline tools. It is translated in every language.
+
+### Fixed
+
+- The currency dialog now warns when a project exchange rate looks entered upside down, or sits far from a typical market rate, and shows the rate the right way round, so a slip no longer quietly skews rolled-up totals. Reported in [#111](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/111).
+- BIM models imported from a spreadsheet or a bulk element file now run the same validation pass as the CAD import path, so every imported model gets a validation report instead of only the ones brought in through a converter.
+- A comment that carries a viewpoint now checks the viewpoint's entity type against the same allowlist the standalone viewpoint path uses, so an unsupported value can no longer slip in through a comment and leave an orphaned reference.
+- Quantity takeoff now reports how many PDF pages came back with no text layer, usually scanned drawings, instead of silently treating them as empty, so it is clear which pages need OCR.
+- DWG drawing previews render again on newer ezdxf builds (1.1 and later), which changed how the preview SVG is produced.
+
 ## [8.1.0] - 2026-06-14
 
 ### Added
