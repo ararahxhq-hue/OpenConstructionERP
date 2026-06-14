@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Kan deze wijziging niet toepassen.",
     "whatsnew.v820.journey.title": "Projectreis-kaart in de bovenbalk",
     "whatsnew.v820.journey.chip": "Reiskaart",
     "whatsnew.v820.journey.b1": "Een knop in de bovenbalk geeft aan tot welke levenscyclusfase het scherm behoort waarop u zich bevindt.",

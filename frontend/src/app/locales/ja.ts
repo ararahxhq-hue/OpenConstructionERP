@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "この変更を適用できませんでした。",
     "whatsnew.v820.journey.title": "トップバーにプロジェクトのジャーニーマップ",
     "whatsnew.v820.journey.chip": "ジャーニーマップ",
     "whatsnew.v820.journey.b1": "トップバーのコントロールが、表示中の画面が属するライフサイクルのフェーズを示します。",

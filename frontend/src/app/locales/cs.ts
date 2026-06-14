@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Tuto změnu se nepodařilo použít.",
     "whatsnew.v820.journey.title": "Mapa cesty projektu v horní liště",
     "whatsnew.v820.journey.chip": "Mapa cesty",
     "whatsnew.v820.journey.b1": "Ovládací prvek v horní liště pojmenovává fázi životního cyklu, do které patří obrazovka, na které se nacházíte.",

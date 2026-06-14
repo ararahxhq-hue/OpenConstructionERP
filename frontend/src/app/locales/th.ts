@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "ไม่สามารถใช้การเปลี่ยนแปลงนี้ได้",
     "whatsnew.v820.journey.title": "แผนผังเส้นทางโครงการในแถบด้านบน",
     "whatsnew.v820.journey.chip": "แผนผังเส้นทาง",
     "whatsnew.v820.journey.b1": "ตัวควบคุมในแถบด้านบนจะระบุระยะของวงจรชีวิตที่หน้าจอที่คุณกำลังใช้งานอยู่นั้นสังกัด",

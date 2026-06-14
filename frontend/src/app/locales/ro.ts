@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Această modificare nu a putut fi aplicată.",
     "whatsnew.v820.journey.title": "Harta parcursului proiectului in bara de sus",
     "whatsnew.v820.journey.chip": "Harta parcursului",
     "whatsnew.v820.journey.b1": "Un control din bara de sus indica faza din ciclul de viata careia ii apartine ecranul pe care va aflati.",

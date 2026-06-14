@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Не удалось применить это изменение.",
     "whatsnew.v820.journey.title": "Карта жизненного цикла проекта в верхней панели",
     "whatsnew.v820.journey.chip": "Карта пути",
     "whatsnew.v820.journey.b1": "Элемент в верхней панели показывает, к какой фазе жизненного цикла относится открытый экран.",

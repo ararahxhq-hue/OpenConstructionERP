@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "이 변경 사항을 적용할 수 없습니다.",
     "whatsnew.v820.journey.title": "상단 바의 프로젝트 여정 지도",
     "whatsnew.v820.journey.chip": "여정 지도",
     "whatsnew.v820.journey.b1": "상단 바의 컨트롤이 현재 보고 있는 화면이 속한 라이프사이클 단계를 표시합니다.",

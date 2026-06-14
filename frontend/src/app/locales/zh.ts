@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "无法应用此更改。",
     "whatsnew.v820.journey.title": "顶部栏中的项目旅程图",
     "whatsnew.v820.journey.chip": "旅程图",
     "whatsnew.v820.journey.b1": "顶部栏中的一个控件会标明您所在屏幕所属的生命周期阶段。",

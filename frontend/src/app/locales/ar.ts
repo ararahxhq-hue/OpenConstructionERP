@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "تعذّر تطبيق هذا التغيير.",
     "whatsnew.v820.journey.title": "خريطة مسار المشروع في الشريط العلوي",
     "whatsnew.v820.journey.chip": "خريطة المسار",
     "whatsnew.v820.journey.b1": "يحدد عنصر تحكم في الشريط العلوي مرحلة دورة الحياة التي تنتمي إليها الشاشة التي تتصفحها.",

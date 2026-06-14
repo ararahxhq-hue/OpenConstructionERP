@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "No se pudo aplicar este cambio.",
     "whatsnew.v820.journey.title": "Mapa del recorrido del proyecto en la barra superior",
     "whatsnew.v820.journey.chip": "Mapa del recorrido",
     "whatsnew.v820.journey.b1": "Un control en la barra superior indica la fase del ciclo de vida a la que pertenece la pantalla en la que te encuentras.",

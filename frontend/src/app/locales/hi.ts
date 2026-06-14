@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "यह बदलाव लागू नहीं किया जा सका.",
     "whatsnew.v820.journey.title": "टॉप बार में प्रोजेक्ट जर्नी मैप",
     "whatsnew.v820.journey.chip": "जर्नी मैप",
     "whatsnew.v820.journey.b1": "टॉप बार में एक कंट्रोल बताता है कि आप जिस स्क्रीन पर हैं वह लाइफसाइकल के किस चरण से संबंधित है।",

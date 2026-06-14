@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Tidak dapat menerapkan perubahan ini.",
     "whatsnew.v820.journey.title": "Peta perjalanan proyek di bilah atas",
     "whatsnew.v820.journey.chip": "Peta perjalanan",
     "whatsnew.v820.journey.b1": "Sebuah kontrol di bilah atas menyebutkan fase siklus hidup tempat layar yang sedang Anda buka berada.",

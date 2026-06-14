@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Tätä muutosta ei voitu ottaa käyttöön.",
     "whatsnew.v820.journey.title": "Projektin matkakartta yläpalkissa",
     "whatsnew.v820.journey.chip": "Matkakartta",
     "whatsnew.v820.journey.b1": "Yläpalkin ohjain kertoo, mihin elinkaaren vaiheeseen näkemäsi näyttö kuuluu.",

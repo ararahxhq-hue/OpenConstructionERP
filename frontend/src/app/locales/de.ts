@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Diese Änderung konnte nicht angewendet werden.",
     "whatsnew.v820.journey.title": "Projektreisekarte in der oberen Leiste",
     "whatsnew.v820.journey.chip": "Reisekarte",
     "whatsnew.v820.journey.b1": "Ein Bedienelement in der oberen Leiste benennt die Lebenszyklusphase, zu der der Bildschirm gehört, auf dem Sie sich befinden.",

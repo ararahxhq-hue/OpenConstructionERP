@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Ovu promjenu nije moguće primijeniti.",
     "whatsnew.v820.journey.title": "Mapa puta projekta u gornjoj traci",
     "whatsnew.v820.journey.chip": "Mapa puta",
     "whatsnew.v820.journey.b1": "Kontrola u gornjoj traci imenuje fazu životnog ciklusa kojoj pripada zaslon na kojem se nalazite.",

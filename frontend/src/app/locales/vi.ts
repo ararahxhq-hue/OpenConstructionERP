@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Không thể áp dụng thay đổi này.",
     "whatsnew.v820.journey.title": "Bản đồ hành trình dự án trên thanh trên cùng",
     "whatsnew.v820.journey.chip": "Bản đồ hành trình",
     "whatsnew.v820.journey.b1": "Một điều khiển trên thanh trên cùng cho biết màn hình bạn đang xem thuộc giai đoạn nào trong vòng đời.",

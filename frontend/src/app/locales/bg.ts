@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Промяната не можа да бъде приложена.",
     "whatsnew.v820.journey.title": "Карта на пътя на проекта в горната лента",
     "whatsnew.v820.journey.chip": "Карта на пътя",
     "whatsnew.v820.journey.b1": "Контрол в горната лента посочва фазата от жизнения цикъл, към която принадлежи екранът, на който се намирате.",

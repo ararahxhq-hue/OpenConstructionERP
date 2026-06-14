@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Bu değişiklik uygulanamadı.",
     "whatsnew.v820.journey.title": "Üst çubukta proje yolculuğu haritası",
     "whatsnew.v820.journey.chip": "Yolculuk haritası",
     "whatsnew.v820.journey.b1": "Üst çubuktaki bir denetim, bulunduğunuz ekranın ait olduğu yaşam döngüsü aşamasını adlandırır.",

@@ -3,6 +3,7 @@
 
 const resource = {
   "translation": {
+    "boq.copilot.apply_failed": "Det gick inte att tillämpa den här ändringen.",
     "whatsnew.v820.journey.title": "Projektresekarta i den övre listen",
     "whatsnew.v820.journey.chip": "Resekarta",
     "whatsnew.v820.journey.b1": "En kontroll i den övre listen anger vilken livscykelfas skärmen du befinner dig på tillhör.",
