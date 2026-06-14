@@ -2956,6 +2956,8 @@ const resource = {
     "nav.quantity_rules": "Quantity Rules",
     "nav.assets": "Building Assets (FM)",
     "bim.title": "BIM Viewer",
+    "bim.webgl_unavailable_title": "3D view unavailable",
+    "bim.webgl_unavailable_body": "This 3D model viewer needs WebGL, which is not available in this browser or environment. Enable hardware acceleration or try a different browser to view the model.",
     "bim.tab_check": "Check",
     "bim.tab_links": "Links",
     "bim.boq_progress_as_of": "as of {{date}}",
