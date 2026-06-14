@@ -72,6 +72,64 @@ implementation is our own.
   `POSTGRES_PASSWORD` and `JWT_SECRET` interpolations in the quickstart Docker Compose file
   needed quoting so the YAML parses before the fail-fast checks run
   ([#227](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/227)).
+- **expalex1507** ([@expalex1507](https://github.com/expalex1507)): reported that the Docker
+  quickstart failed across the Dockerfile, pyproject, the first migration and some missing
+  dependencies ([#26](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/26)).
+- **consigcody94** ([@consigcody94](https://github.com/consigcody94)): flagged that a
+  hardcoded JWT secret default could let tokens be forged in production
+  ([#27](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/27)).
+- **migfrazao2003** ([@migfrazao2003](https://github.com/migfrazao2003)): reported that
+  `make quickstart` failed on frontend TypeScript build errors
+  ([#42](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/42)) and that
+  the BIM viewer drew geometry that did not match the original IFC model
+  ([#53](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/53)).
+- **maher00746** ([@maher00746](https://github.com/maher00746)): asked about pricing data
+  sources ([#44](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/44))
+  and proposed real-time collaboration
+  ([#51](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/51)).
+- **rrvizuete** ([@rrvizuete](https://github.com/rrvizuete)): reported an error rendering an
+  IFC file exported from Civil software
+  ([#52](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/52)).
+- **candcconsulting** ([@candcconsulting](https://github.com/candcconsulting)): asked how to
+  enable a CWICR-style catalog for a UAE sample
+  ([#79](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/79)).
+- **rashidengg-arch** ([@rashidengg-arch](https://github.com/rashidengg-arch)): an early bug
+  report during testing
+  ([#87](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/87)).
+- **hungdd84** ([@hungdd84](https://github.com/hungdd84)): reported that setting a Gemini API
+  key failed because the model id was out of date
+  ([#103](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/103)).
+- **mkozjak** ([@mkozjak](https://github.com/mkozjak)): reported that the DWG takeoff upload
+  button did not work
+  ([#110](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/110)).
+- **ChristianSantoro** ([@ChristianSantoro](https://github.com/ChristianSantoro)): reported
+  that IFC and Revit files would not open in the 3D viewer
+  ([#113](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/113),
+  [#115](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/115)).
+- **online14230** ([@online14230](https://github.com/online14230)): proposed regional data
+  support ([#116](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/116)).
+- **DevpratikDevelopers** ([@DevpratikDevelopers](https://github.com/DevpratikDevelopers)):
+  reported a `p.data.filter is not a function` crash
+  ([#122](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/122)).
+- **hanisedawy** ([@hanisedawy](https://github.com/hanisedawy)): sent in-app bug reports that
+  helped surface viewer and upload issues
+  ([#123](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/123),
+  [#124](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/124)).
+- **sergeilapp** ([@sergeilapp](https://github.com/sergeilapp)): proposed an incoming webhook
+  leads module ([#147](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/147)).
+- **jyloveqq** ([@jyloveqq](https://github.com/jyloveqq)): reported that the app could not
+  install on their setup
+  ([#154](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/154)), that
+  Match Elements showed no catalogs loaded
+  ([#162](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/162)), that the
+  indexed vector count did not change after an import
+  ([#170](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/170)) and that
+  importing a cost database could crash the app
+  ([#171](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/171)).
+- **JORBDAAG** ([@JORBDAAG](https://github.com/JORBDAAG)): reported BIM viewer problems through
+  the in-app reporter
+  ([#167](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/167),
+  [#168](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/168)).
 
 See the full list of everyone who has contributed:
 
