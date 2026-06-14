@@ -896,6 +896,7 @@ def _rows_to_elements(
 
 @router.post("/upload/", status_code=201)
 async def upload_bim_data(
+    background_tasks: BackgroundTasks,
     project_id: str = Query(..., description="Project UUID"),
     name: str = Query(default="Imported Model", max_length=255),
     discipline: str = Query(default="architecture", max_length=50),
@@ -1067,6 +1068,13 @@ async def upload_bim_data(
         len(storeys),
         disciplines_found,
     )
+
+    # Validation is part of the canonical import pipeline (Import -> VALIDATE
+    # -> Store). The CAD converter path already runs it; the CSV/Excel drop
+    # must too. Schedule the advisory pass in the background so a slow rule run
+    # never delays the upload response.
+    if created_elements:
+        background_tasks.add_task(_run_import_validation, model_id)
 
     return {
         "model_id": str(model_id),
@@ -3568,6 +3576,7 @@ async def list_elements(
 async def bulk_import_elements(
     model_id: uuid.UUID,
     data: BIMElementBulkImport,
+    background_tasks: BackgroundTasks,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("bim.create")),
     service: BIMHubService = Depends(_get_service),
@@ -3575,6 +3584,10 @@ async def bulk_import_elements(
     """Bulk import elements for a model (replaces existing)."""
     await _verify_model_access(service, model_id, user_id)
     elements = await service.bulk_import_elements(model_id, data.elements)
+    # Run the advisory validation pass (canonical import pipeline) after the
+    # bulk replace, mirroring the CAD converter path. Best-effort, never blocks.
+    if elements:
+        background_tasks.add_task(_run_import_validation, model_id)
     return BIMElementListResponse(
         items=[BIMElementResponse.model_validate(e) for e in elements],
         total=len(elements),
