@@ -7,6 +7,14 @@ project, and authorship and copyright remain with DataDrivenConstruction.
 
 Thank you to everyone who has contributed.
 
+Almost everyone listed here helped by reporting a bug, asking a question or proposing an
+idea, not by shipping code into the project. When a fix does arrive as a patch, we
+normally reimplement it ourselves rather than merging the change as-is. That keeps one
+reviewed source of truth for a codebase that many companies run in production, and it
+avoids taking in code we have not written ourselves, which is the safer path on security.
+So the credit below is for the report or the idea that led to a fix, and the
+implementation is our own.
+
 - **skolodi** ([@skolodi](https://github.com/skolodi)): issue reports and field feedback
   on the BOQ AI assistant, and reported that a single budget could mix currencies and that
   an exchange rate could be entered the wrong way round
