@@ -8,7 +8,9 @@ project, and authorship and copyright remain with DataDrivenConstruction.
 Thank you to everyone who has contributed.
 
 - **skolodi** ([@skolodi](https://github.com/skolodi)): issue reports and field feedback
-  on the BOQ AI assistant.
+  on the BOQ AI assistant, and reported that a single budget could mix currencies and that
+  an exchange rate could be entered the wrong way round
+  ([#111](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/111)).
 - **Mourtadha Diop** ([@Mourdi59](https://github.com/Mourdi59)): fixed three BIM viewer
   bugs ([#159](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/159)),
   COLLADA namespace-prefix serialisation in `ifc_processor`, defence-in-depth regex
@@ -52,7 +54,12 @@ Thank you to everyone who has contributed.
   ([#201](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/201)).
 - **alikhalilx** ([@alikhalilx](https://github.com/alikhalilx)): reported that ERP Chat
   rendered Markdown tables as raw pipe text and pointed at the hand-rolled chat renderers
-  ([#224](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/224)).
+  ([#224](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/224)), that
+  the sidebar greyed out company-wide modules such as CRM and subcontractors even when they
+  already held data
+  ([#228](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/228)), and
+  that the pinned-item tooltip showed a raw placeholder instead of the module name
+  ([#229](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/229)).
 - **arvildev** ([@arvildev](https://github.com/arvildev)): pointed out that the required
   `POSTGRES_PASSWORD` and `JWT_SECRET` interpolations in the quickstart Docker Compose file
   needed quoting so the YAML parses before the fail-fast checks run
