@@ -155,7 +155,7 @@ export interface Markup {
   id: string;
   boq_id: string;
   name: string;
-  markup_type: 'percentage' | 'fixed' | 'per_unit';
+  markup_type: 'percentage' | 'fixed';
   category: 'overhead' | 'profit' | 'tax' | 'contingency' | 'insurance' | 'bond' | 'other';
   percentage: number;
   fixed_amount: number;

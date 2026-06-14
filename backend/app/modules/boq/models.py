@@ -198,7 +198,7 @@ class BOQMarkup(Base):
     Columns:
         boq_id - owning BOQ
         name - human-readable label, e.g. "Site Overhead (BGK)"
-        markup_type - "percentage" | "fixed" | "per_unit"
+        markup_type - "percentage" | "fixed"
         category - semantic grouping: overhead, profit, tax, contingency, …
         percentage - stored as string for SQLite compatibility (e.g. "8.0")
         fixed_amount - used when markup_type is "fixed"
