@@ -14,7 +14,6 @@ Module lifecycle:
 import contextlib
 import importlib
 import logging
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -188,16 +187,14 @@ class ModuleLoader:
         # Load router if exists
         try:
             router_module_name = f"{package_path}.router"
-            # Always import the router from a clean module object. A router left
-            # in sys.modules by an earlier import in the same process (another
-            # test, or a prior hot-reload after new files were added) must be
-            # dropped and re-imported, NOT importlib.reload()-ed: reload
-            # re-executes the module in its existing namespace, which under
-            # accumulated process state can yield a router that mounts zero
-            # routes. Pop + fresh import gives a deterministic, fully populated
-            # router every time and still picks up newly added files.
-            if router_module_name in sys.modules:
-                del sys.modules[router_module_name]
+            # Plain import: reuse the already-imported router module if present,
+            # import it fresh otherwise. Each module is loaded exactly once at
+            # startup, so this is all production ever needs. We deliberately do
+            # NOT importlib.reload() or pop-and-reimport the router here. Doing
+            # so when the same process has already loaded the module once (which
+            # happens across the test suite) was observed to mount a router with
+            # zero routes, which 404s every endpoint; a plain cached import
+            # always returns the fully populated router.
             router_mod = importlib.import_module(router_module_name)
             router = getattr(router_mod, "router", None)
             if router:
