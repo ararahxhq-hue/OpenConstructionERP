@@ -42,10 +42,10 @@ export function generateCSV(
       escapeCSV(pos.ordinal),
       escapeCSV(pos.description),
       escapeCSV(pos.unit),
-      pos.quantity.toFixed(3),
+      Number(pos.quantity).toFixed(3),
     ];
     if (includePrices) {
-      row.push(pos.unitRate.toFixed(2), pos.total.toFixed(2));
+      row.push(Number(pos.unitRate).toFixed(2), Number(pos.total).toFixed(2));
     }
     if (template.classification && pos.classification) {
       const code = Object.values(pos.classification)[0] ?? '';
