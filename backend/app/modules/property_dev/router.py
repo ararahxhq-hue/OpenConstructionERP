@@ -3901,7 +3901,10 @@ async def update_escrow_transaction(
         raise HTTPException(status_code=404, detail=translate("errors.escrow_not_found", locale=get_locale()))
     fields = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
     if "metadata" in fields:
-        fields["metadata_"] = fields.pop("metadata")
+        _incoming = fields.pop("metadata")
+        fields["metadata_"] = (
+            {**(getattr(obj, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+        )
     await service.escrow_transactions.update_fields(tx_id, **fields)
     refreshed = await service.escrow_transactions.get_by_id(tx_id)
     return EscrowTransactionResponse.model_validate(refreshed)
