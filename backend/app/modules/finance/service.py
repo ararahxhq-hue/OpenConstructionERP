@@ -712,7 +712,7 @@ class FinanceService:
                 # in metadata by the procurement gr.confirmed handler). Without
                 # this, paying any invoice overwrites actual with only the
                 # invoice-sourced total and silently wipes procurement actuals.
-                gr_actual = _safe_decimal((budget.metadata_ or {}).get("actual_from_receipts", "0"))
+                gr_actual = _safe_decimal((getattr(budget, "metadata_", None) or {}).get("actual_from_receipts", "0"))
                 budget.actual = bucketed.get(key, Decimal("0")) + gr_actual
 
             logger.info(

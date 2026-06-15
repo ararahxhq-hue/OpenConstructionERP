@@ -211,7 +211,7 @@ async def _on_gr_confirmed(event: Event) -> None:
             # row, silently wiping every procurement actual. Recording the GR
             # portion here lets that recompute add it back instead of losing it.
             # Reassign a fresh dict so SQLAlchemy detects the JSON change.
-            md = dict(budget.metadata_ or {})
+            md = dict(getattr(budget, "metadata_", None) or {})
             md["actual_from_receipts"] = str(_to_decimal(md.get("actual_from_receipts")) + amount)
             budget.metadata_ = md
             budget.actual = current_actual + amount
