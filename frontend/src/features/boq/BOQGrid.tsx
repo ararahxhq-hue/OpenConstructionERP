@@ -1430,7 +1430,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
     let resTotal = 0;
     for (let i = 0; i < resources.length; i++) {
       const r = resources[i]!;
-      const rTotal = r.total ?? r.quantity * r.unit_rate;
+      const rTotal = Number(r.total ?? r.quantity * r.unit_rate) || 0;
       // Issue #111 (skolodi follow-up) — the per-position resource
       // subtotal (``_positionResourceTotal``, rendered on the
       // "Add resource" row) is one of the TWO places the contributor

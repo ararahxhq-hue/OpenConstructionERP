@@ -73,7 +73,7 @@ export function exportToCSV(
     blob,
     filename: filename.endsWith('.csv') ? filename : `${filename}.csv`,
     positionCount: positions.filter((p) => !p.isSection).length,
-    totalValue: positions.reduce((sum, p) => sum + (p.isSection ? 0 : p.total), 0),
+    totalValue: positions.reduce((sum, p) => sum + (p.isSection ? 0 : Number(p.total) || 0), 0),
   };
 }
 
