@@ -2,8 +2,9 @@
  * AboutPage — Application info, author, license, consulting services.
  */
 
+import { useEffect } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Mail, Shield, BookOpen, Users, Award,
   Briefcase, Globe, ExternalLink,
@@ -19,6 +20,23 @@ import { Changelog, getRecentReleases } from './Changelog';
 export function AboutPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { hash, key } = useLocation();
+
+  // When arriving via /about#changelog (from the header News button or the
+  // sidebar What's-new card) scroll the changelog section into view. We key the
+  // effect on the router location key as well as the hash: react-router mints a
+  // fresh key on every navigation, so clicking "View in-app changelog" again
+  // while already at /about#changelog (same hash value, after the user scrolled
+  // away) still re-fires the scroll instead of silently doing nothing.
+  useEffect(() => {
+    if (hash !== '#changelog') return;
+    // Defer to the next frame so the changelog section is laid out first.
+    const frame = window.requestAnimationFrame(() => {
+      const changelog = document.querySelector('[data-changelog-anchor]');
+      if (changelog) changelog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash, key]);
 
   return (
     <div className="space-y-5 animate-fade-in">

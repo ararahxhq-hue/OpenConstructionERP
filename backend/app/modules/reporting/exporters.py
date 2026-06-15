@@ -157,6 +157,13 @@ def _looks_numeric(text: str) -> bool:
     """
     if not text:
         return False
+    # An all-digit identifier ("007", "012", a zero-padded ordinal or cost
+    # code) must stay text in the spreadsheet: coercing it to a number drops
+    # the leading zeros and corrupts the value. A genuine number never carries
+    # a significant leading zero (only "0" itself or "0.x").
+    s = text[1:] if text[:1] in "+-" else text
+    if len(s) > 1 and s[0] == "0" and s[1].isdigit():
+        return False
     try:
         d = Decimal(text)
     except (InvalidOperation, ValueError):
@@ -713,7 +720,13 @@ def _safe_filename(title: str) -> str:
     a ``Content-Disposition: attachment; filename="..."`` header. Falls back
     to ``report`` when the title reduces to nothing.
     """
-    base = (title or "").encode("ascii", errors="replace").decode("ascii").replace('"', "'").strip()
+    base = (title or "").encode("ascii", errors="replace").decode("ascii").replace('"', "'")
+    # Strip control characters before anything else. CR/LF/tab are ASCII, so
+    # they survive the round-trip above and would otherwise land verbatim in the
+    # ``Content-Disposition: attachment; filename="..."`` header - a CR/LF there
+    # is HTTP header injection (response splitting) and also breaks the download
+    # in most clients. Keep only printable ASCII (0x20-0x7e).
+    base = "".join(ch for ch in base if " " <= ch <= "~").strip()
     # Collapse path separators that would confuse some download clients.
     base = base.replace("/", "-").replace("\\", "-")
     return base or "report"

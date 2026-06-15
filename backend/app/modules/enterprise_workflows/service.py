@@ -249,7 +249,12 @@ class WorkflowService:
         if "steps" in fields:
             _validate_steps(fields["steps"])
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            _incoming = fields.pop("metadata")
+            fields["metadata_"] = (
+                {**(getattr(workflow, "metadata_", None) or {}), **_incoming}
+                if isinstance(_incoming, dict)
+                else _incoming
+            )
 
         if fields:
             await self.workflows.update(workflow_id, **fields)

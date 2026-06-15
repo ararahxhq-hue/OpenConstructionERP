@@ -5858,11 +5858,16 @@ async def _persist_imported_markups(
     totals engine.
 
     Mapping (matches ``BOQMarkup`` / ``MarkupCreate`` semantics):
-      * a parseable positive ``percentage`` -> percentage markup applied on
-        the subtotal (GAEB Zuschlag compounds on direct cost + preceding
-        markups - the DIN default ``apply_to='subtotal'``); clamped to the
-        schema's 0..100 range.
-      * otherwise a parseable positive amount (``it``) -> fixed markup.
+      * a parseable positive amount (``it``, the GAEB authoritative resulting
+        surcharge) -> FIXED markup carrying that exact amount. GAEB computes
+        ``<IT>`` against ITMarkup (the partial base = only the surcharged
+        positions), so re-deriving it from the percentage against the full
+        BOQ direct cost would inflate the total; the engine adds a fixed
+        markup verbatim, so the LV reconciles to its declared grand total.
+        The source percentage and partial base are kept in metadata.
+      * otherwise a parseable positive ``percentage`` -> percentage markup on
+        the subtotal (the unpriced X83 fallback where the file carries a
+        Zuschlag percent but no ``<IT>``); clamped to the schema's 0..100 range.
       * a markup that maps to neither (no usable percentage or amount) is
         skipped with a warning rather than persisted as a zero no-op.
 
@@ -5897,10 +5902,34 @@ async def _persist_imported_markups(
         pct = _dec_or_none(mk.get("percentage"))
         amount = _dec_or_none(mk.get("it"))
         try:
-            if pct is not None and pct > 0:
-                # Clamp into the schema's [0, 100] band (a malformed file can
-                # carry an out-of-range surcharge); keep the IT amount in
-                # metadata so the original figure is never lost.
+            if amount is not None and amount > 0:
+                # GAEB authority: the <IT> is the exact resulting surcharge
+                # amount, computed by the source against ITMarkup (the partial
+                # base = sum of only the surcharged positions), NOT against the
+                # full BOQ direct cost. Persist it as a FIXED markup so the
+                # totals engine adds it verbatim and the LV reconciles to its
+                # declared grand total. Re-deriving it from the percentage
+                # against the full direct cost would inflate the total. The
+                # original percentage and partial base are kept in metadata.
+                data = MarkupCreate(
+                    name=name,
+                    markup_type="fixed",
+                    category="overhead",
+                    fixed_amount=amount,
+                    apply_to="subtotal",
+                    metadata={
+                        "source": "gaeb_import",
+                        "gaeb_ordinal": ordinal,
+                        "gaeb_it": str(amount),
+                        "gaeb_it_markup_base": str(mk.get("it_markup_base") or ""),
+                        "gaeb_markup_percentage": str(pct) if pct is not None else "",
+                    },
+                )
+            elif pct is not None and pct > 0:
+                # Unpriced fallback (e.g. an X83 with a percentage but no <IT>):
+                # clamp into the schema's [0, 100] band (a malformed file can
+                # carry an out-of-range surcharge) and let the engine derive the
+                # amount on the subtotal.
                 pct_clamped = min(max(pct, Decimal("0")), Decimal("100"))
                 data = MarkupCreate(
                     name=name,
@@ -5914,19 +5943,6 @@ async def _persist_imported_markups(
                         "gaeb_it": str(amount) if amount is not None else "",
                         "gaeb_it_markup_base": str(mk.get("it_markup_base") or ""),
                         "gaeb_markup_percentage": str(pct),
-                    },
-                )
-            elif amount is not None and amount > 0:
-                data = MarkupCreate(
-                    name=name,
-                    markup_type="fixed",
-                    category="overhead",
-                    fixed_amount=amount,
-                    apply_to="subtotal",
-                    metadata={
-                        "source": "gaeb_import",
-                        "gaeb_ordinal": ordinal,
-                        "gaeb_it_markup_base": str(mk.get("it_markup_base") or ""),
                     },
                 )
             else:

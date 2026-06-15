@@ -419,6 +419,23 @@ async def update_bid(
     could silently rewrite competing bids.
     """
     await _verify_bid_access(service, session, bid_id, user_id, payload)
+
+    # Accepting or rejecting a bid is an award decision and must require
+    # tendering.award (the same gate apply-winner uses). The generic
+    # tendering.bid.update permission must not let an editor flip a bid to
+    # accepted/rejected and bypass that gate. Mirrors RequirePermission: admin
+    # bypass, explicit token permission, then live role-registry fallback.
+    if (data.status or "").lower() in {"accepted", "rejected"}:
+        from app.core.permissions import permission_registry as _reg
+
+        role = payload.get("role", "")
+        perms = payload.get("permissions", []) or []
+        if role != "admin" and "tendering.award" not in perms and not _reg.role_has_permission(role, "tendering.award"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Accepting or rejecting a bid requires the tendering.award permission.",
+            )
+
     try:
         bid = await service.update_bid(bid_id, data)
         return _bid_to_response(bid)
