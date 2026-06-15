@@ -1230,6 +1230,20 @@ class FinanceService:
 
         invoice = await self.get_invoice(invoice_id)  # 404 check
 
+        # FX never-blend: the withholding math below runs entirely in the
+        # invoice currency (gross derives from the invoice total). Stamping the
+        # payment with a different currency would silently relabel an
+        # invoice-currency amount as another currency, so reject the mismatch
+        # rather than mis-post it. Settle in the invoice currency.
+        if data.currency_code and invoice.currency_code and data.currency_code != invoice.currency_code:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Payment currency {data.currency_code} does not match invoice "
+                    f"currency {invoice.currency_code}; settle in the invoice currency."
+                ),
+            )
+
         inv_total = _safe_decimal(invoice.amount_total)
         inv_retention = _safe_decimal(invoice.retention_amount)
 

@@ -147,6 +147,12 @@ class ComplianceDSLService:
         )
         try:
             await self.repo.add(row)
+            # Commit before touching the in-memory registry. repo.add only
+            # flushes; the request-level commit would otherwise land AFTER the
+            # registration below, so a rolled-back save would leave the engine
+            # running a rule that was never persisted (active until the next
+            # restart). Committing here makes registration strictly post-commit.
+            await self.repo.session.commit()
         except IntegrityError as exc:
             logger.info(
                 "Race on compliance DSL rule_id %s (treated as duplicate)",
@@ -157,10 +163,10 @@ class ComplianceDSLService:
                 details={"rule_id": definition.rule_id},
             ) from exc
 
-        # Register with the engine so subsequent validation runs pick
-        # the rule up. Failures are logged but don't abort the save -
-        # the row is still on disk and the next startup will re-attempt
-        # registration via :func:`register_active_rules`.
+        # Register with the engine so subsequent validation runs pick the rule
+        # up. The row is committed above, so a registration failure here is
+        # logged and safely re-attempted at the next startup via
+        # :func:`register_active_rules` - it never leaves an unpersisted rule live.
         if row.is_active:
             try:
                 _register_compiled(definition, args.tenant_id)

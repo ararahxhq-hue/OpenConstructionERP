@@ -2758,17 +2758,33 @@ class MatchElementsService:
         spec: schemas.BulkConfirmRequest,
         confirmed_by: uuid.UUID | None,
     ) -> int:
-        stmt = select(MatchGroup).where(
+        # Decide which groups to confirm with a lightweight scan (id +
+        # confidence only). Below-threshold groups are skipped in the loop
+        # below; capping the heavy fetch with a static element_count ordering
+        # let high-element-count below-threshold groups permanently occupy the
+        # batch and starve confirmable groups ranked past the cap. confidence is
+        # a String column, so the numeric threshold is applied here in Python.
+        # Then we load only the chosen rows (bounded by the batch limit) for the
+        # confirm writes, preserving the per-call cap that protects the request
+        # thread on a 10k-group session (the frontend repeats to progress).
+        pick_stmt = select(MatchGroup.id, MatchGroup.confidence).where(
             MatchGroup.session_id == session_id,
             MatchGroup.status == "suggested",
         )
         if spec.group_keys:
-            stmt = stmt.where(MatchGroup.group_key.in_(spec.group_keys))
-        # Cap the per-call confirm batch so a 10k-group session doesn't
-        # block the request thread. The frontend can repeat the call to
-        # progress through the full set; status counters update live.
-        stmt = stmt.order_by(MatchGroup.element_count.desc()).limit(_BULK_BATCH_LIMIT)
-        rows = (await db.execute(stmt)).scalars().all()
+            pick_stmt = pick_stmt.where(MatchGroup.group_key.in_(spec.group_keys))
+        pick_stmt = pick_stmt.order_by(MatchGroup.element_count.desc())
+
+        chosen_ids: list[uuid.UUID] = []
+        for gid, gconf in (await db.execute(pick_stmt)).all():
+            if _to_decimal(gconf, 0.0) >= spec.threshold:
+                chosen_ids.append(gid)
+                if len(chosen_ids) >= _BULK_BATCH_LIMIT:
+                    break
+        if not chosen_ids:
+            await db.flush()
+            return 0
+        rows = (await db.execute(select(MatchGroup).where(MatchGroup.id.in_(chosen_ids)))).scalars().all()
 
         n = 0
         for r in rows:

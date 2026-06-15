@@ -157,6 +157,13 @@ def _looks_numeric(text: str) -> bool:
     """
     if not text:
         return False
+    # An all-digit identifier ("007", "012", a zero-padded ordinal or cost
+    # code) must stay text in the spreadsheet: coercing it to a number drops
+    # the leading zeros and corrupts the value. A genuine number never carries
+    # a significant leading zero (only "0" itself or "0.x").
+    s = text[1:] if text[:1] in "+-" else text
+    if len(s) > 1 and s[0] == "0" and s[1].isdigit():
+        return False
     try:
         d = Decimal(text)
     except (InvalidOperation, ValueError):
