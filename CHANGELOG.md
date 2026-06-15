@@ -5,6 +5,21 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.3.0] - 2026-06-15
+
+### Added
+
+- A South Africa construction pack, the first in our African coverage. It is pre-configured for South African work with SANS 1200 civil and ASAQS building measurement, CIDB contractor grading 1 to 9, the PPPFA 80/20 and 90/10 preferential procurement scoring, the National Treasury infrastructure delivery and procurement stages, the nine provinces with editable location factors, and the rand with 15 percent VAT. The Johannesburg regional cost data is available and downloads on demand.
+
+### Changed
+
+- The most recently added feature screens are now translated across all 26 other languages, so they read in your own language instead of falling back to English.
+
+### Fixed
+
+- The app starts faster on a fresh install. Search index initialisation now runs in the background instead of holding up the first screen.
+- The BOQ templates page follows the project chosen in the top bar, so switching project updates it like the rest of the app.
+
 ## [8.2.2] - 2026-06-15
 
 ### Fixed
