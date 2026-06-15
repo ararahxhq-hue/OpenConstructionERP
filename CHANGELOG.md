@@ -5,6 +5,22 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.2.1] - 2026-06-15
+
+### Fixed
+
+- Editing one part of a record no longer clears the other details saved on it. Across many modules a partial edit used to replace the whole stored details field, so anything the form did not send back was lost. Change orders, contracts, the cost model, procurement, bid packages, meetings, correspondence, risk, punch lists, carbon, closeout, schedules, tasks, resources, documents, transmittals, markups, workflows, the BIM hub, integrations, saved views, field service, property development, the common data environment, compliance documents, field reports, requirements, change management and RFQs now merge an edit into what is already stored.
+- Paying a supplier invoice now updates the budget actuals correctly when part of the spend was already booked from a goods receipt, instead of dropping the received amount.
+- Cost breakdowns convert every line into the project base currency before adding them up, so a project that mixes currencies shows a correct total.
+- Reversing a ledger entry writes back every leg of the original posting, not just the first two.
+- A report built from a record title can no longer carry hidden control characters into the download file name, and number-like codes that start with a zero keep that zero in the Excel export.
+- The password reset email now states the same fifteen minute validity as the link it carries.
+
+### Security
+
+- Several read and edit endpoints now confirm the account can reach the project a record belongs to before returning or changing it, closing cross-project access gaps in validation, finance, the cost catalogue and the compliance document store.
+- High-value variation orders, awarded bids and permit activation now require their own permission, so a lower role can no longer push a change past the threshold the rest of the workflow already guards.
+
 ## [8.2.0] - 2026-06-14
 
 ### Added
