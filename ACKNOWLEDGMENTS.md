@@ -29,3 +29,4 @@ while making sure community input is recognized.
 | [rrvizuete](https://github.com/rrvizuete) | [#52](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/52) |
 | [Thiemo Ferreira Torres](https://github.com/thiemotorres) | [#48](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/48) |
 | [Braedon Saunders](https://github.com/braedonsaunders) | [#107](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/107) |
+| [BG](https://github.com/gbatkhuyag) | [#125](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/125) |
