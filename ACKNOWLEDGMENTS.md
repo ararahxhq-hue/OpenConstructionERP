@@ -32,3 +32,4 @@ while making sure community input is recognized.
 | [BG](https://github.com/gbatkhuyag) | [#125](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/125) |
 | [skolodi](https://github.com/skolodi) | [#157](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/157) |
 | [Mourdi59](https://github.com/Mourdi59) | [#155](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/155) |
+| [sergeilapp](https://github.com/sergeilapp) | [#147](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/147) |
