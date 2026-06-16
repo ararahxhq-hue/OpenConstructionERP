@@ -11,3 +11,4 @@ while making sure community input is recognized.
 | Contributor | Reference |
 | --- | --- |
 | [AliK](https://github.com/alikhalilx) | [#229](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/229) |
+| [C&C Consulting](https://github.com/candcconsulting) | [#79](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/79) |
