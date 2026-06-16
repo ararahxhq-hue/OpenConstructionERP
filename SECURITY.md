@@ -106,7 +106,7 @@ If you deploy OpenConstructionERP on your own infrastructure:
 - [ ] Review `.env` file permissions - readable only by the app
       user
 - [ ] If using AI features, protect your provider API keys
-      (OpenAI / Anthropic / Google / Mistral / Groq / DeepSeek) —
+      (OpenAI / Anthropic / Google / Mistral / Groq / DeepSeek) -
       never commit them to git
 
 ## Security Features
