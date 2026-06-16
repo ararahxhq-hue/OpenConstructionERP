@@ -26,7 +26,7 @@
   <!-- Favicon + manifest -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0284c7" />
+  <meta name="theme-color" content="#2d5e8e" />
 
   <link rel="alternate" hreflang="x-default" href="https://openconstructionerp.com/partners.html" />
   <link rel="alternate" hreflang="en" href="https://openconstructionerp.com/partners.html?lang=en" />
@@ -67,9 +67,9 @@
     /* THEME TOKENS - same family as breeze (sky blue palette)          */
     /* ================================================================ */
     :root {
-      --bg-0: #f7fbff;
-      --bg-1: #edf5ff;
-      --bg-2: #e7f2fd;
+      --bg-0: #f1f2f3;
+      --bg-1: #ebeced;
+      --bg-2: #e4e5e7;
       --ink-0: #0b1220;
       --ink-1: #1e293b;
       --ink-2: #475569;
@@ -77,17 +77,17 @@
       --line-0: rgba(15, 23, 42, 0.05);
       --line-1: rgba(15, 23, 42, 0.09);
       --line-2: rgba(15, 23, 42, 0.14);
-      --accent: #0284c7;
-      --accent-2: #0ea5e9;
-      --accent-3: #2563eb;
-      --accent-4: #6366f1;
-      --accent-5: #06b6d4;
+      --accent: #2d5e8e;
+      --accent-2: #3c6fa0;
+      --accent-3: #244c74;
+      --accent-4: #2d5e8e;
+      --accent-5: #3c6fa0;
 
       /* Construction-Stack floor accents */
       --floor-foundation: #94a3b8;  /* slate-400 - open core */
-      --floor-1: #06b6d4;            /* cyan-500 - localisation */
-      --floor-2: #0ea5e9;            /* sky-500 - commercial */
-      --floor-3: #2563eb;            /* blue-600 - services */
+      --floor-1: #3c6fa0;            /* cyan-500 - localisation */
+      --floor-2: #3c6fa0;            /* sky-500 - commercial */
+      --floor-3: #244c74;            /* blue-600 - services */
       --floor-roof: #f59e0b;         /* amber-500 - success */
     }
     [data-theme="dark"] {
@@ -101,14 +101,14 @@
       --line-0: rgba(255, 255, 255, 0.06);
       --line-1: rgba(255, 255, 255, 0.10);
       --line-2: rgba(255, 255, 255, 0.16);
-      --accent: #38bdf8;
-      --accent-2: #7dd3fc;
-      --accent-3: #60a5fa;
+      --accent: #6ba2d8;
+      --accent-2: #84b3e2;
+      --accent-3: #5a90c8;
 
       --floor-foundation: #64748b;
-      --floor-1: #22d3ee;
-      --floor-2: #38bdf8;
-      --floor-3: #60a5fa;
+      --floor-1: #84b3e2;
+      --floor-2: #6ba2d8;
+      --floor-3: #5a90c8;
       --floor-roof: #fbbf24;
     }
 
@@ -3633,7 +3633,7 @@
   // ?submitted=1 toast after the formsubmit redirect.
   if (location.search.includes('submitted=1')) {
     const t = document.createElement('div');
-    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#0284c7,#2563eb);color:#fff;padding:14px 22px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:0 18px 36px -12px rgba(2,90,160,0.6);z-index:9999';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#2d5e8e,#244c74);color:#fff;padding:14px 22px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:0 18px 36px -12px rgba(2,90,160,0.6);z-index:9999';
     t.textContent = '✓ Application received - we will be in touch shortly.';
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 6000);
