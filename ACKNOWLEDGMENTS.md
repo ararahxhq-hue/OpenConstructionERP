@@ -27,3 +27,4 @@ while making sure community input is recognized.
 | [online14230](https://github.com/online14230) | [#116](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/116) |
 | [rashidengg-arch](https://github.com/rashidengg-arch) | [#87](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/87) |
 | [rrvizuete](https://github.com/rrvizuete) | [#52](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/52) |
+| [Thiemo Ferreira Torres](https://github.com/thiemotorres) | [#48](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/48) |
