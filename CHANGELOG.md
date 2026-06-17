@@ -5,6 +5,17 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.4.0] - 2026-06-17
+
+### Changed
+
+- The public hosted demo keeps its bundled cost databases read-only. Each regional catalogue is several hundred megabytes and the demo runs on a small shared server, so installing a catalogue there is now disabled with a clear note that points to self-hosting. Browsing every catalogue the full product ships is unchanged, and nothing is restricted on your own machine or server.
+
+### Fixed
+
+- PDF takeoff measurements are now scoped to the project and the specific document they were drawn on, rather than keyed by the document's file name. Two files that share a name, in the same project or across projects, no longer surface each other's measurements. Reported in [#238](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/238).
+- The resources under a bill-of-quantities position now expand on the first click of the chevron instead of needing a second click, the way every other expander in the grid already did.
+
 ## [8.3.3] - 2026-06-15
 
 ### Fixed
