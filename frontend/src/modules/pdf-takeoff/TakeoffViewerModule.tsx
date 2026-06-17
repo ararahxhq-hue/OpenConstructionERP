@@ -11,6 +11,10 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  MoveHorizontal,
+  Focus,
+  Hand,
+  Spline,
   ChevronLeft,
   ChevronRight,
   MousePointer2,
@@ -103,6 +107,17 @@ import {
   shortcutToTool,
   shouldHandleShortcut,
 } from '../../features/takeoff/lib/takeoff-shortcuts';
+import {
+  clampZoom,
+  computeFitZoom,
+  computeZoomToBox,
+  boundingBoxOfPoints,
+  zoomAtCursorScroll,
+  wheelZoomStep,
+  orthoSnap,
+  computeDrawReadout,
+  type DrawReadout,
+} from '../../features/takeoff/lib/takeoff-viewport';
 import {
   computeGroupSummaries,
   formatGroupTotal,
@@ -395,6 +410,42 @@ export default function TakeoffViewerModule({
 
   // Touch state for pinch-to-zoom
   const touchStateRef = useRef<{ initialDistance: number; initialZoom: number } | null>(null);
+
+  /* ── Viewport interaction (fit / ortho / pan / readout / hover) ───────
+   * All the pure geometry lives in features/takeoff/lib/takeoff-viewport.ts;
+   * this state only drives the React surface (toolbar toggles, the live HUD
+   * and the hover tooltip). Zoom-at-cursor + touch pinch already exist and
+   * are left intact. */
+
+  /** Ortho lock toggle (toolbar). When on - or while Shift is held - a new
+   *  segment is constrained to 0 / 45 / 90 degrees from its anchor. The
+   *  draw + render paths read `orthoLock || shiftHeldRef.current`. */
+  const [orthoLock, setOrthoLock] = useState(false);
+  /** True while Shift is physically held, so a momentary press locks the
+   *  segment without flipping the persistent toggle (CAD-standard). */
+  const shiftHeldRef = useRef(false);
+
+  /** Space-drag / middle-mouse pan transient. Lives in a ref so the
+   *  mid-pan mousemove never triggers a re-render storm; `panning` state
+   *  only flips the cursor + suppresses click-to-place. */
+  const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const [panning, setPanning] = useState(false);
+  /** True while the Space bar is held - arms pan on the next mousedown and
+   *  shows the grab cursor. Cleared on keyup / blur. */
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const spaceHeldRef = useRef(false);
+
+  /** Live pointer position in PDF units while a measure tool is active,
+   *  drives the running-length HUD. Null when the pointer is off-canvas. */
+  const [liveCursor, setLiveCursor] = useState<Point | null>(null);
+
+  /** Hover tooltip for an existing measurement in select mode: the measured
+   *  value / group / linked BOQ reference, anchored at the cursor. */
+  const [hoverInfo, setHoverInfo] = useState<{
+    measurementId: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Measurement groups
   const [activeGroup, setActiveGroup] = useState('General');
@@ -1212,6 +1263,42 @@ export default function TakeoffViewerModule({
       }
     }
 
+    // Live rubber-band from the last placed point to the cursor for the
+    // linear / polygon tools, so an ortho-locked segment is visible before
+    // the click lands. The cursor is already ortho-snapped upstream. A faint
+    // closing edge back to the first vertex hints the area a polygon will
+    // enclose. Skipped while panning (the cursor is not placing points).
+    if (
+      liveCursor &&
+      !panning &&
+      activePoints.length > 0 &&
+      (activeTool === 'distance' ||
+        activeTool === 'polyline' ||
+        activeTool === 'area' ||
+        activeTool === 'volume')
+    ) {
+      const last = activePoints[activePoints.length - 1]!;
+      ctx.save();
+      ctx.strokeStyle = '#2563EB';
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.setLineDash([5 * dpr, 4 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(last.x * dpr * zoom, last.y * dpr * zoom);
+      ctx.lineTo(liveCursor.x * dpr * zoom, liveCursor.y * dpr * zoom);
+      ctx.stroke();
+      // Closing-edge hint for polygons (3+ vertices placed).
+      if ((activeTool === 'area' || activeTool === 'volume') && activePoints.length >= 2) {
+        const first = activePoints[0]!;
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.moveTo(liveCursor.x * dpr * zoom, liveCursor.y * dpr * zoom);
+        ctx.lineTo(first.x * dpr * zoom, first.y * dpr * zoom);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    }
+
     // In-progress rectangle/highlight drag preview
     if (rectStartPoint && isDraggingRect && activePoints.length === 1) {
       const p0 = rectStartPoint;
@@ -1367,7 +1454,7 @@ export default function TakeoffViewerModule({
         ctx.restore();
       }
     }
-  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview]);
+  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning]);
 
   /* ── Canvas click handler ────────────────────────────────────────── */
 
@@ -1502,11 +1589,31 @@ export default function TakeoffViewerModule({
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // A pan gesture that ended on this element must not also place a point.
+      if (panRef.current || spaceHeldRef.current) return;
       const rect = overlayRef.current?.getBoundingClientRect();
       if (!rect) return;
       const x = (e.clientX - rect.left) / zoom;
       const y = (e.clientY - rect.top) / zoom;
-      const point: Point = { x, y };
+      let point: Point = { x, y };
+
+      // Ortho / angle lock: when the toggle is on or Shift is held, constrain
+      // the new segment to 0 / 45 / 90 degrees from the previous placed point.
+      // Only the multi-point linear + polygon tools have a meaningful anchor;
+      // rectangles are inherently axis-aligned and the first click has no
+      // anchor to snap against.
+      if (
+        (orthoLock || shiftHeldRef.current) &&
+        activePoints.length > 0 &&
+        (activeTool === 'distance' ||
+          activeTool === 'polyline' ||
+          activeTool === 'area' ||
+          activeTool === 'volume' ||
+          activeTool === 'cloud' ||
+          activeTool === 'arrow')
+      ) {
+        point = orthoSnap(activePoints[activePoints.length - 1]!, point);
+      }
 
       // Setting scale mode (legacy meters-only dialog OR new calibration).
       if (settingScale) {
@@ -1726,7 +1833,7 @@ export default function TakeoffViewerModule({
         return;
       }
     },
-    [activeTool, activePoints, scale, currentPage, countLabel, settingScale, scalePoints, zoom, pushUndo, nextAnnotation, activeGroup, annotationColor, rectStartPoint],
+    [activeTool, activePoints, scale, currentPage, countLabel, settingScale, scalePoints, zoom, pushUndo, nextAnnotation, activeGroup, annotationColor, rectStartPoint, orthoLock],
   );
 
   // Keep the ref in sync so touch handler can call it
@@ -1975,6 +2082,24 @@ export default function TakeoffViewerModule({
    *  design. */
   const handleCanvasMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Pan gesture: middle mouse (button 1) anywhere, or left-drag while the
+      // Space bar is held. Works in any tool and is captured before tool logic
+      // so it never places a measurement. The actual move + release are driven
+      // by window listeners so a pan that leaves the canvas still tracks.
+      if (e.button === 1 || (e.button === 0 && spaceHeldRef.current)) {
+        const c = containerRef.current;
+        if (c) {
+          panRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            scrollLeft: c.scrollLeft,
+            scrollTop: c.scrollTop,
+          };
+          setPanning(true);
+          e.preventDefault();
+        }
+        return;
+      }
       if (activeTool !== 'select' || e.button !== 0) return;
       const pt = pointerToPdf(e);
       if (!pt) return;
@@ -2085,25 +2210,79 @@ export default function TakeoffViewerModule({
     [pointerToPdf],
   );
 
-  /* ── Mouse move for rectangle/highlight drag preview ──────────────── */
+  /* ── Mouse move: edit drag, rect preview, live readout, hover ─────── */
 
   const handleCanvasMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // A pan in progress is driven by the window listener; ignore here.
+      if (panRef.current) return;
       if (dragRef.current) {
         handleEditDragMove(e);
         return;
       }
+      const pt = pointerToPdf(e);
+
       if ((activeTool === 'rectangle' || activeTool === 'highlight' || activeTool === 'rectarea') && rectStartPoint) {
-        const rect = overlayRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        const x = (e.clientX - rect.left) / zoom;
-        const y = (e.clientY - rect.top) / zoom;
-        setActivePoints([{ x, y }]);
+        if (!pt) return;
+        setActivePoints([pt]);
         setIsDraggingRect(true);
+        return;
+      }
+
+      // Live readout: track the cursor (ortho-snapped against the last placed
+      // point when the lock is engaged) while a linear / polygon measure tool
+      // is active, so the HUD can show the running segment + cumulative length.
+      if (
+        pt &&
+        (activeTool === 'distance' ||
+          activeTool === 'polyline' ||
+          activeTool === 'area' ||
+          activeTool === 'volume')
+      ) {
+        const anchor = activePoints[activePoints.length - 1];
+        const snapped =
+          anchor && (orthoLock || shiftHeldRef.current) ? orthoSnap(anchor, pt) : pt;
+        setLiveCursor(snapped);
+      } else if (liveCursor) {
+        setLiveCursor(null);
+      }
+
+      // Hover tooltip: in select mode, surface the topmost measurement under
+      // the cursor (value / group / linked BOQ). Reuses the same hit-test the
+      // selection path uses so the hover target matches what a click selects.
+      if (activeTool === 'select' && pt) {
+        const z = zoomRef.current || 1;
+        const onPage = editableOnPage();
+        let foundId: string | null = null;
+        for (let i = onPage.length - 1; i >= 0; i--) {
+          const m = onPage[i]!;
+          if (hitTest(pt, m, z, m.id === selectedMeasurementIdRef.current)) {
+            foundId = m.id;
+            break;
+          }
+        }
+        if (foundId) {
+          const rect = overlayRef.current?.getBoundingClientRect();
+          setHoverInfo({
+            measurementId: foundId,
+            x: rect ? e.clientX - rect.left : pt.x * z,
+            y: rect ? e.clientY - rect.top : pt.y * z,
+          });
+        } else if (hoverInfo) {
+          setHoverInfo(null);
+        }
+      } else if (hoverInfo) {
+        setHoverInfo(null);
       }
     },
-    [activeTool, rectStartPoint, zoom, handleEditDragMove],
+    [activeTool, rectStartPoint, pointerToPdf, handleEditDragMove, activePoints, orthoLock, liveCursor, editableOnPage, hoverInfo],
   );
+
+  /** Clear the transient HUD / hover state when the pointer leaves the canvas. */
+  const handleCanvasMouseLeave = useCallback(() => {
+    if (liveCursor) setLiveCursor(null);
+    if (hoverInfo) setHoverInfo(null);
+  }, [liveCursor, hoverInfo]);
 
   const handleCanvasMouseUp = useCallback(() => {
     if (dragRef.current) finishDrag(true);
@@ -2114,9 +2293,25 @@ export default function TakeoffViewerModule({
    * edges of a large drawing) would leave the shape stuck in preview. */
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
+      // Pan takes priority: translate scroll by the pointer delta. Scrolling
+      // the container directly (not via state) keeps the pan smooth.
+      const pan = panRef.current;
+      if (pan) {
+        const c = containerRef.current;
+        if (c) {
+          c.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
+          c.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+        }
+        return;
+      }
       if (dragRef.current) handleEditDragMove(e);
     };
     const onUp = () => {
+      if (panRef.current) {
+        panRef.current = null;
+        setPanning(false);
+        return;
+      }
       if (dragRef.current) finishDrag(true);
     };
     window.addEventListener('mousemove', onMove);
@@ -2293,9 +2488,108 @@ export default function TakeoffViewerModule({
 
   /* ── Zoom controls ───────────────────────────────────────────────── */
 
-  const zoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 4)), []);
-  const zoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.25)), []);
-  const zoomFit = useCallback(() => setZoom(1), []);
+  const zoomIn = useCallback(() => setZoom((z) => clampZoom(z * 1.25)), []);
+  const zoomOut = useCallback(() => setZoom((z) => clampZoom(z / 1.25)), []);
+
+  /** Current page size in PDF user units, derived from the rendered canvas:
+   *  `canvas.width = pageWidthPdfUnits * zoom * dpr`, so we invert that. The
+   *  page only changes size between pages / re-renders, so reading it off the
+   *  live canvas avoids holding a second source of truth. Returns null before
+   *  the first render. */
+  const pageSizePdf = useCallback((): { width: number; height: number } | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const z = zoomRef.current || 1;
+    return {
+      width: canvas.width / (z * dpr),
+      height: canvas.height / (z * dpr),
+    };
+  }, []);
+
+  /** Inner (content) size of the scroll container in CSS px. */
+  const viewportSize = useCallback((): { width: number; height: number } => {
+    const c = containerRef.current;
+    return { width: c?.clientWidth ?? 0, height: c?.clientHeight ?? 0 };
+  }, []);
+
+  /** Fit the page to the viewport for a mode, re-anchoring scroll to the
+   *  top-left (width fit) / center (page fit) so the result is framed. */
+  const fitToViewport = useCallback(
+    (mode: 'width' | 'page') => {
+      const page = pageSizePdf();
+      if (!page) return;
+      const vp = viewportSize();
+      const next = computeFitZoom(page.width, page.height, vp.width, vp.height, mode);
+      setZoom(next);
+      // After the canvas re-lays-out at the new zoom, reset scroll so the page
+      // origin is visible (width) or the page is centered (page fit).
+      requestAnimationFrame(() => {
+        const c = containerRef.current;
+        if (!c) return;
+        if (mode === 'width') {
+          c.scrollLeft = 0;
+          c.scrollTop = 0;
+        } else {
+          // Center the (now fully visible) page in the viewport.
+          c.scrollLeft = Math.max(0, (page.width * next - c.clientWidth) / 2);
+          c.scrollTop = Math.max(0, (page.height * next - c.clientHeight) / 2);
+        }
+      });
+    },
+    [pageSizePdf, viewportSize],
+  );
+
+  const zoomFit = useCallback(() => fitToViewport('page'), [fitToViewport]);
+
+  /** Zoom + pan so the selected measurement(s) on the current page fill the
+   *  viewport with a margin. No-op (with a hint toast) when nothing on the
+   *  current page is selected. */
+  const zoomToSelection = useCallback(() => {
+    const selId = selectedMeasurementIdRef.current;
+    const sel = measurementsRef.current.find(
+      (m) => m.id === selId && m.page === currentPageRef.current,
+    );
+    if (!sel || sel.points.length === 0) {
+      addToast({
+        type: 'info',
+        title: t('takeoff_viewer.zoom_selection_none', { defaultValue: 'Select a measurement first' }),
+      });
+      return;
+    }
+    const box = boundingBoxOfPoints(sel.points);
+    if (!box) return;
+    const vp = viewportSize();
+    const res = computeZoomToBox(box, vp.width, vp.height, {
+      fallbackZoom: zoomRef.current || 1,
+    });
+    setZoom(res.zoom);
+    requestAnimationFrame(() => {
+      const c = containerRef.current;
+      if (!c) return;
+      c.scrollLeft = res.scrollLeft;
+      c.scrollTop = res.scrollTop;
+    });
+  }, [viewportSize, addToast, t]);
+
+  /** Live readout (cursor coordinate + running / cumulative length) for the
+   *  HUD shown while a linear / polygon measure tool is active. Null when no
+   *  such tool is drawing so the HUD hides. */
+  const drawReadout: DrawReadout | null = useMemo(() => {
+    if (
+      !liveCursor ||
+      !(activeTool === 'distance' || activeTool === 'polyline' || activeTool === 'area' || activeTool === 'volume')
+    ) {
+      return null;
+    }
+    return computeDrawReadout(activePoints, liveCursor, scale);
+  }, [liveCursor, activeTool, activePoints, scale]);
+
+  /** The measurement currently hovered in select mode (for the tooltip). */
+  const hoverMeasurement = useMemo(
+    () => (hoverInfo ? measurements.find((m) => m.id === hoverInfo.measurementId) ?? null : null),
+    [hoverInfo, measurements],
+  );
 
   // Mouse-wheel zoom on the canvas container. Native listener with
   // `{ passive: false }` so we can preventDefault — React's synthetic
@@ -2308,21 +2602,27 @@ export default function TakeoffViewerModule({
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       const rect = container.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
 
       setZoom((prev) => {
-        const raw = prev * factor;
-        const next = Math.round(Math.max(0.25, Math.min(4, raw)) * 100) / 100;
+        const next = wheelZoomStep(prev, e.deltaY);
         if (next === prev) return prev;
-        const ratio = next / prev;
-        // Re-anchor scroll on next frame so the new canvas size is laid out.
+        // Re-anchor scroll on next frame so the new canvas size is laid out;
+        // keeps the world point under the cursor stationary (shared maths).
         requestAnimationFrame(() => {
           if (containerRef.current) {
-            containerRef.current.scrollLeft = (container.scrollLeft + cx) * ratio - cx;
-            containerRef.current.scrollTop = (container.scrollTop + cy) * ratio - cy;
+            const { scrollLeft, scrollTop } = zoomAtCursorScroll(
+              prev,
+              next,
+              container.scrollLeft,
+              container.scrollTop,
+              cx,
+              cy,
+            );
+            containerRef.current.scrollLeft = scrollLeft;
+            containerRef.current.scrollTop = scrollTop;
           }
         });
         return next;
@@ -3697,9 +3997,16 @@ export default function TakeoffViewerModule({
     }
   }, []);
 
-  /** Keyboard shortcuts: per-tool letters, Ctrl+Z/Y redo/undo, Esc cancel. */
+  /** Keyboard shortcuts: per-tool letters, Ctrl+Z/Y redo/undo, Esc cancel,
+   *  Space (pan), Shift (ortho lock), Shift+1/2/3 (fit width / page /
+   *  selection). */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Track the live Shift state so the draw path can engage ortho without
+      // flipping the persistent toggle. Updated on every keydown regardless of
+      // focus so it never goes stale.
+      shiftHeldRef.current = e.shiftKey;
+
       // Undo / Redo — handled even inside inputs (standard browser semantics).
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -3744,6 +4051,28 @@ export default function TakeoffViewerModule({
       if (!shouldHandleShortcut(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+      // Space: arm pan (grab cursor + suppress click-to-place). preventDefault
+      // so the page does not scroll while Space is held over the canvas.
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        if (!spaceHeldRef.current) {
+          spaceHeldRef.current = true;
+          setSpaceHeld(true);
+        }
+        return;
+      }
+
+      // Fit shortcuts (Shift+1 / Shift+2 / Shift+3). Digit codes are used so
+      // the binding is layout-stable. These do not collide with the
+      // single-letter tool shortcuts (see takeoff-shortcuts.ts).
+      if (e.shiftKey && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) {
+        e.preventDefault();
+        if (e.code === 'Digit1') fitToViewport('width');
+        else if (e.code === 'Digit2') fitToViewport('page');
+        else zoomToSelection();
+        return;
+      }
+
       // Delete / Backspace. If a specific vertex is active on the selected
       // measurement and removing it keeps the shape valid, delete just that
       // vertex and recompute (#194). Otherwise fall through to deleting the
@@ -3782,9 +4111,34 @@ export default function TakeoffViewerModule({
         selectTool(tool);
       }
     };
+    const upHandler = (e: KeyboardEvent) => {
+      shiftHeldRef.current = e.shiftKey;
+      if (e.code === 'Space' || e.key === ' ') {
+        spaceHeldRef.current = false;
+        setSpaceHeld(false);
+        // A pan that was mid-drag when Space released ends cleanly.
+        if (panRef.current) {
+          panRef.current = null;
+          setPanning(false);
+        }
+      }
+    };
+    // A window blur (alt-tab) would otherwise strand the Space/Shift held
+    // state on, leaving a stuck grab cursor / ortho lock.
+    const blurHandler = () => {
+      shiftHeldRef.current = false;
+      spaceHeldRef.current = false;
+      setSpaceHeld(false);
+    };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleUndo, handleRedo, selectTool, activePoints.length, rectStartPoint, showTextInput, showScaleDialog, showVolumeDepthInput, selectedMeasurementId, calibrationMode, settingScale, measurements, finishDrag, commitGeometryEdit, pushUndo]);
+    window.addEventListener('keyup', upHandler);
+    window.addEventListener('blur', blurHandler);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('keyup', upHandler);
+      window.removeEventListener('blur', blurHandler);
+    };
+  }, [handleUndo, handleRedo, selectTool, activePoints.length, rectStartPoint, showTextInput, showScaleDialog, showVolumeDepthInput, selectedMeasurementId, calibrationMode, settingScale, measurements, finishDrag, commitGeometryEdit, pushUndo, fitToViewport, zoomToSelection]);
 
   /* ── Render ──────────────────────────────────────────────────────── */
 
@@ -4188,9 +4542,38 @@ export default function TakeoffViewerModule({
               <button onClick={zoomIn} className="p-1.5 rounded hover:bg-surface-secondary transition-colors" title={t('takeoff_viewer.zoom_in', { defaultValue: 'Zoom in' })} aria-label={t('takeoff_viewer.zoom_in', { defaultValue: 'Zoom in' })}>
                 <ZoomIn size={16} />
               </button>
-              <button onClick={zoomFit} className="p-1.5 rounded hover:bg-surface-secondary transition-colors" title={t('takeoff_viewer.zoom_fit', { defaultValue: 'Fit' })} aria-label={t('takeoff_viewer.zoom_fit', { defaultValue: 'Fit' })}>
+              <button onClick={() => fitToViewport('width')} className="p-1.5 rounded hover:bg-surface-secondary transition-colors" title={t('takeoff_viewer.fit_width_hint', { defaultValue: 'Fit the page to the viewport width (Shift+1)' })} aria-label={t('takeoff_viewer.fit_width', { defaultValue: 'Fit width' })}>
+                <MoveHorizontal size={16} />
+              </button>
+              <button onClick={zoomFit} className="p-1.5 rounded hover:bg-surface-secondary transition-colors" title={t('takeoff_viewer.fit_page_hint', { defaultValue: 'Fit the whole page in view (Shift+2)' })} aria-label={t('takeoff_viewer.fit_page', { defaultValue: 'Fit page' })}>
                 <Maximize size={16} />
               </button>
+              <button onClick={zoomToSelection} disabled={!selectedMeasurementId} className="p-1.5 rounded hover:bg-surface-secondary transition-colors disabled:opacity-30 disabled:pointer-events-none" title={t('takeoff_viewer.zoom_selection_hint', { defaultValue: 'Zoom to the selected measurement (Shift+3)' })} aria-label={t('takeoff_viewer.zoom_selection', { defaultValue: 'Zoom to selection' })}>
+                <Focus size={16} />
+              </button>
+
+              <span className="w-px h-5 bg-border mx-1" />
+
+              {/* Ortho lock toggle + pan affordance. Ortho also engages while
+                  Shift is physically held (CAD-standard); pan engages on Space
+                  or middle-mouse, so the pan button is an indicator + hint. */}
+              <button
+                onClick={() => setOrthoLock((v) => !v)}
+                className={`p-1.5 rounded transition-colors ${orthoLock ? 'bg-oe-blue text-white' : 'hover:bg-surface-secondary text-content-secondary'}`}
+                title={t('takeoff_viewer.ortho_lock_hint', { defaultValue: 'Constrain new segments to 0, 45 or 90 degrees (hold Shift, or toggle here)' })}
+                aria-label={t('takeoff_viewer.ortho_lock', { defaultValue: 'Ortho lock' })}
+                aria-pressed={orthoLock}
+                data-testid="ortho-lock-toggle"
+              >
+                <Spline size={16} />
+              </button>
+              <span
+                className={`p-1.5 rounded ${spaceHeld || panning ? 'bg-oe-blue text-white' : 'text-content-tertiary'}`}
+                title={t('takeoff_viewer.pan_hint', { defaultValue: 'Drag to pan. Hold Space or use the middle mouse button while any tool is active.' })}
+                aria-label={t('takeoff_viewer.pan', { defaultValue: 'Pan' })}
+              >
+                <Hand size={16} />
+              </span>
 
               <span className="w-px h-5 bg-border mx-1" />
 
@@ -4491,17 +4874,106 @@ export default function TakeoffViewerModule({
               <canvas
                 ref={overlayRef}
                 className="absolute top-0 left-0"
-                style={{ cursor: activeTool === 'select' ? (dragPreview ? 'grabbing' : 'default') : 'crosshair' }}
+                style={{
+                  cursor: panning
+                    ? 'grabbing'
+                    : spaceHeld
+                      ? 'grab'
+                      : activeTool === 'select'
+                        ? (dragPreview ? 'grabbing' : 'default')
+                        : 'crosshair',
+                }}
                 onClick={handleCanvasClick}
                 onDoubleClick={handleCanvasDblClick}
                 onContextMenu={handleCanvasContextMenu}
                 onMouseDown={handleCanvasMouseDown}
                 onMouseMove={handleCanvasMouseMove}
                 onMouseUp={handleCanvasMouseUp}
+                onMouseLeave={handleCanvasMouseLeave}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
               />
+
+              {/* Live drawing readout HUD - cursor coordinate + running
+                  segment / cumulative length while a measure tool draws.
+                  Bottom-right so it never collides with the bottom-left legend
+                  or the top tool hint. Lengths hide when the page has no
+                  scale (the helper returns null) so we never show "0 m". */}
+              {drawReadout && (
+                <div
+                  className="absolute bottom-2 right-2 z-10 rounded-lg border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg px-3 py-2 text-[11px] font-mono text-content-secondary pointer-events-none space-y-0.5"
+                  data-testid="draw-readout"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-content-quaternary uppercase tracking-wide">
+                      {t('takeoff_viewer.readout_position', { defaultValue: 'Position' })}
+                    </span>
+                    <span className="tabular-nums text-content-primary">
+                      {drawReadout.cursor.x}, {drawReadout.cursor.y}
+                    </span>
+                  </div>
+                  {drawReadout.segment != null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-content-quaternary uppercase tracking-wide">
+                        {t('takeoff_viewer.readout_segment', { defaultValue: 'Segment' })}
+                      </span>
+                      <span className="tabular-nums text-content-primary">
+                        {formatMeasurement(drawReadout.segment, drawReadout.unit)}
+                      </span>
+                    </div>
+                  )}
+                  {drawReadout.total != null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-content-quaternary uppercase tracking-wide">
+                        {t('takeoff_viewer.readout_total', { defaultValue: 'Total' })}
+                      </span>
+                      <span className="tabular-nums text-content-primary">
+                        {formatMeasurement(drawReadout.total, drawReadout.unit)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Hover tooltip on an existing measurement (select mode) -
+                  value, group and linked BOQ position. Offset from the cursor
+                  so it does not sit under the pointer; pointer-events disabled
+                  so it never eats the click. */}
+              {hoverInfo && hoverMeasurement && (
+                <div
+                  className="absolute z-20 max-w-[220px] rounded-md border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5 text-[11px] pointer-events-none"
+                  style={{ left: `${hoverInfo.x + 14}px`, top: `${hoverInfo.y + 14}px` }}
+                  data-testid="measurement-hover-tooltip"
+                >
+                  <div className="font-semibold text-content-primary truncate">
+                    {hoverMeasurement.annotation || hoverMeasurement.label || hoverMeasurement.type}
+                  </div>
+                  {hoverMeasurement.label && (
+                    <div className="tabular-nums text-content-secondary">{hoverMeasurement.label}</div>
+                  )}
+                  <div className="mt-0.5 flex items-center gap-1 text-content-tertiary">
+                    <span className="uppercase tracking-wide text-[10px]">
+                      {t('takeoff_viewer.tooltip_group', { defaultValue: 'Group' })}
+                    </span>
+                    <span>{hoverMeasurement.group || 'General'}</span>
+                  </div>
+                  <div className="mt-0.5 text-[10px]">
+                    {hoverMeasurement.linkedPositionOrdinal ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-mono">
+                        {t('takeoff_viewer.tooltip_linked', {
+                          defaultValue: 'Linked to {{ordinal}}',
+                          ordinal: hoverMeasurement.linkedPositionOrdinal,
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-content-quaternary">
+                        {t('takeoff_viewer.tooltip_unlinked', { defaultValue: 'Not linked to a BOQ position' })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
               {settingScale && (
                 <div
                   className="absolute top-2 left-2 bg-purple-500/90 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
