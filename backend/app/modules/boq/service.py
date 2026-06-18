@@ -6281,7 +6281,7 @@ class BOQService:
         For each position, reads ``metadata_.resources`` (list of dicts with
         keys ``type``, ``total``, ``name``, ``unit``, ``quantity``, ``unit_rate``).
         Resource costs are scaled by the position quantity and aggregated into
-        categories: labor, material, equipment, subcontractor, other.
+        categories: labor, material, machinery, equipment, subcontractor, other.
 
         If no resource metadata is found on any position, the full position
         total is categorised based on description keyword heuristics.
@@ -6565,7 +6565,18 @@ class BOQService:
             res_type: Raw resource type from position metadata.
 
         Returns:
-            One of: labor, material, equipment, subcontractor, other.
+            One of: labor, material, machinery, equipment, subcontractor, other.
+
+        ``machinery`` (construction plant/mechanisms that perform the work) is
+        kept distinct from ``equipment`` (installed equipment). Methodologies
+        that follow the post-Soviet СМР/SMR convention price the two on
+        different cascade bases - machinery rides inside the SMR works base
+        while installed equipment carries only some markups - so folding
+        machinery into equipment (as this normaliser used to) silently zeroed
+        the machinery base and over-stated equipment for the Uzbekistan /
+        railway templates. A methodology that does NOT split them simply lists
+        both resource types under one base token, so the finer category is
+        purely additive and never loses money for the flat templates.
         """
         res_type = res_type.lower().strip()
         if res_type in ("labor", "labour", "work", "lohn", "arbeit"):
@@ -6579,11 +6590,17 @@ class BOQService:
         ):
             return "material"
         if res_type in (
+            "machinery",
+            "machine",
+            "maschine",
+            "mechanism",
+            "mechanisms",
+        ):
+            return "machinery"
+        if res_type in (
             "equipment",
             "plant",
-            "machinery",
             "geraet",
-            "maschine",
         ):
             return "equipment"
         if res_type in (

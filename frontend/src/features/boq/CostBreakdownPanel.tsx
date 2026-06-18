@@ -15,6 +15,7 @@ import {
 const CATEGORY_COLORS: Record<string, string> = {
   material: '#3b82f6', // blue-500
   labor: '#f59e0b', // amber-500
+  machinery: '#14b8a6', // teal-500
   equipment: '#8b5cf6', // violet-500
   subcontractor: '#ec4899', // pink-500
   other: '#6b7280', // gray-500
@@ -23,6 +24,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 const CATEGORY_BG_CLASSES: Record<string, string> = {
   material: 'bg-blue-500',
   labor: 'bg-amber-500',
+  machinery: 'bg-teal-500',
   equipment: 'bg-violet-500',
   subcontractor: 'bg-pink-500',
   other: 'bg-gray-500',
@@ -31,6 +33,7 @@ const CATEGORY_BG_CLASSES: Record<string, string> = {
 const CATEGORY_TEXT_CLASSES: Record<string, string> = {
   material: 'text-blue-600 dark:text-blue-400',
   labor: 'text-amber-600 dark:text-amber-400',
+  machinery: 'text-teal-600 dark:text-teal-400',
   equipment: 'text-violet-600 dark:text-violet-400',
   subcontractor: 'text-pink-600 dark:text-pink-400',
   other: 'text-gray-600 dark:text-gray-400',

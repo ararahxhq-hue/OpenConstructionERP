@@ -7417,7 +7417,7 @@ async def get_cost_breakdown(
     """Get a cost breakdown for a BOQ split by resource category.
 
     Analyzes all positions in the BOQ and aggregates costs into categories:
-    material, labor, equipment, subcontractor, and other. Each position's
+    material, labor, machinery, equipment, subcontractor, and other. Each position's
     ``metadata.resources`` list is used when available; otherwise, the position
     description is classified via keyword heuristics.
 

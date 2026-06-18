@@ -801,6 +801,7 @@ const resource = {
     "boq.cost_breakdown_total": "Total",
     "boq.cost_category_equipment": "Equipment",
     "boq.cost_category_labor": "Labor",
+    "boq.cost_category_machinery": "Machinery",
     "boq.cost_category_material": "Material",
     "boq.cost_category_other": "Other",
     "boq.cost_category_subcontractor": "Subcontractor",

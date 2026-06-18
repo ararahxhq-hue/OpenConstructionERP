@@ -8,6 +8,7 @@ import {
   Package,
   HardHat,
   Wrench,
+  Truck,
   Users,
   Layers,
   BookmarkPlus,
@@ -22,12 +23,13 @@ import type { CostVariant } from '@/features/costs/api';
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
-const RESOURCE_TYPE_FILTERS = ['all', 'material', 'labor', 'equipment', 'subcontractor', 'other'] as const;
+const RESOURCE_TYPE_FILTERS = ['all', 'material', 'labor', 'machinery', 'equipment', 'subcontractor', 'other'] as const;
 type ResourceTypeFilter = (typeof RESOURCE_TYPE_FILTERS)[number];
 
 const TYPE_BADGE_STYLES: Record<string, string> = {
   material: 'bg-blue-500/10 text-blue-600',
   labor: 'bg-amber-500/10 text-amber-600',
+  machinery: 'bg-teal-500/10 text-teal-600',
   equipment: 'bg-violet-500/10 text-violet-600',
   subcontractor: 'bg-rose-500/10 text-rose-600',
   other: 'bg-gray-500/10 text-gray-600',
@@ -36,6 +38,7 @@ const TYPE_BADGE_STYLES: Record<string, string> = {
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   material: <Package size={13} />,
   labor: <HardHat size={13} />,
+  machinery: <Truck size={13} />,
   equipment: <Wrench size={13} />,
   subcontractor: <Users size={13} />,
   other: <Layers size={13} />,
