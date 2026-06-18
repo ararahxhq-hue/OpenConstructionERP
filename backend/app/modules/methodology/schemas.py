@@ -187,7 +187,14 @@ class FundingSourceResponse(BaseModel):
 class MethodologyBase(BaseModel):
     """Fields shared by create / update / response for a methodology."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    # ``populate_by_name`` lets create/update bodies keep using the field name
+    # ``metadata`` while the response reads the ORM attribute through the
+    # ``metadata_`` alias below. The column is ``metadata`` but SQLAlchemy
+    # reserves the ``metadata`` attribute for its registry, so the model maps it
+    # to ``metadata_``; without the alias, ``from_attributes`` read the
+    # SQLAlchemy ``MetaData`` object and every methodology get/create/update
+    # 500'd on serialization.
+    model_config = ConfigDict(str_strip_whitespace=True, populate_by_name=True)
 
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=5000)
@@ -202,7 +209,7 @@ class MethodologyBase(BaseModel):
     composites: dict[str, list[str]] = Field(default_factory=dict)
     cascade_steps: list[MarkupStepSchema] = Field(default_factory=list)
     vat_rate: Decimal | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
 
     @field_serializer("vat_rate", when_used="json")
     def _ser_vat(self, v: Decimal | None) -> str | None:
