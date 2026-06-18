@@ -193,7 +193,7 @@ async def set_active_methodology(
 
 
 @router.get(
-    "/{methodology_id}",
+    "/{methodology_id:uuid}",
     response_model=MethodologyResponse,
     dependencies=[Depends(RequirePermission("methodology.read"))],
 )
@@ -211,7 +211,7 @@ async def get_methodology(
 
 
 @router.patch(
-    "/{methodology_id}",
+    "/{methodology_id:uuid}",
     response_model=MethodologyResponse,
     dependencies=[Depends(RequirePermission("methodology.update"))],
 )
@@ -230,7 +230,7 @@ async def update_methodology(
 
 
 @router.delete(
-    "/{methodology_id}",
+    "/{methodology_id:uuid}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(RequirePermission("methodology.delete"))],
 )
