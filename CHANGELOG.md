@@ -5,6 +5,20 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.6.0] - 2026-06-18
+
+### Added
+
+- A data-driven estimating methodology engine. Instead of one fixed markup chain, a project can now follow a named methodology that you build and edit in the app: a typed bill-of-quantities hierarchy, analytical dimensions, named funding sources, and a cascade of markups that build on one another. Country and industry templates ship ready to install - including a Uzbekistan cascade and a railway breakdown that price construction machinery inside the SMR works base while keeping installed equipment as a separate base - and every methodology coexists with, and is switchable against, the existing international method. The cascade editor shows a live preview and reconciles its arithmetic against the server, so the figures you see are the figures that are stored.
+
+### Fixed
+
+- Construction machinery is now costed separately from installed equipment in the bill-of-quantities cost breakdown. A resource typed as machinery used to be folded into the equipment category, which understated the works base and overstated equipment for methodologies that price the two differently, such as the post-Soviet SMR convention used by the Uzbekistan and railway templates. The breakdown now reports a distinct Machinery category; a methodology that does not separate the two is unaffected.
+
+### Security
+
+- Updated the bundled DOMPurify, protobuf.js and tmp dependencies to their patched releases to clear known advisories. These are transitive build-time and runtime libraries and the update changes no behaviour.
+
 ## [8.5.0] - 2026-06-18
 
 ### Added
