@@ -780,6 +780,42 @@ class ClashSuppressRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
 
+class ClashBulkSuppressRequest(BaseModel):
+    """POST body for ``…/runs/{run_id}/results/suppress`` (bulk).
+
+    Suppress the smart issues behind a selection of review-table rows in
+    one round-trip - backs the table's "Suppress selected" action. The
+    selection is keyed by :class:`ClashResult` id (what the table holds);
+    the server maps those to the underlying issue signatures and
+    suppresses them. ``reason`` follows the same 1..500-char audit-trail
+    rule as the single-issue path; foreign / unknown ids are silently
+    dropped and reported back in ``skipped_ids`` (IDOR-safe), never raised.
+    """
+
+    result_ids: list[uuid.UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=25_000,
+        description="The clashes to suppress (run-scoped; foreign ids are ignored).",
+    )
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class ClashBulkSuppressResponse(BaseModel):
+    """Outcome of a bulk suppression, reported in result-id terms.
+
+    ``suppressed_ids`` are the selected results whose issue flipped to
+    ``ignored``; ``skipped_ids`` are results that did not belong to the
+    run, had no smart issue yet, or whose issue was dropped (e.g. missing
+    signature). The counts mirror the two lists.
+    """
+
+    suppressed_ids: list[uuid.UUID] = Field(default_factory=list)
+    skipped_ids: list[uuid.UUID] = Field(default_factory=list)
+    suppressed_count: int = 0
+    skipped_count: int = 0
+
+
 class ClashRunDiff(BaseModel):
     """Smart-issue diff counts for ``/clash/runs/{run_id}/diff``.
 

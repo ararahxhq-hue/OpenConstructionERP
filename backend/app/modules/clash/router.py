@@ -44,6 +44,8 @@ from app.modules.clash.schemas import (
     ClashBCFExportResponse,
     ClashBCFImportResponse,
     ClashBulkResultUpdate,
+    ClashBulkSuppressRequest,
+    ClashBulkSuppressResponse,
     ClashBulkUpdateResponse,
     ClashCategoriesResponse,
     ClashCategoryItem,
@@ -523,6 +525,39 @@ async def bulk_update_results(
         actor=str(user_id),
     )
     return ClashBulkUpdateResponse(updated=updated, requested=len(data.result_ids))
+
+
+@router.post(
+    "/projects/{project_id}/runs/{run_id}/results/suppress",
+    response_model=ClashBulkSuppressResponse,
+    dependencies=[Depends(RequirePermission("clash.update"))],
+)
+async def bulk_suppress_results(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    data: ClashBulkSuppressRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ClashService = Depends(_get_service),
+) -> ClashBulkSuppressResponse:
+    """Suppress the smart issues behind a selection of review-table rows.
+
+    Backs the review table's "Suppress selected" bulk action. The
+    selection is keyed by clash result id; the server maps each to its
+    underlying issue signature and flips the matching issues to
+    ``ignored`` (so the signatures won't auto-resurface in future runs)
+    in a single transaction. Foreign / unknown ids are dropped and
+    reported in ``skipped_ids`` rather than raised (IDOR-safe).
+    """
+    await _require_project_access(session, project_id, user_id)
+    outcome = await service.bulk_suppress_results(
+        project_id,
+        run_id,
+        data.result_ids,
+        data.reason,
+        user_id,
+    )
+    return ClashBulkSuppressResponse(**outcome)
 
 
 @router.get(

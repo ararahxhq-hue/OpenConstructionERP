@@ -1132,6 +1132,80 @@ export function ClashDetectionPage() {
     },
   });
 
+  // Bulk suppression. Flips the smart issues behind the selected rows to
+  // ``ignored`` in ONE request (so the signatures won't auto-resurface in
+  // future runs) and records the reason on each. Optimistically marks the
+  // selected rows ``ignored``; the authoritative state arrives on
+  // invalidate (the server skips rows that have no smart issue yet, which
+  // the success toast surfaces via the skipped count).
+  const suppressMut = useMutation({
+    mutationFn: (v: { ids: string[]; reason: string }) =>
+      clashApi.bulkSuppressResults(projectId, runId, {
+        result_ids: v.ids,
+        reason: v.reason,
+      }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({
+        queryKey: ['clash-results', projectId, runId],
+      });
+      const prev = qc.getQueryData<{ items: ClashResult[] }>([
+        'clash-results',
+        projectId,
+        runId,
+      ]);
+      const idSet = new Set(v.ids);
+      qc.setQueryData<{ items: ClashResult[] }>(
+        ['clash-results', projectId, runId],
+        (old) =>
+          old
+            ? {
+                ...old,
+                items: old.items.map((r) =>
+                  idSet.has(r.id) ? { ...r, status: 'ignored' } : r,
+                ),
+              }
+            : old,
+      );
+      return { prev };
+    },
+    onError: (e: Error, _v, ctx) => {
+      if (ctx?.prev)
+        qc.setQueryData(['clash-results', projectId, runId], ctx.prev);
+      addToast({
+        type: 'error',
+        title: t('clash.bulk_suppress_failed', {
+          defaultValue: 'Bulk suppression failed',
+        }),
+        message: e.message,
+      });
+    },
+    onSuccess: (res) => {
+      addToast({
+        type: 'success',
+        title: t('clash.bulk_suppress_done', {
+          defaultValue: '{{n}} clash(es) suppressed',
+          n: res.suppressed_count,
+        }),
+        // Some rows have no smart issue yet (e.g. a brand-new run not
+        // finalized) and are reported back as skipped, not suppressed.
+        message:
+          res.skipped_count > 0
+            ? t('clash.bulk_suppress_skipped', {
+                defaultValue: '{{n}} could not be suppressed and were skipped',
+                n: res.skipped_count,
+              })
+            : undefined,
+      });
+      setSelResults(new Set());
+    },
+    onSettled: () => {
+      qc.invalidateQueries({
+        queryKey: ['clash-results', projectId, runId],
+      });
+      qc.invalidateQueries({ queryKey: ['clash-run', projectId, runId] });
+    },
+  });
+
   // Per-clash collaboration: assignee / due date / add-comment. Optimistic
   // for the scalar fields; the comment text is appended optimistically with
   // a provisional author/ts, then the server's authoritative result (which
@@ -3966,7 +4040,30 @@ export function ClashDetectionPage() {
                 {selResults.size > 0 && sorted.length > 0 && (
                   <BulkActionsBar
                     count={selResults.size}
-                    busy={bulkMut.isPending}
+                    busy={bulkMut.isPending || suppressMut.isPending}
+                    onSuppress={async (reason) => {
+                      const trimmed = reason.trim();
+                      if (!trimmed) return;
+                      const ok = await confirm({
+                        title: t('clash.bulk_suppress_title', {
+                          defaultValue: 'Suppress selected clashes?',
+                        }),
+                        message: t('clash.bulk_suppress_confirm', {
+                          defaultValue:
+                            'Suppress {{n}} selected clash(es)? Their signatures will be marked ignored and will not auto-resurface in future runs. You can lift a suppression later.',
+                          n: selResults.size,
+                        }),
+                        confirmLabel: t('clash.bulk_suppress_action', {
+                          defaultValue: 'Suppress',
+                        }),
+                        variant: 'warning',
+                      });
+                      if (!ok) return;
+                      suppressMut.mutate({
+                        ids: Array.from(selResults),
+                        reason: trimmed,
+                      });
+                    }}
                     onSetSeverity={async (sv) => {
                       const ok = await confirm({
                         title: t('clash.bulk_severity_title', {
@@ -4643,6 +4740,7 @@ function BulkActionsBar({
   onSetSeverity,
   onSetStatus,
   onSetAssignee,
+  onSuppress,
   onClear,
   t,
 }: {
@@ -4651,10 +4749,12 @@ function BulkActionsBar({
   onSetSeverity: (s: ClashSeverity) => void;
   onSetStatus: (s: string) => void;
   onSetAssignee: (v: string) => void;
+  onSuppress: (reason: string) => void;
   onClear: () => void;
   t: TFn;
 }) {
   const [assignee, setAssignee] = useState('');
+  const [suppressReason, setSuppressReason] = useState('');
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-oe-blue/30 bg-oe-blue/[0.05] p-3 text-xs">
       <span className="font-semibold text-oe-blue">
@@ -4730,6 +4830,33 @@ function BulkActionsBar({
           onClick={() => onSetAssignee(assignee)}
         >
           {t('clash.bulk_assign_apply', { defaultValue: 'Apply' })}
+        </Button>
+      </label>
+      {/* Suppress the selection's smart issues - flips them to ``ignored``
+          so the signatures won't auto-resurface in future runs. A reason
+          is required (audit trail); the parent gates it behind a confirm. */}
+      <label className="flex items-center gap-1">
+        <span className="text-content-tertiary">
+          {t('clash.bulk_suppress', { defaultValue: 'Suppress' })}
+        </span>
+        <input
+          value={suppressReason}
+          onChange={(e) => setSuppressReason(e.target.value)}
+          placeholder={t('clash.bulk_suppress_reason_ph', {
+            defaultValue: 'reason (required)',
+          })}
+          className="h-7 w-44 rounded-md border border-border bg-surface-primary px-2 text-2xs"
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy || !suppressReason.trim()}
+          onClick={() => {
+            onSuppress(suppressReason);
+            setSuppressReason('');
+          }}
+        >
+          {t('clash.bulk_suppress_action', { defaultValue: 'Suppress' })}
         </Button>
       </label>
       <button

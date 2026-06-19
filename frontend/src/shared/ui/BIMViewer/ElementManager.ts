@@ -2590,10 +2590,9 @@ export class ElementManager {
 
   /** Subscribe to hidden-count changes. Returns an unsubscribe callback.
    *
-   *  TODO(W6.6 integration): wire hidden-count badge in BIMViewer.tsx —
-   *  render a small "{n} hidden — Show all" pill above the canvas while
-   *  `hasHidden()` is true. The pill should call `elementMgr.showAll()`
-   *  when clicked. */
+   *  Drives the floating "{n} hidden - Show all" badge in BIMViewer.tsx,
+   *  which is shown while `hasHidden()` is true and calls `showAll()` on
+   *  click. */
   onHiddenCountChange(cb: (count: number) => void): () => void {
     this.hiddenCountSubscribers.add(cb);
     // Fire once with the current value so subscribers can render synchronously.

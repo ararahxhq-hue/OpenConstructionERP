@@ -2146,9 +2146,6 @@ class ClashService:
         await self.unsuppress(project_id, issue.signature_hash, user_id)
         return issue
 
-    # TODO: expose via bulk endpoint - router.py is in flight with
-    # another agent, so the service method is shipped on its own and
-    # wired up in a follow-up patch.
     async def bulk_suppress(
         self,
         project_id: uuid.UUID,
@@ -2282,6 +2279,101 @@ class ClashService:
             "skipped_ids": skipped,
             "suppressed_count": len(suppressed_ids),
             "skipped_count": len(skipped),
+        }
+
+    async def bulk_suppress_results(
+        self,
+        project_id: uuid.UUID,
+        run_id: uuid.UUID,
+        result_ids: list[uuid.UUID],
+        reason: str,
+        user_id: uuid.UUID | str | None,
+    ) -> dict:
+        """Suppress the smart issues behind a selection of review-table rows.
+
+        The review table is keyed by :class:`ClashResult` id, but a
+        suppression is keyed by the underlying :class:`ClashIssue`
+        signature (so it survives across runs). This wrapper maps the
+        selected result ids to their distinct issue ids - run-scoped and
+        IDOR-safe via :meth:`ClashRepository.results_by_ids` - then
+        delegates to :meth:`bulk_suppress` (the tested transaction-safe
+        path). The result envelope is reported back in **result-id**
+        terms so the caller (which only holds result ids) can reconcile
+        its selection:
+
+        * ``suppressed_ids`` - results whose issue flipped to ``ignored``
+        * ``skipped_ids`` - results that did not belong to the run, had no
+          smart issue yet, or whose issue was dropped by ``bulk_suppress``
+          (e.g. missing signature)
+
+        Empty ``result_ids`` → zero-counts envelope, never raises. An
+        empty / whitespace-only ``reason`` raises 422 (same gate as the
+        single-issue path).
+        """
+        run = await self.get_run(project_id, run_id)  # IDOR + 404 guard
+
+        rsn = (reason or "").strip()
+        if not rsn:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="reason is required",
+            )
+
+        if not result_ids:
+            return {
+                "suppressed_ids": [],
+                "skipped_ids": [],
+                "suppressed_count": 0,
+                "skipped_count": 0,
+            }
+
+        # De-duplicate the selection preserving order; cap it at the same
+        # ceiling as the bulk-triage path so a runaway selection can't hold
+        # the event loop.
+        seen: set[uuid.UUID] = set()
+        unique_result_ids: list[uuid.UUID] = []
+        for rid in result_ids:
+            if rid is not None and rid not in seen:
+                seen.add(rid)
+                unique_result_ids.append(rid)
+        if len(unique_result_ids) > _MAX_RESULTS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Bulk selection exceeds {_MAX_RESULTS} rows.",
+            )
+
+        # Run-scoped fetch (IDOR-safe): rows from another run are dropped.
+        rows = await self.repo.results_by_ids(run.id, unique_result_ids)
+        result_to_issue: dict[uuid.UUID, uuid.UUID] = {}
+        issue_ids: list[uuid.UUID] = []
+        issue_seen: set[uuid.UUID] = set()
+        for r in rows:
+            if r.issue_id is None:
+                continue
+            result_to_issue[r.id] = r.issue_id
+            if r.issue_id not in issue_seen:
+                issue_seen.add(r.issue_id)
+                issue_ids.append(r.issue_id)
+
+        outcome = await self.bulk_suppress(project_id, issue_ids, rsn, user_id)
+        suppressed_issue_ids = set(outcome["suppressed_ids"])
+
+        # Re-express the issue-level outcome in result-id terms. A selected
+        # result counts as suppressed iff its mapped issue actually flipped.
+        suppressed_results: list[uuid.UUID] = []
+        skipped_results: list[uuid.UUID] = []
+        for rid in unique_result_ids:
+            mapped = result_to_issue.get(rid)
+            if mapped is not None and mapped in suppressed_issue_ids:
+                suppressed_results.append(rid)
+            else:
+                skipped_results.append(rid)
+
+        return {
+            "suppressed_ids": suppressed_results,
+            "skipped_ids": skipped_results,
+            "suppressed_count": len(suppressed_results),
+            "skipped_count": len(skipped_results),
         }
 
     async def list_issues(

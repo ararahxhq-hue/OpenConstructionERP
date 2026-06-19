@@ -628,6 +628,30 @@ export const clashApi = {
       body,
     ),
 
+  /**
+   * Suppress the smart issues behind a selection of review-table rows in
+   * a single request. Backs the bulk-actions toolbar's "Suppress selected"
+   * action. The selection is keyed by clash result id; the server maps
+   * each to its underlying issue signature and flips the matching issues
+   * to ``ignored`` so they won't auto-resurface in future runs. Foreign /
+   * unknown ids are dropped and reported back in `skipped_ids` (never an
+   * error). Returns the outcome in result-id terms.
+   */
+  bulkSuppressResults: (
+    projectId: string,
+    runId: string,
+    body: { result_ids: string[]; reason: string },
+  ) =>
+    apiPost<{
+      suppressed_ids: string[];
+      skipped_ids: string[];
+      suppressed_count: number;
+      skipped_count: number;
+    }>(
+      `/v1/clash/projects/${projectId}/runs/${runId}/results/suppress`,
+      body,
+    ),
+
   /** Diff the active run against an earlier one (same models/config).
    *  Returns new / resolved / persistent buckets + summary stats. */
   compare: (projectId: string, runId: string, baseRunId: string) =>
