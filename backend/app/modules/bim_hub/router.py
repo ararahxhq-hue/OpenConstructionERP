@@ -72,6 +72,7 @@ from app.core.demo_placeholders import materialize_placeholder
 from app.core.http_headers import content_disposition_attachment
 from app.core.i18n import get_locale
 from app.core.rate_limiter import upload_limiter
+from app.core.storage import resolve_data_dir as _resolve_data_dir
 from app.core.validation.messages import translate
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.bim_hub import file_storage as bim_file_storage
@@ -218,8 +219,10 @@ def _to_qty_float(val: object) -> float:
 # Legacy on-disk path kept only for backward compatibility with any
 # external code that may still import ``_BIM_DATA_DIR``.  New code MUST
 # go through :mod:`app.modules.bim_hub.file_storage` which wraps the
-# pluggable :class:`~app.core.storage.StorageBackend`.
-_BIM_DATA_DIR = pathlib.Path(__file__).resolve().parents[4] / "data" / "bim"
+# pluggable :class:`~app.core.storage.StorageBackend`.  Resolved through the
+# unified resolver so it points at the ACTIVE data root (honours OE_DATA_DIR /
+# DATA_DIR / OE_CLI_DATA_DIR) rather than the package-relative default.
+_BIM_DATA_DIR = _resolve_data_dir() / "bim"
 
 
 def _get_service(session: SessionDep) -> BIMHubService:
@@ -2983,13 +2986,32 @@ async def get_model_geometry(
         # Status promises geometry but the blob is gone - a genuine,
         # unexpected data problem worth reporting. This is the ONLY case
         # that keeps the legacy "geometry_missing" code.
+        #
+        # Log EVERY directory we searched (active root + back-compat fallbacks)
+        # so an operator can see exactly where the blob was expected. The
+        # 8.6.1 root cause was a data-dir mismatch: geometry written under one
+        # resolution, read from another. If this still fires after 8.6.1 the
+        # blob is genuinely gone, and these paths prove the search was complete.
+        try:
+            from app.core.storage import safe_data_roots as _safe_data_roots
+
+            _prefix = bim_file_storage.bim_model_prefix(project_id, model_id)
+            _searched = [str(_resolve_data_dir())] + [
+                str(p) for p in _safe_data_roots() if str(p) != str(_resolve_data_dir())
+            ]
+        except Exception:  # noqa: BLE001 - diagnostics must never break the response
+            _prefix = "<unavailable>"
+            _searched = []
         logger.warning(
             "BIM geometry MISSING for a ready model - blob gone from storage "
-            "(request_id=%s, model_id=%s, project_id=%s, status=%s)",
+            "(request_id=%s, model_id=%s, project_id=%s, status=%s, key_prefix=%s, "
+            "searched_roots=%s)",
             request_id,
             model_id,
             project_id,
             model_status,
+            _prefix,
+            _searched,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

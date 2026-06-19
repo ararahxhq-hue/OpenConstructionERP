@@ -4153,28 +4153,33 @@ async def download_document(
     if not doc.file_path:
         raise HTTPException(status_code=404, detail="PDF file not available for this document")
 
-    file_path = Path(doc.file_path).resolve()
+    from app.core.storage import is_within_safe_root
+    from app.modules.takeoff.service import _find_existing_takeoff_pdf
 
-    # Security: ensure resolved path is within the takeoff upload directory.
-    # The CLI's default data dir is ``~/.openestimate`` (see cli.py:51,
-    # ``DEFAULT_DATA_DIR = Path.home() / ".openestimate"``). The guard used
-    # to whitelist the brand-namespace ``~/.openestimator`` (with an "r")
-    # which mismatched every actual file path on disk - every PDF download
-    # returned 403 "Access denied". Whitelist both spellings to also cover
-    # any historical installs that landed under the brand namespace, plus
-    # any operator-supplied custom data dir via OE_DATA_DIR.
-    home = Path.home().resolve()
-    allowed_bases = [
-        (home / ".openestimate").resolve(),
-        (home / ".openestimator").resolve(),
-    ]
-    custom_dir = os.environ.get("OE_DATA_DIR") or os.environ.get("DATA_DIR")
-    if custom_dir:
-        try:
-            allowed_bases.append(Path(custom_dir).resolve())
-        except OSError:
-            pass
-    if not any(str(file_path).startswith(str(b)) for b in allowed_bases):
+    # Resolve the PDF with the read-only back-compat fallback: the active data
+    # root first, then every other platform-owned data root (and the legacy
+    # ~/.openestimator path). This serves PDFs written under a different data-dir
+    # resolution - e.g. before OE_DATA_DIR was honoured here - instead of 404'ing
+    # a row whose status is "ready".
+    file_path = _find_existing_takeoff_pdf(doc_id)
+    if file_path is None:
+        # Fall back to the persisted path (handles a custom location that is
+        # still inside a safe root but outside the standard subdir layout).
+        if doc.file_path:
+            try:
+                candidate = Path(doc.file_path).resolve()
+            except OSError:
+                candidate = None
+            if candidate is not None and candidate.is_file() and not candidate.is_symlink():
+                file_path = candidate
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="PDF file not found on disk")
+
+    # Security: containment via relative_to (not a brittle str.startswith prefix
+    # check) against the platform-owned data roots, so a sibling directory whose
+    # name merely shares a prefix can never pass and symlink escapes are defeated
+    # (path is already resolved).
+    if not is_within_safe_root(file_path):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not file_path.exists() or file_path.is_symlink():

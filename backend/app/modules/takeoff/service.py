@@ -647,8 +647,66 @@ def _measurement_dimension(measurement: Any) -> str | None:
     return _unit_dimension(getattr(measurement, "measurement_unit", None))
 
 
-# Directory where uploaded PDF files are stored on disk
-_TAKEOFF_DOCUMENTS_DIR = Path.home() / ".openestimator" / "takeoff_documents"
+# Sub-directory (under the unified data root) where uploaded PDF files live.
+_TAKEOFF_DOCUMENTS_SUBDIR = "takeoff_documents"
+
+
+def _takeoff_documents_dir() -> Path:
+    """Return the active directory where takeoff PDFs are WRITTEN.
+
+    Anchored under :func:`app.core.storage.resolve_data_dir` so it honours
+    ``OE_DATA_DIR`` / ``DATA_DIR`` / ``OE_CLI_DATA_DIR`` (and the persistent
+    per-user home for wheel installs) exactly like the storage backend and the
+    BIM hub. The old code hard-coded ``~/.openestimator/takeoff_documents`` -
+    the WRONG brand namespace, ignoring every env override - so on a container
+    or external-Postgres redeploy the PDF bytes were lost while the document
+    row stayed present (download 404 "PDF file not found on disk").
+
+    Resolved lazily, PER CALL (not at import time), so a test monkeypatch or an
+    operator setting ``OE_DATA_DIR`` after import takes effect, and so this
+    module is not import-coupled to ``app.config``/Postgres.
+    """
+    from app.core.storage import resolve_data_dir
+
+    return resolve_data_dir() / _TAKEOFF_DOCUMENTS_SUBDIR
+
+
+def _find_existing_takeoff_pdf(doc_id: str) -> Path | None:
+    """Resolve ``{doc_id}.pdf`` to an existing file, READ-ONLY back-compat.
+
+    The active data root is tried first; if the PDF is not there we probe every
+    other platform-owned data root (:func:`app.core.storage.safe_data_roots`)
+    AND the legacy ``~/.openestimator`` brand-namespace path that pre-8.6.1
+    builds physically wrote to. This is what lets a PDF written under a DIFFERENT
+    data-dir resolution still be served instead of 404'ing.
+
+    Reads fall back; WRITES never do (uploads always go to
+    :func:`_takeoff_documents_dir`). The filename is a server-generated UUID, so
+    there is no path-traversal surface here, but containment against the
+    platform-owned roots is still verified by the router via
+    :func:`app.core.storage.is_within_safe_root`. Returns ``None`` when the PDF
+    exists nowhere.
+    """
+    from app.core.storage import safe_data_roots
+
+    name = f"{doc_id}.pdf"
+    candidates: list[Path] = [_takeoff_documents_dir() / name]
+    for root in safe_data_roots():
+        candidates.append(root / _TAKEOFF_DOCUMENTS_SUBDIR / name)
+    # Legacy brand-namespace path some pre-8.6.1 installs wrote to directly.
+    candidates.append(Path.home() / ".openestimator" / _TAKEOFF_DOCUMENTS_SUBDIR / name)
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_file():
+            return resolved
+    return None
 
 
 def _describe_pdf_input(content: bytes, *, filename: str | None = None) -> str:
@@ -1095,10 +1153,14 @@ class TakeoffService:
                 detail="Failed to parse PDF document. Please check the file and try again.",
             )
 
-        # Save the PDF file to disk so it can be retrieved later for viewing
-        _TAKEOFF_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+        # Save the PDF file to disk so it can be retrieved later for viewing.
+        # WRITE always lands under the active resolved data root (never a
+        # back-compat fallback) so it survives redeploys when OE_DATA_DIR points
+        # at a persistent volume.
+        documents_dir = _takeoff_documents_dir()
+        documents_dir.mkdir(parents=True, exist_ok=True)
         doc_id = uuid.uuid4()
-        file_path = _TAKEOFF_DOCUMENTS_DIR / f"{doc_id}.pdf"
+        file_path = documents_dir / f"{doc_id}.pdf"
         file_path.write_bytes(content)
 
         # Scanned PDFs without OCR get a distinct status so the UI
@@ -1520,8 +1582,16 @@ class TakeoffService:
             raise HTTPException(status_code=404, detail="Takeoff document not found")
         validate_page_for_document(doc, page)
 
-        file_path = Path(doc.file_path) if doc.file_path else _TAKEOFF_DOCUMENTS_DIR / f"{doc_id}.pdf"
-        if not file_path.exists():
+        # Read-only back-compat resolution: probe the active root and every
+        # platform-owned data root (and the legacy ~/.openestimator path) so a
+        # PDF written under a different data-dir resolution is still found,
+        # before falling back to the persisted path.
+        file_path = _find_existing_takeoff_pdf(doc_id)
+        if file_path is None and doc.file_path:
+            candidate = Path(doc.file_path)
+            if candidate.exists():
+                file_path = candidate
+        if file_path is None:
             raise HTTPException(
                 status_code=404,
                 detail="The stored PDF for this document is no longer on disk. Re-upload it to recognize.",
@@ -2529,8 +2599,15 @@ class TakeoffService:
             if doc is None:
                 await self._fail_plan_read(run_id, "document_missing", start)
                 return
-            file_path = Path(doc.file_path) if doc.file_path else _TAKEOFF_DOCUMENTS_DIR / f"{run.document_id}.pdf"
-            if not file_path.exists():
+            # Read-only back-compat resolution (see recognize path): find the
+            # PDF across every platform-owned data root before falling back to
+            # the persisted path, so a redeployed volume still resolves.
+            file_path = _find_existing_takeoff_pdf(run.document_id)
+            if file_path is None and doc.file_path:
+                candidate = Path(doc.file_path)
+                if candidate.exists():
+                    file_path = candidate
+            if file_path is None:
                 await self._fail_plan_read(run_id, "pdf_not_on_disk", start)
                 return
             content = file_path.read_bytes()

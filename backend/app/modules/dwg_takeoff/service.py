@@ -306,15 +306,76 @@ def _normalize_entity(raw: dict[str, Any], index: int) -> dict[str, Any]:
 
 
 def _dwg_data_base() -> str:
-    """Base directory for DWG blobs.
+    """Base directory for DWG blobs (the ACTIVE writable root).
 
-    The desktop and CLI runtimes export ``OE_CLI_DATA_DIR`` (a writable
-    per-user directory such as ``~/.openestimate``); honour it first so a
-    per-machine install under a read-only location like Program Files still
-    has somewhere to write. ``DATA_DIR`` is respected next for custom
-    deployments, then ``<cwd>/data`` for a source checkout.
+    Defers to :func:`app.core.storage.resolve_data_dir` (lazy import) so this
+    module can never disagree with where the platform actually writes blobs.
+    That resolver honours ``OE_DATA_DIR`` > ``DATA_DIR`` > ``OE_CLI_DATA_DIR``
+    before its persistent per-user / repo-relative default.
+
+    Crucially this is the single root that :func:`safe_data_roots` always
+    contains, so a DWG written here passes the download route's safe-root gate
+    instead of being rejected and served as a placeholder. The old body
+    defaulted to ``<cwd>/data`` - never a member of ``safe_data_roots()`` and
+    sensitive to the process CWD - which is exactly what broke "ready" drawings
+    on standalone / Docker / macOS deployments.
+
+    Resolved PER CALL (not cached at import) so ``OE_DATA_DIR`` and test
+    monkeypatching take effect. WRITES always target this root; READS may fall
+    back across :func:`safe_data_roots` via :func:`_dwg_existing_path`.
     """
-    return os.environ.get("OE_CLI_DATA_DIR") or os.environ.get("DATA_DIR") or os.path.join(os.getcwd(), "data")
+    from app.core.storage import resolve_data_dir
+
+    return str(resolve_data_dir())
+
+
+def _dwg_existing_path(base_subdir: str, key: str) -> str | None:
+    """Resolve ``<base>/<base_subdir>/<key>`` to an existing file, READ-ONLY.
+
+    Tries the ACTIVE data root first (``_dwg_data_base()``); if the blob is not
+    there, probes every OTHER platform-owned data root from
+    :func:`app.core.storage.safe_data_roots` for the same relative location.
+    This lets a blob written under a prior data-dir resolution (e.g. before
+    ``OE_DATA_DIR`` was honoured, the package-relative default a ``pip -U``
+    replaced, or a different CWD) still be served instead of going missing.
+
+    Reads fall back; WRITES never do. Containment is re-checked against each
+    candidate root with ``relative_to`` so a crafted ``key`` can never escape a
+    data root. Returns ``None`` when the file exists nowhere.
+    """
+    from app.core.storage import safe_data_roots
+
+    # Reject path-traversal in the key before touching the filesystem.
+    parts = [p for p in str(key).replace("\\", "/").split("/") if p and p != "."]
+    if any(p == ".." for p in parts) or os.path.isabs(key):
+        return None
+
+    seen: set[str] = set()
+    active = os.path.realpath(_dwg_data_base())
+    roots = [active]
+    for root in safe_data_roots():
+        roots.append(os.path.realpath(str(root)))
+
+    for root in roots:
+        if root in seen:
+            continue
+        seen.add(root)
+        candidate = os.path.realpath(os.path.join(root, base_subdir, *parts))
+        # Containment: candidate must stay under this root.
+        if os.path.commonpath([candidate, root]) != root:
+            continue
+        if os.path.isfile(candidate):
+            if root != active:
+                logger.info(
+                    "dwg: %s/%s absent under active root %s; served from "
+                    "back-compat data root %s",
+                    base_subdir,
+                    key,
+                    active,
+                    root,
+                )
+            return candidate
+    return None
 
 
 def _get_upload_dir() -> str:
@@ -329,6 +390,47 @@ def _get_entities_dir() -> str:
     entities_dir = os.path.join(_dwg_data_base(), "dwg_entities")
     os.makedirs(entities_dir, exist_ok=True)
     return entities_dir
+
+
+def resolve_source_drawing_path(stored_file_path: str | None) -> str | None:
+    """Resolve a drawing's source-blob path for READ, with back-compat fallback.
+
+    The stored ``file_path`` is the absolute path captured at upload time under
+    whatever data root was active then. If the data-dir resolution has since
+    changed (e.g. the old ``<cwd>/data`` default, or before ``OE_DATA_DIR`` was
+    honoured) that absolute path may no longer point at the file. We:
+
+    1. return the stored path verbatim when it still exists as a regular file
+       AND lives inside a platform-owned safe root (preserves the existing
+       symlink / safe-root guarantees the download route relies on);
+    2. otherwise recover the blob by its basename under ``dwg_uploads/`` across
+       every :func:`safe_data_roots` (READ-ONLY fallback).
+
+    Returns ``None`` when nothing resolves, so the caller keeps its existing
+    placeholder / 404 behaviour. This never writes and never escapes a data
+    root (``_dwg_existing_path`` re-checks containment per candidate).
+    """
+    from pathlib import Path
+
+    from app.core.storage import is_within_safe_root
+
+    if stored_file_path:
+        try:
+            resolved = os.path.realpath(stored_file_path)
+        except OSError:
+            resolved = ""
+        if (
+            resolved
+            and os.path.isfile(resolved)
+            and not os.path.islink(stored_file_path)
+            and is_within_safe_root(Path(resolved))
+        ):
+            return resolved
+        # Recover by basename across the back-compat read roots.
+        basename = os.path.basename(stored_file_path)
+        if basename:
+            return _dwg_existing_path("dwg_uploads", basename)
+    return None
 
 
 def _extents_from_raw_entities(entities: list[dict[str, Any]]) -> dict[str, float] | None:
@@ -1523,8 +1625,11 @@ class DwgTakeoffService:
         """
         if version.entities_key is None:
             return []
-        entities_path = os.path.join(_get_entities_dir(), version.entities_key)
-        if not os.path.exists(entities_path):
+        # Mirror get_entities: resolve through the multi-root read fallback so a
+        # blob written under a prior data-dir resolution is still found (the
+        # units/extents backfill must not silently no-op on back-compat roots).
+        entities_path = _dwg_existing_path("dwg_entities", version.entities_key)
+        if entities_path is None:
             return []
         with open(entities_path, encoding="utf-8") as f:
             data = json.load(f)
@@ -1884,8 +1989,8 @@ class DwgTakeoffService:
         if version is None or version.entities_key is None:
             return []
 
-        entities_path = os.path.join(_get_entities_dir(), version.entities_key)
-        if not os.path.exists(entities_path):
+        entities_path = _dwg_existing_path("dwg_entities", version.entities_key)
+        if entities_path is None:
             return []
 
         try:
@@ -1921,9 +2026,8 @@ class DwgTakeoffService:
         if not drawing.thumbnail_key:
             return None
 
-        thumb_dir = os.path.join(_dwg_data_base(), "dwg_thumbnails")
-        thumb_path = os.path.join(thumb_dir, drawing.thumbnail_key)
-        if not os.path.exists(thumb_path):
+        thumb_path = _dwg_existing_path("dwg_thumbnails", drawing.thumbnail_key)
+        if thumb_path is None:
             return None
 
         try:
