@@ -389,7 +389,18 @@ class ProjectService:
 
             _pack = get_active_pack()
             if _pack is not None:
-                project.metadata_ = merge_metadata(project.metadata_, {"partner_pack": _pack.slug})
+                _pack_meta: dict[str, str] = {"partner_pack": _pack.slug}
+                # Inherit the pack's estimating methodology so a project created
+                # while a pack is active opens with the partner's cascade, not
+                # the flat international default. Builtin template slug only,
+                # validated against the pure templates catalogue (no DB import).
+                _meth = getattr(_pack, "default_methodology", None)
+                if _meth:
+                    from app.modules.methodology.templates import TEMPLATES_BY_SLUG
+
+                    if _meth in TEMPLATES_BY_SLUG:
+                        _pack_meta["methodology_slug"] = _meth
+                project.metadata_ = merge_metadata(project.metadata_, _pack_meta)
         except Exception:  # noqa: BLE001 - creation must never break on pack lookup
             pass
 
