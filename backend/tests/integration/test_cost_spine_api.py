@@ -607,6 +607,15 @@ async def test_idor_second_user_404_on_line_rollup(http_client, scenario):
     b_headers = scenario["b_headers"]
     project_id = scenario["project_id"]
 
+    # The spine-generating test is deselected by the tenant-isolation -k
+    # filter, so generate it here (idempotent) before reading a cost line.
+    gen = await client.post(
+        f"{API}/costmodel/projects/{project_id}/spine/generate-from-boq/",
+        json={"boq_id": scenario["boq_id"]},
+        headers=scenario["a_headers"],
+    )
+    assert gen.status_code == 200, gen.text
+
     cost_line_id = await _first_cost_line_id(client, a_headers, project_id)
 
     resp = await client.get(f"{API}/costmodel/spine/lines/{cost_line_id}/rollup/", headers=b_headers)
@@ -620,6 +629,15 @@ async def test_idor_second_user_404_on_mutations(http_client, scenario):
     a_headers = scenario["a_headers"]
     b_headers = scenario["b_headers"]
     project_id = scenario["project_id"]
+
+    # The spine-generating test is deselected by the tenant-isolation -k
+    # filter, so generate it here (idempotent) before reading a cost line.
+    gen = await client.post(
+        f"{API}/costmodel/projects/{project_id}/spine/generate-from-boq/",
+        json={"boq_id": scenario["boq_id"]},
+        headers=scenario["a_headers"],
+    )
+    assert gen.status_code == 200, gen.text
 
     # Create a control account on A's project.
     create_acct = await client.post(
