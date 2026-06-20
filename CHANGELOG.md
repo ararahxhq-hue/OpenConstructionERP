@@ -5,6 +5,34 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.7.0] - 2026-06-20
+
+### Added
+
+- A country or industry pack can now carry its own estimating methodology and apply it automatically. When you install a pack, its demo project - and any new project you create while that pack is active - starts on the pack's methodology (for example the United States, United Kingdom, India, Germany or Australia cascade) instead of the generic international method, so estimates follow local convention out of the box.
+- Estimates built with the methodology engine export to PDF and Excel.
+- Point cloud scans in LAS, LAZ and COPC formats can be read directly. The reader is an installable extra and the supported formats are stated up front, so an unsupported file (such as E57, which needs the additional package) is reported clearly instead of failing silently.
+- The methodologies page shows its template gallery even when no project is open, so you can browse what ships before starting one.
+- Clash results can be suppressed in bulk, and file-manager uploads are routed by file kind.
+- Several existing capabilities are now surfaced in the interface: a dedicated viewer for 360-degree panorama photos, data-validation results that export to Excel, 4D and earned-value progress in the schedule view, a scan-versus-design overlay, an offline pending-changes indicator, and a single approvals inbox.
+
+### Fixed
+
+- A BIM model that is ready but carries no 3D geometry - for example when no native converter produced one - now shows a clear "No 3D geometry" notice instead of a blank canvas. Reported in [#59](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/59).
+- The 3D viewer releases its WebGL context when you navigate away, so opening several models in one session no longer exhausts the browser's available contexts and falsely reports "3D view unavailable".
+- Core list pages now show a recoverable error message instead of a blank screen when a request fails.
+- A deep-quality pass across the bill-of-quantities, clash, procurement, RFI and schedule modules fixed more than 150 correctness, performance and usability issues - including locale-aware parsing of European-formatted amounts (for example 1.234,56) in GAEB import, atomic goods-receipt handling in procurement, and faster critical-path scheduling.
+
+### Security
+
+- A broad security and data-integrity hardening pass across many modules. Cross-tenant access gaps were closed so portfolio analytics, cross-project similarity, collaboration viewpoints, accommodation and others scope strictly to the projects you may access. Monetary inputs across change orders, risk, QMS, punch lists and bids now reject invalid values (not-a-number, infinity, absurd magnitudes) so one bad entry can no longer corrupt a project-wide total or crash a report. Financial roll-ups no longer blend different currencies into a single mislabelled figure. Partial edits no longer silently drop the fields they did not mention. A shared tenant-scope and money-handling layer, plus a continuous-integration check, were added to keep these from regressing.
+
+## [8.6.1] - 2026-06-19
+
+### Fixed
+
+- BIM and takeoff files now resolve across platforms and installation types. Geometry or PDFs written under one data directory - for example a packaged desktop install versus a from-source run, or a custom data directory - are now found and served instead of appearing as a ready-but-empty model. Files written by earlier versions are still read from their previous locations.
+
 ## [8.6.0] - 2026-06-18
 
 ### Added
