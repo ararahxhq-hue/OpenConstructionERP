@@ -92,10 +92,15 @@ describe('MethodologiesPage', () => {
     useProjectContextStore.getState().setActiveProject('proj-1', 'Test Project');
   });
 
-  it('shows the no-project guard when no project is active', async () => {
+  it('still shows the (project-agnostic) templates gallery when no project is active', async () => {
     useProjectContextStore.getState().clearProject();
     renderPage();
-    expect(await screen.findByText('Select a project first')).toBeInTheDocument();
+    // The gallery does not need a project - it must render so the page is never
+    // blank; only the install/create actions are gated.
+    expect(await screen.findByText('International (neutral)')).toBeInTheDocument();
+    expect(screen.getByText('Germany')).toBeInTheDocument();
+    // ...and the page still prompts the visitor to pick a project before installing.
+    expect(screen.getByText('Select a project first')).toBeInTheDocument();
   });
 
   it('renders the templates gallery grouped, with all 10-style buckets', async () => {

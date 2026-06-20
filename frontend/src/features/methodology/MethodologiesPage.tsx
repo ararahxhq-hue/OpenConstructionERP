@@ -254,28 +254,22 @@ export function MethodologiesPage() {
     onSettled: () => setInstallingSlug(null),
   });
 
-  // ── No project selected ─────────────────────────────────────────────
-  if (!activeProjectId) {
-    return (
-      <div className="space-y-5 animate-fade-in">
-        <PageHeader
-          srTitle={t('methodology.title', { defaultValue: 'Estimating methodologies' })}
-        />
-        <EmptyState
-          icon={<Layers3 size={22} />}
-          title={t('methodology.no_project.title', { defaultValue: 'Select a project first' })}
-          description={t('methodology.no_project.desc', {
-            defaultValue:
-              'Methodologies are installed and edited per project. Pick a project in the top bar to manage its estimating methodology.',
-          })}
-          action={{
-            label: t('methodology.no_project.action', { defaultValue: 'Go to projects' }),
-            onClick: () => navigate('/projects'),
-          }}
-        />
-      </div>
-    );
-  }
+  // Installing requires a project; the templates gallery itself is global and
+  // renders without one. Guard the install action so a no-project visitor gets
+  // a clear "pick a project" prompt instead of a silent no-op.
+  const handleInstall = (slug: string) => {
+    if (!activeProjectId) {
+      addToast({
+        type: 'info',
+        title: t('methodology.select_project_toast', { defaultValue: 'Select a project first' }),
+        message: t('methodology.select_project_toast_msg', {
+          defaultValue: 'Pick a project in the top bar, then install a methodology into it.',
+        }),
+      });
+      return;
+    }
+    installMut.mutate(slug);
+  };
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -288,20 +282,30 @@ export function MethodologiesPage() {
 
       <PageHeader
         srTitle={t('methodology.title', { defaultValue: 'Estimating methodologies' })}
-        subtitle={t('methodology.subtitle', {
-          defaultValue:
-            'How direct costs are marked up into a final estimate for {{project}}: the works vs equipment split, named base sets, the sequential percentage steps and VAT.',
-          project: activeProjectName || t('methodology.this_project', { defaultValue: 'this project' }),
-        })}
+        subtitle={
+          activeProjectId
+            ? t('methodology.subtitle', {
+                defaultValue:
+                  'How direct costs are marked up into a final estimate for {{project}}: the works vs equipment split, named base sets, the sequential percentage steps and VAT.',
+                project:
+                  activeProjectName || t('methodology.this_project', { defaultValue: 'this project' }),
+              })
+            : t('methodology.subtitle_no_project', {
+                defaultValue:
+                  'Browse the built-in estimating methodologies. Pick a project in the top bar to install one and tailor its markup cascade, dimensions and funding sources.',
+              })
+        }
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus size={14} />}
-            onClick={() => setCreateOpen(true)}
-          >
-            {t('methodology.create', { defaultValue: 'New methodology' })}
-          </Button>
+          activeProjectId ? (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus size={14} />}
+              onClick={() => setCreateOpen(true)}
+            >
+              {t('methodology.create', { defaultValue: 'New methodology' })}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -310,12 +314,16 @@ export function MethodologiesPage() {
         title={t('methodology.intro.title', {
           defaultValue: 'Data-driven estimating, your way',
         })}
-        links={[
-          {
-            label: t('project.settings.title', { defaultValue: 'Settings' }),
-            onClick: () => navigate(`/projects/${activeProjectId}/settings#methodology`),
-          },
-        ]}
+        links={
+          activeProjectId
+            ? [
+                {
+                  label: t('project.settings.title', { defaultValue: 'Settings' }),
+                  onClick: () => navigate(`/projects/${activeProjectId}/settings#methodology`),
+                },
+              ]
+            : []
+        }
       >
         {t('methodology.intro.body', {
           defaultValue:
@@ -323,7 +331,8 @@ export function MethodologiesPage() {
         })}
       </DismissibleInfo>
 
-      {/* ── Installed methodologies ─────────────────────────────────────── */}
+      {/* ── Installed methodologies (per project) ───────────────────────── */}
+      {activeProjectId ? (
       <section>
         <h2 className="mb-3 text-base font-semibold text-content-primary">
           {t('methodology.installed.title', { defaultValue: 'Installed in this project' })}
@@ -367,6 +376,22 @@ export function MethodologiesPage() {
           </div>
         )}
       </section>
+      ) : (
+        <Card padding="lg">
+          <EmptyState
+            icon={<Layers3 size={22} />}
+            title={t('methodology.no_project.title', { defaultValue: 'Select a project first' })}
+            description={t('methodology.no_project.desc', {
+              defaultValue:
+                'Methodologies are installed and edited per project. Pick a project in the top bar to install one of the templates below.',
+            })}
+            action={{
+              label: t('methodology.no_project.action', { defaultValue: 'Go to projects' }),
+              onClick: () => navigate('/projects'),
+            }}
+          />
+        </Card>
+      )}
 
       {/* ── Templates gallery ───────────────────────────────────────────── */}
       <section className="space-y-5">
@@ -394,7 +419,7 @@ export function MethodologiesPage() {
               icon={<Globe2 size={15} />}
               templates={grouped.international}
               installedByTemplate={installedByTemplate}
-              onInstall={(slug) => installMut.mutate(slug)}
+              onInstall={handleInstall}
               installingSlug={installingSlug}
             />
             <GallerySection
@@ -402,7 +427,7 @@ export function MethodologiesPage() {
               icon={<Banknote size={15} />}
               templates={grouped.countries}
               installedByTemplate={installedByTemplate}
-              onInstall={(slug) => installMut.mutate(slug)}
+              onInstall={handleInstall}
               installingSlug={installingSlug}
             />
             <GallerySection
@@ -412,7 +437,7 @@ export function MethodologiesPage() {
               icon={<FlaskConical size={15} />}
               templates={grouped.uzbekistan}
               installedByTemplate={installedByTemplate}
-              onInstall={(slug) => installMut.mutate(slug)}
+              onInstall={handleInstall}
               installingSlug={installingSlug}
             />
             <GallerySection
@@ -420,23 +445,25 @@ export function MethodologiesPage() {
               icon={<TrainFront size={15} />}
               templates={grouped.industry}
               installedByTemplate={installedByTemplate}
-              onInstall={(slug) => installMut.mutate(slug)}
+              onInstall={handleInstall}
               installingSlug={installingSlug}
             />
           </>
         )}
       </section>
 
-      <CreateMethodologyModal
-        open={createOpen}
-        projectId={activeProjectId}
-        onClose={() => setCreateOpen(false)}
-        onCreated={(m) => {
-          setCreateOpen(false);
-          queryClient.invalidateQueries({ queryKey: ['methodology', 'list', activeProjectId] });
-          navigate(`/methodologies/${m.id}`);
-        }}
-      />
+      {activeProjectId && (
+        <CreateMethodologyModal
+          open={createOpen}
+          projectId={activeProjectId}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(m) => {
+            setCreateOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['methodology', 'list', activeProjectId] });
+            navigate(`/methodologies/${m.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }
