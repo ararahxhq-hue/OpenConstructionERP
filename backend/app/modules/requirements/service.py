@@ -172,7 +172,12 @@ class RequirementsService:
             if key in fields and fields[key] is not None:
                 safe_fields[key] = fields[key]
         if "metadata" in fields and fields["metadata"] is not None:
-            safe_fields["metadata_"] = fields["metadata"]
+            # Shallow-merge rather than overwrite: a partial PATCH that sends
+            # only some keys must not drop existing provenance (parse_errors,
+            # lines_total written by import_from_text). Mirrors update_requirement.
+            safe_fields["metadata_"] = merge_metadata(
+                getattr(item, "metadata_", None), fields["metadata"]
+            )
 
         if not safe_fields:
             return item

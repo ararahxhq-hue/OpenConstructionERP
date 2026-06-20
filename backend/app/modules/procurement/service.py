@@ -1579,7 +1579,10 @@ class ProcurementService:
         # fall back to the blank-currency bucket only when that is all there is.
         _named = {c: v for c, v in value_by_currency.items() if c}
         if _named:
-            currency, total_po_value = max(_named.items(), key=lambda kv: kv[1])
+            # Tie-break on the currency code so two identical calls always report
+            # the same headline currency when aggregates are exactly equal (the
+            # PO scan has no ORDER BY, so row order is otherwise DB-dependent).
+            currency, total_po_value = max(_named.items(), key=lambda kv: (kv[1], kv[0]))
         else:
             currency, total_po_value = "", value_by_currency.get("", Decimal("0"))
         mixed_currency = len(_named) > 1
