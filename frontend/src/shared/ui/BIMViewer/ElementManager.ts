@@ -261,6 +261,14 @@ export interface BIMModelData {
   /** Whether the raw uploaded CAD file is still on storage.  Drives
    *  retry availability and the disk-usage tooltip.  Added in v2.6.29. */
   has_original?: boolean | null;
+  /** Whether geometry (GLB/DAE) is available for this model.  Derived by
+   *  the backend at response time from `canonical_file_path` (set when the
+   *  converter produced a usable mesh) and returned on every list/detail
+   *  response.  Drives whether the 3D canvas is mounted vs. the "data only"
+   *  element list; `false`/undefined means the model imported elements +
+   *  quantities but has no 3D mesh (e.g. no native CAD converter on this
+   *  server). */
+  has_geometry?: boolean;
 }
 
 /* ── Discipline Colors ─────────────────────────────────────────────────── */

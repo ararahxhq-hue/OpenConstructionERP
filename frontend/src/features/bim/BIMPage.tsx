@@ -2378,6 +2378,12 @@ export function BIMPage() {
     if (
       !activeModelId ||
       !canRenderModel ||
+      // No canonical geometry blob exists on the server: the model imported
+      // element data but no native CAD converter produced a GLB/DAE, so
+      // canonical_file_path is null and has_geometry is false. Requesting the
+      // geometry endpoint would 404 - skip it and let the viewer show its
+      // "no 3D geometry" notice instead (Colin #59).
+      activeModel?.has_geometry === false ||
       ((activeModel?.element_count ?? 0) === 0 && !elements.some((el) => !!el.mesh_ref))
     ) {
       return null;
@@ -2388,7 +2394,7 @@ export function BIMPage() {
     if (token) params.set('token', token);
     params.set('_t', activeModel?.updated_at || String(Date.now()));
     return `${base}?${params.toString()}`;
-  }, [activeModelId, activeModel?.status, activeModel?.element_count, activeModel?.updated_at, elements]);
+  }, [activeModelId, activeModel?.status, activeModel?.has_geometry, activeModel?.element_count, activeModel?.updated_at, elements]);
 
   const handleElementSelect = useCallback(
     (id: string | null) => {
