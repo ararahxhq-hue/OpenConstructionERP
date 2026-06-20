@@ -269,7 +269,7 @@ const navGroups: NavGroup[] = [
     dynamicGroupKey: 'reality',
     defaultOpen: true,
     items: [
-      { labelKey: 'sidebar.geo_hub', to: '/geo', icon: Globe },
+      { labelKey: 'sidebar.geo_hub', to: '/geo', icon: Globe, badge: 'BETA' },
       { labelKey: 'nav.point_cloud', to: '/pointcloud', icon: ScanLine, badge: 'BETA' },
       { labelKey: 'nav.cad_bim_explorer', to: '/data-explorer', icon: TableProperties, advancedOnly: true },
     ],

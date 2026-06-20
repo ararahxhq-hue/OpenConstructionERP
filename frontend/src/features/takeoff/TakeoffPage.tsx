@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 
 import { Button, Card, Badge, Input, Skeleton, DismissibleInfo, IntroRichText, Breadcrumb, ModuleGuideButton } from '@/shared/ui';
-import { PageHeader } from '@/shared/ui/PageHeader';
 import { PdfCompareDrawer } from './PdfCompareDrawer';
 import { takeoffGuide } from './takeoffGuide';
 import { apiGet, apiPost } from '@/shared/lib/api';
@@ -1949,28 +1948,30 @@ export function TakeoffPage() {
           so the canonical breadcrumb > header > info > tabs block carries its
           own space-y-5 rhythm here (style guide §1 viewer exception). */}
       <div className="space-y-5">
-      <Breadcrumb
-        items={[
-          ...(() => {
-            const sel = projects?.find((p) => p.id === selectedProjectId);
-            return sel ? [{ label: sel.name, to: `/projects/${sel.id}` }] : [];
-          })(),
-          { label: t('nav.pdf_measurements', 'PDF Measurements') },
-        ]}
-      />
-      {/* Canonical top block - the module name + icon come from the global top
-          app bar, so there is no visible in-page title or subtitle here; the
-          PageHeader only carries the guide action. The "what this page does"
-          copy lives in the dismissible info card just below. */}
-      <PageHeader
-        srTitle={t('nav.pdf_measurements', 'PDF Measurements')}
-        actions={
+      {/* Breadcrumb and the "How it works" guide button share one row so the
+          guide action sits level with the project / page trail and the blocks
+          below move up (founder layout request). The module name + icon still
+          come from the global top app bar; the sr-only h1 keeps the accessible
+          page heading, and the "what this page does" copy lives in the
+          dismissible info card just below. */}
+      <div className="flex min-h-7 flex-wrap items-center gap-x-4 gap-y-2">
+        <Breadcrumb
+          items={[
+            ...(() => {
+              const sel = projects?.find((p) => p.id === selectedProjectId);
+              return sel ? [{ label: sel.name, to: `/projects/${sel.id}` }] : [];
+            })(),
+            { label: t('nav.pdf_measurements', 'PDF Measurements') },
+          ]}
+        />
+        <h1 className="sr-only">{t('nav.pdf_measurements', 'PDF Measurements')}</h1>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <ModuleGuideButton
             content={takeoffGuide}
             onCta={() => setActiveTab('documents')}
           />
-        }
-      />
+        </div>
+      </div>
 
       <DismissibleInfo
         storageKey="takeoff"

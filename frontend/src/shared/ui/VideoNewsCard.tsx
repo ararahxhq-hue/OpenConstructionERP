@@ -9,12 +9,12 @@ import { Play, ExternalLink, X } from 'lucide-react';
  * carries a play overlay and a "Video" badge, with a short title and subtitle
  * below.
  *
- * Dismissal is two-stage and intentionally NOT persisted, so the featured video
- * is re-shown on every page reload: the first close collapses the full card to
- * a single-line strip (title + play, still a link to the video); a second close
- * removes it for the rest of the session. The sidebar mounts once per session,
- * so the collapsed state survives in-app navigation and resets only on a real
- * refresh.
+ * The card defaults to a collapsed single-line strip (title + play). Clicking
+ * the strip expands it to the full image card; clicking the image opens the
+ * YouTube video in a new tab. The close button collapses the full card back to
+ * the strip, and closing the strip removes it for the rest of the session.
+ * State is intentionally NOT persisted: the sidebar mounts once per session, so
+ * the view survives in-app navigation and resets to collapsed on a real refresh.
  */
 
 const VIDEO_URL = 'https://youtu.be/R_PQQHXY-rQ';
@@ -24,7 +24,7 @@ type CardView = 'full' | 'mini' | 'gone';
 
 export function VideoNewsCard() {
   const { t } = useTranslation();
-  const [view, setView] = useState<CardView>('full');
+  const [view, setView] = useState<CardView>('mini');
 
   if (view === 'gone') return null;
 
@@ -38,6 +38,7 @@ export function VideoNewsCard() {
 
   const title = t('sidebar.video_news.title', { defaultValue: 'Uberization of Construction' });
   const watch = t('sidebar.video_news.watch', { defaultValue: 'Watch' });
+  const expand = t('sidebar.video_news.expand', { defaultValue: 'Expand video' });
   const dismissLabel = t('common.dismiss', { defaultValue: 'Dismiss' });
 
   // Collapsed single-line strip: a small play badge plus the truncated title,
@@ -49,19 +50,18 @@ export function VideoNewsCard() {
         data-view="mini"
         className="group mx-2 mb-2 relative flex items-center gap-2 overflow-hidden rounded-lg border border-border-light bg-surface-elevated px-2 py-1.5 shadow-sm ring-1 ring-black/5 transition-shadow animate-card-in hover:shadow-md dark:ring-white/5"
       >
-        <a
-          href={VIDEO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${title} - ${watch}`}
-          data-testid="sidebar-video-news-link"
+        <button
+          type="button"
+          onClick={() => setView('full')}
+          aria-label={`${title} - ${expand}`}
+          data-testid="sidebar-video-news-expand"
           className="flex min-w-0 flex-1 items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60"
         >
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-white">
             <Play size={11} className="ml-px fill-white text-white" />
           </span>
           <span className="truncate text-[12px] font-semibold text-content-primary">{title}</span>
-        </a>
+        </button>
         <button
           type="button"
           onClick={handleDismiss}
