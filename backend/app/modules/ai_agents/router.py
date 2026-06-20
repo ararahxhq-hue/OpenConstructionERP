@@ -633,7 +633,14 @@ async def _run_in_background(
                 await bg_session.commit()
 
             runner = AgentRunner(bridge, on_step=_persist)
-            context = {"project_id": str(project_id)} if project_id else None
+            # Always thread the invoking user into the trusted runner context
+            # so data-reading tools can re-verify per-call project access (the
+            # LLM cannot forge this - the runner strips any model-supplied
+            # __agent_context__ and re-injects this dict). project_id is added
+            # only when a project is in scope.
+            context: dict[str, str] = {"user_id": str(user_id)}
+            if project_id:
+                context["project_id"] = str(project_id)
             result = await runner.run(target, user_input, context=context)
 
             await service.run_repo.update_fields(
