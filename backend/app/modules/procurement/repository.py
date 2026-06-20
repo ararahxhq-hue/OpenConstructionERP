@@ -248,8 +248,26 @@ class GoodsReceiptRepository:
         self.session = session
 
     async def get(self, gr_id: uuid.UUID) -> GoodsReceipt | None:
-        """Get goods receipt by ID (with items via selectin)."""
-        return await self.session.get(GoodsReceipt, gr_id)
+        """Get goods receipt by ID (with items via selectin).
+
+        Uses an explicit ``selectinload`` + ``populate_existing`` rather than a
+        bare ``session.get`` so ``items`` is authoritatively (re)loaded even
+        when the row is already in the identity map in an expired state - e.g.
+        straight after ``confirm_if_draft``/``update`` call
+        ``session.expire_all()``. Without it a later synchronous ``.items``
+        access (or response serialisation) could lazy-load from a sync context
+        and raise MissingGreenlet on the async session.
+        """
+        from sqlalchemy.orm import selectinload
+
+        stmt = (
+            select(GoodsReceipt)
+            .options(selectinload(GoodsReceipt.items))
+            .where(GoodsReceipt.id == gr_id)
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def list(
         self,

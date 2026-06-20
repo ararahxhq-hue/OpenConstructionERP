@@ -1248,11 +1248,18 @@ class ProcurementService:
                 detail=f"Cannot confirm goods receipt in status '{gr.status}'",
             )
 
+        # Capture po_id while ``gr`` is attached and fresh. confirm_if_draft()
+        # below calls session.expire_all(); afterwards even a scalar read like
+        # ``gr.po_id`` would lazy-load from a sync context and raise
+        # MissingGreenlet on the async session. Reusing this local keeps the
+        # post-confirm re-fetch off the expired instance.
+        po_id = gr.po_id
+
         # Re-apply the cumulative over-receipt cap at confirm time: prior
         # confirmed receipts on the same po_item_id plus this receipt's lines
         # must not exceed the ordered quantity. ``exclude_receipt_id`` keeps
         # this GR out of the prior sum so it is not counted against itself.
-        po = await self.get_po(gr.po_id)
+        po = await self.get_po(po_id)
         po_items_by_id = {item.id: item for item in po.items}
         linked_ids = [it.po_item_id for it in gr.items if it.po_item_id is not None]
         already_received = await self._confirmed_received_by_item(
@@ -1296,24 +1303,38 @@ class ProcurementService:
                 detail="Goods receipt was already confirmed by a concurrent request.",
             )
 
-        # confirm_if_draft() calls session.expire_all(), which detaches the
-        # eager-loaded relationships on the ``po`` fetched above for the cap
-        # check; a later synchronous attribute/relationship access would then
-        # lazy-load from sync context and raise MissingGreenlet on the async
-        # session. Re-fetch a fresh, fully eager-loaded PO for the status
-        # rollup and the receipt-value computation below (this also sees the
-        # GR just flipped to confirmed).
-        po = await self.get_po(gr.po_id)
+        # confirm_if_draft() calls session.expire_all(), which expires EVERY
+        # instance in the session - including ``gr`` and the ``po`` fetched
+        # above. Any later synchronous attribute read on an expired instance
+        # (a relationship, or even a scalar like ``gr.po_id``/``po.po_number``)
+        # would lazy-load from a sync context and raise MissingGreenlet on the
+        # async session, so we re-fetch off the ``po_id`` captured before the
+        # confirm. This re-fetch also sees the GR just flipped to confirmed.
+        po = await self.get_po(po_id)
+        # Snapshot the scalar PO field used in the log lines below: po_repo.update()
+        # also calls expire_all(), so reading po.po_number after it would hit the
+        # same MissingGreenlet trap.
+        po_number = po.po_number
 
-        # Update PO status based on total received quantities
+        # Update PO status based on total received quantities.
+        status_changed = False
         if po.status in ("issued", "partially_received"):
             all_fully_received = self._check_po_fully_received(po)
             if all_fully_received:
                 await self.po_repo.update(po.id, status="completed")
-                logger.info("PO %s fully received, status -> completed", po.po_number)
+                logger.info("PO %s fully received, status -> completed", po_number)
+                status_changed = True
             elif po.status == "issued":
                 await self.po_repo.update(po.id, status="partially_received")
-                logger.info("PO %s partially received", po.po_number)
+                logger.info("PO %s partially received", po_number)
+                status_changed = True
+
+        # po_repo.update() expired the session again; re-fetch a fresh, fully
+        # eager-loaded PO so the receipt-value computation and the event payload
+        # below read live relationship/column data instead of lazy-loading from
+        # a sync context.
+        if status_changed:
+            po = await self.get_po(po_id)
 
         updated = await self.gr_repo.get(gr_id)
         if updated is None:
