@@ -163,6 +163,13 @@ export function PointCloudBackground() {
       intersectionObserver?.disconnect();
       geometry.dispose();
       material.dispose();
+      // Release the GL context slot (not just dispose) so repeated mounts of
+      // the background do not exhaust the browser's WebGL context cap.
+      try {
+        renderer.forceContextLoss();
+      } catch {
+        /* context already lost */
+      }
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);

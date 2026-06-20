@@ -213,6 +213,14 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         scene.remove(points);
         pointsRef.current = null;
       }
+      // forceContextLoss() before dispose() so the browser reclaims the GL
+      // context slot immediately; dispose() alone leaks the live context and
+      // the ~8-16 context cap is hit after a few mounts (3D view unavailable).
+      try {
+        renderer.forceContextLoss();
+      } catch {
+        /* context already lost */
+      }
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
@@ -427,7 +435,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       case 'reader':
         return t('pointcloud.viewer_reader_desc', {
           defaultValue:
-            "This deployment is missing the server-side reader for the scan's format. Install the pointcloud extra on the server to enable viewing.",
+            "This scan's format needs an optional server-side reader that is not installed. LAS, LAZ and COPC work out of the box; E57 needs the 'pointcloud' extra installed on the server.",
         });
       case 'decode':
         return t('pointcloud.viewer_decode_desc', {

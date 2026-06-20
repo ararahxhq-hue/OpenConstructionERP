@@ -164,6 +164,13 @@ export function Panorama360Viewer({ imageUrl, label, onClose }: Panorama360Viewe
       geometry.dispose();
       material?.dispose();
       texture?.dispose();
+      // Release the GL context slot before dispose() so the panorama viewer
+      // does not leak a live WebGL context on unmount.
+      try {
+        renderer.forceContextLoss();
+      } catch {
+        /* context already lost */
+      }
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
