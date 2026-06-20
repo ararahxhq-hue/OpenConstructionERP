@@ -98,12 +98,14 @@ async def _fire_subscribed_agents(trigger: str, data: dict) -> int:  # type: ign
     async with async_session_factory() as session:
         service = AgentService(session)
         agents = await service.custom_repo.list_subscribed_to_trigger(trigger)
-        for agent in agents:
-            # Snapshot identity before start_run (its update_fields expires the
-            # identity map; later attribute access would emit an illegal lazy
-            # SELECT on the async session).
-            agent_user_id = agent.user_id
-            agent_name = agent.agent_name
+        # Snapshot identity for EVERY subscriber BEFORE the loop, while all
+        # instances are still fresh from the query. The first start_run()'s
+        # update_fields() calls session.expire_all(), which expires every other
+        # agent still in the list; an in-loop snapshot would therefore read an
+        # already-expired sibling on iteration 2+ and emit an illegal lazy
+        # SELECT (MissingGreenlet), dropping every subscriber after the first.
+        targets = [(a.user_id, a.agent_name) for a in agents]
+        for agent_user_id, agent_name in targets:
             try:
                 await service.start_run(
                     user_id=agent_user_id,
