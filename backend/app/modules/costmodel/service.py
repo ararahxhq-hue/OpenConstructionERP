@@ -1143,6 +1143,12 @@ class CostModelService:
             cpi,
         )
 
+        # Surface the currency context so the UI can warn when BAC/AC may have
+        # blended unconverted foreign budget lines (mirrors get_dashboard; EVM
+        # was the lone money surface in this module missing the flag).
+        mixed_currency = len(await self.budget_repo.distinct_currencies(project_id)) > 1
+        currency = await self._get_project_currency(project_id)
+
         return EVMResponse(
             bac=round(bac, 2),
             pv=round(pv, 2),
@@ -1160,6 +1166,8 @@ class CostModelService:
             schedule_progress_pct=round(schedule_progress_pct, 2),
             status=evm_status,
             spi_capped=spi_capped,
+            currency=currency,
+            mixed_currency=mixed_currency,
         )
 
     # ── What-If Scenarios ─────────────────────────────────────────────────

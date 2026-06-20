@@ -521,6 +521,10 @@ class SupplierScorecardResponse(BaseModel):
     total_po_count: int = 0
     total_po_value: str = "0"
     currency: str = ""
+    # True when the supplier's POs in this window span more than one currency
+    # (cross-project overview). ``total_po_value`` then reports the dominant
+    # currency's total only - figures are never blended across currencies.
+    mixed_currency: bool = False
     on_time_delivery_pct: float = 0.0
     qty_variance_pct: float = 0.0
     gr_rejection_rate: float = 0.0

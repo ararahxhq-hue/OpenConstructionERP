@@ -1562,18 +1562,27 @@ class ProcurementService:
         ).all()
 
         total_po_count = len(po_rows)
-        total_po_value = Decimal("0")
-        currency = ""
         po_ids: list[uuid.UUID] = []
         # PO delivery-date lookup (string ISO dates compare lexicographically
         # when both are YYYY-MM-DD); drives the on-time check below.
         po_delivery_map: dict[uuid.UUID, str | None] = {}
+        # Group PO value per currency so a cross-project overview never blends
+        # different currencies into one meaningless total (a supplier can hold
+        # POs in a EUR project and a GBP project). Report the dominant currency's
+        # total and flag the rest via ``mixed_currency``.
+        value_by_currency: dict[str, Decimal] = {}
         for po_row_id, amt, cur, delivery in po_rows:
             po_ids.append(po_row_id)
             po_delivery_map[po_row_id] = delivery
-            total_po_value += _to_decimal(amt)
-            if not currency and cur:
-                currency = cur
+            value_by_currency[cur or ""] = value_by_currency.get(cur or "", Decimal("0")) + _to_decimal(amt)
+        # Headline = the (non-blank) currency with the largest aggregate value;
+        # fall back to the blank-currency bucket only when that is all there is.
+        _named = {c: v for c, v in value_by_currency.items() if c}
+        if _named:
+            currency, total_po_value = max(_named.items(), key=lambda kv: kv[1])
+        else:
+            currency, total_po_value = "", value_by_currency.get("", Decimal("0"))
+        mixed_currency = len(_named) > 1
 
         # ── GR aggregates (on-time + rejection) ─────────────────────────
         # ``on_time_count`` covers GRs whose parent PO had a delivery_date AND
@@ -1655,6 +1664,7 @@ class ProcurementService:
             "total_po_count": total_po_count,
             "total_po_value": str(total_po_value),
             "currency": currency,
+            "mixed_currency": mixed_currency,
             "on_time_delivery_pct": on_time_pct,
             "qty_variance_pct": qty_variance_pct,
             "gr_rejection_rate": rejection_rate,
