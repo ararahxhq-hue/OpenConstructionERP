@@ -1175,7 +1175,13 @@ async def create_claim_line(
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("contracts.update")),
 ) -> ProgressClaimLineResponse:
-    await _verify_claim_access(session, data.progress_claim_id, user_id)
+    claim = await _verify_claim_access(session, data.progress_claim_id, user_id)
+    # The line breakdown is part of the immutable audit trail once the claim
+    # leaves draft / submitted. Mirror the PATCH / auto-generate guard so a raw
+    # POST cannot append (and thereby alter) lines on a billed claim
+    # (approved / certified / paid / rejected).
+    service = ContractsService(session)
+    service._assert_claim_editable(claim)
     repo = ProgressClaimLineRepository(session)
     obj = ProgressClaimLine(**data.model_dump())
     obj = await repo.create(obj)
