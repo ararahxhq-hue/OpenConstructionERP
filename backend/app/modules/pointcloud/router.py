@@ -23,6 +23,8 @@ from app.modules.pointcloud.schemas import (
     PresignedPart,
     ScanDatasetList,
     ScanDatasetRead,
+    ScanDeviationRead,
+    ScanDeviationSummary,
     ScanIngestComplete,
     ScanIngestCompleteResponse,
     ScanIngestInit,
@@ -144,6 +146,57 @@ async def get_scan_points(
             # browser cache the buffer so re-opening the viewer is instant.
             "Cache-Control": "private, max-age=3600",
         },
+    )
+
+
+# ── Scan-vs-design deviation overlay ───────────────────────────────────────
+
+
+@router.get("/deviation", response_model=ScanDeviationSummary)
+async def get_model_deviation(
+    project_id: uuid.UUID = Query(
+        ...,
+        description="Project the design model belongs to (IDOR-scoped).",
+    ),
+    model_id: str = Query(
+        ...,
+        min_length=1,
+        description="Design model id whose as-built scan deviation to fetch.",
+    ),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    service: PointCloudService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("pointcloud.read")),
+) -> ScanDeviationSummary:
+    """Return the scan-vs-design deviation rollup for a design model.
+
+    Drives the viewer's as-built-vs-design deviation overlay + legend: every
+    scan aligned to this model contributes a deviation row classified into a
+    traffic-light severity (within / warning / over / unknown), rolled up to
+    the model's worst severity. Reuses the deviation already computed on each
+    ``ScanRegistration`` row - no math is recomputed here.
+
+    Tenant + project access is enforced in the service the IDOR-safe way: an
+    unknown or cross-tenant project collapses to 404. A model the caller can
+    see but that has no aligned scans yet returns a well-formed summary with
+    ``has_deviation=false`` (not a 404), so the viewer simply shows no overlay.
+    """
+    summary = await service.list_deviations_for_model(
+        project_id,
+        model_id,
+        payload=payload,
+        offset=offset,
+        limit=limit,
+    )
+    return ScanDeviationSummary(
+        model_id=summary["model_id"],
+        project_id=summary["project_id"],
+        has_deviation=summary["has_deviation"],
+        worst_severity=summary["worst_severity"],
+        worst_severity_color=summary["worst_severity_color"],
+        items=[ScanDeviationRead(**item) for item in summary["items"]],
+        total=summary["total"],
     )
 
 

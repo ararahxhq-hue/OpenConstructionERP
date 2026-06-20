@@ -423,6 +423,74 @@ class ScanRegistrationRead(BaseModel):
         return _serialise_decimal(v)
 
 
+# ── Scan-vs-design deviation overlay ─────────────────────────────────────
+#
+# The viewer surfaces an as-built-vs-design deviation overlay + legend when a
+# scan has been aligned to the open BIM model. Each aligned scan contributes
+# one deviation row; the per-model summary rolls them up to the worst severity
+# so the overlay legend can paint a single traffic-light verdict. The heavy
+# math already lives on the ScanRegistration row - this surface only classifies
+# and serialises it (see ``pointcloud.deviation``).
+
+
+class ScanDeviationRead(BaseModel):
+    """One scan-vs-design deviation result for a design model.
+
+    Carries the registration's already-computed accuracy figures plus the
+    derived traffic-light ``severity`` (and its legend ``severity_color``) and
+    the scan's accuracy-tier tolerance the verdict was measured against, so the
+    viewer can paint and explain the overlay without re-deriving anything.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    registration_id: UUID
+    scan_id: UUID
+    target_ref: str
+    accuracy_tier: str
+    # USIBD LOA tolerance bound (mm) the RMS was judged against, decimal string.
+    tier_tolerance_mm: Decimal | None = None
+    rms_error: Decimal | None = None
+    out_of_tolerance_count: int = 0
+    coverage_pct: Decimal | None = None
+    hole_area: Decimal | None = None
+    confidence: Decimal | None = None
+    deviation_map_uri: str | None = None
+    # Derived traffic-light verdict + its legend colour (see pointcloud.deviation).
+    severity: str
+    severity_color: str
+    created_at: datetime
+
+    @field_serializer(
+        "tier_tolerance_mm",
+        "rms_error",
+        "coverage_pct",
+        "hole_area",
+        "confidence",
+        when_used="json",
+    )
+    def _ser_decimal(self, v: Decimal | None) -> str | None:
+        return _serialise_decimal(v)
+
+
+class ScanDeviationSummary(BaseModel):
+    """Per-model scan-vs-design deviation rollup that drives the viewer overlay.
+
+    ``has_deviation`` lets the viewer decide whether to show the overlay +
+    legend at all; ``worst_severity`` (and ``worst_severity_color``) is the
+    single headline verdict the legend paints. The per-scan ``items`` back the
+    expandable legend detail.
+    """
+
+    model_id: str
+    project_id: UUID
+    has_deviation: bool = False
+    worst_severity: str
+    worst_severity_color: str
+    items: list[ScanDeviationRead] = Field(default_factory=list)
+    total: int = 0
+
+
 __all__ = [
     "AccuracyTier",
     "CompletedPart",
@@ -431,6 +499,8 @@ __all__ = [
     "ScanDatasetCreate",
     "ScanDatasetList",
     "ScanDatasetRead",
+    "ScanDeviationRead",
+    "ScanDeviationSummary",
     "ScanFormat",
     "ScanIngestComplete",
     "ScanIngestCompleteResponse",

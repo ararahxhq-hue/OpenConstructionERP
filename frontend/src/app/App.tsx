@@ -111,6 +111,9 @@ const PunchListPage = lazy(() =>
   import('@/features/punchlist/PunchListPage').then((m) => ({ default: m.PunchListPage }))
 );
 const CloseoutPage = lazy(() => import('@/features/closeout/CloseoutPage'));
+const InboxPage = lazy(() =>
+  import('@/features/inbox').then((m) => ({ default: m.InboxPage })),
+);
 const FieldReportsPage = lazy(() =>
   import('@/features/fieldreports/FieldReportsPage').then((m) => ({ default: m.FieldReportsPage }))
 );
@@ -911,6 +914,7 @@ export default function App() {
 
         <Route path="/analytics" element={<P title="Analytics"><AnalyticsPage /></P>} />
 
+        <Route path="/inbox" element={<P title="Inbox"><InboxPage /></P>} />
         <Route path="/dashboards" element={<P title="Dashboards"><SnapshotsPage /></P>} />
         <Route path="/projects/:projectId/dashboards" element={<P title="Dashboards"><SnapshotsPage /></P>} />
 

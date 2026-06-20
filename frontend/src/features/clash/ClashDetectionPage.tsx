@@ -101,7 +101,8 @@ import {
   type ClashGroupingDimension,
   type ClashMatrixCell,
 } from './api';
-import { buildClashBimLink } from './clashBimLink';
+import { buildClashBimLink, buildSelectionSetBimLink } from './clashBimLink';
+import { deriveSelectionSetFromFindings } from './clashSelectionSet';
 import {
   createDebouncedPersist,
   loadFilters,
@@ -4147,6 +4148,50 @@ export function ClashDetectionPage() {
                       });
                     }}
                     onClear={() => setSelResults(new Set())}
+                    onViewIn3D={() => {
+                      // Build a viewer selection set from the chosen findings:
+                      // the union of every interfering element, framed on the
+                      // group's mean centroid. Opens the model owning the most
+                      // referenced elements (the deep-link addresses one
+                      // model); a mixed-model selection warns first.
+                      const chosen = allResults.filter((r) =>
+                        selResults.has(r.id),
+                      );
+                      const sel = deriveSelectionSetFromFindings(chosen);
+                      if (sel.elementIds.length === 0 || !sel.modelId) {
+                        useToastStore.getState().addToast({
+                          type: 'warning',
+                          title: t('clash.sel3d_none_title', {
+                            defaultValue: 'No elements to show',
+                          }),
+                          message: t('clash.sel3d_none_msg', {
+                            defaultValue:
+                              'The selected findings reference no locatable model elements.',
+                          }),
+                        });
+                        return;
+                      }
+                      if (sel.mixedModels) {
+                        useToastStore.getState().addToast({
+                          type: 'info',
+                          title: t('clash.sel3d_mixed_title', {
+                            defaultValue: 'Opening one model',
+                          }),
+                          message: t('clash.sel3d_mixed_msg', {
+                            defaultValue:
+                              'These findings span several models. The 3D view isolates the elements in the model with the most of them; elements in other models are not shown.',
+                          }),
+                        });
+                      }
+                      navigate(
+                        buildSelectionSetBimLink({
+                          projectId,
+                          modelId: sel.modelId,
+                          elementIds: sel.elementIds,
+                          focus: sel.focus,
+                        }),
+                      );
+                    }}
                     t={t}
                   />
                 )}
@@ -4801,6 +4846,7 @@ function BulkActionsBar({
   onSetAssignee,
   onSuppress,
   onClear,
+  onViewIn3D,
   t,
 }: {
   count: number;
@@ -4810,6 +4856,8 @@ function BulkActionsBar({
   onSetAssignee: (v: string) => void;
   onSuppress: (reason: string) => void;
   onClear: () => void;
+  /** Build a viewer selection set from the chosen findings and open it in 3D. */
+  onViewIn3D: () => void;
   t: TFn;
 }) {
   const [assignee, setAssignee] = useState('');
@@ -4822,6 +4870,20 @@ function BulkActionsBar({
           n: count,
         })}
       </span>
+      {/* Build a viewer selection set from the chosen findings: isolate
+          every element they reference and frame them together in 3D. */}
+      <Button
+        size="sm"
+        variant="secondary"
+        icon={<Boxes className="h-3.5 w-3.5" />}
+        onClick={onViewIn3D}
+        title={t('clash.bulk_view3d_hint', {
+          defaultValue:
+            'Open the 3D model with every element these findings reference isolated and framed.',
+        })}
+      >
+        {t('clash.bulk_view3d', { defaultValue: 'View in 3D' })}
+      </Button>
       <label className="flex items-center gap-1">
         <span className="text-content-tertiary">
           {t('clash.bulk_severity', { defaultValue: 'Severity' })}

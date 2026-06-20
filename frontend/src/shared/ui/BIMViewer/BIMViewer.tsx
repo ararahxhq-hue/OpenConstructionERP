@@ -73,6 +73,7 @@ import { deriveGeometry, deriveRelations } from './canonicalElementDetails';
 import { BIMContextMenu } from './BIMContextMenu';
 import type { BIMContextMenuState } from './BIMContextMenu';
 import BIMViewCube from './BIMViewCube';
+import { DeviationOverlay } from './DeviationOverlay';
 import {
   colorForRate,
   DEFAULT_5D_GRADIENT,
@@ -3936,6 +3937,14 @@ export function BIMViewer({
         elements && elements.length > 0 && (
           <ColorModeLegend mode={colorByMode} elements={elements} />
         )}
+
+      {/* Scan-vs-design deviation overlay (bottom-left). Self-gating: renders
+          nothing unless a laser scan has been aligned to this model, so it is
+          safe to always mount. Surfaces the already-computed as-built-vs-
+          design deviation verdict as a colour legend + headline. */}
+      {projectId && modelId && (
+        <DeviationOverlay projectId={projectId} modelId={modelId} />
+      )}
 
       {/* Hidden elements badge + Show all button — bottom-right corner */}
       {(hiddenIds.size > 0 || isIsolated) && (

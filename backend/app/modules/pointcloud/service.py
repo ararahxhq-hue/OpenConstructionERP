@@ -981,6 +981,102 @@ class PointCloudService:
         )
         return rows, total
 
+    # ── Scan-vs-design deviation (viewer overlay) ───────────────────────
+
+    async def list_deviations_for_model(
+        self,
+        project_id: uuid.UUID,
+        model_id: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return the scan-vs-design deviation rollup for one design model.
+
+        A deviation registration's ``target_ref`` is the design it was aligned
+        to (the BIM model id), so this is "every as-built deviation result for
+        this model", classified into the viewer's traffic-light severity. The
+        heavy point-to-mesh math is NOT recomputed here - it already lives on
+        the ``ScanRegistration`` row; this only reads it, reuses
+        ``validators.tier_tolerance_mm`` for the accuracy-tier bound and
+        ``deviation.classify_deviation`` for the verdict, and rolls the rows up
+        to the model's worst severity for the overlay legend.
+
+        IDOR-safe: ``_resolve_tenant_and_verify`` collapses an unknown or
+        cross-tenant project to 404, and the repository query is scoped to BOTH
+        that project AND its tenant, so a deviation owned by another tenant can
+        never leak even if a model id were shared.
+
+        Returns a dict ready to build :class:`ScanDeviationSummary`. An empty
+        result (no aligned scans for this model the caller can see) is a
+        well-formed summary with ``has_deviation=False`` and a neutral
+        ``unknown`` headline - never a 404 - so the viewer simply shows no
+        overlay.
+        """
+        from app.modules.pointcloud.deviation import (
+            classify_deviation,
+            severity_color,
+            worst_severity,
+        )
+        from app.modules.pointcloud.validators import tier_tolerance_mm
+
+        tenant_id = await self._resolve_tenant_and_verify(
+            project_id,
+            payload,
+            not_found_detail="Project not found",
+        )
+
+        rows = await self.registrations.list_for_target(
+            model_id,
+            project_id=project_id,
+            tenant_id=tenant_id,
+            offset=offset,
+            limit=limit,
+        )
+
+        items: list[dict[str, Any]] = []
+        severities: list[str] = []
+        for reg, scan in rows:
+            tier = scan.accuracy_tier
+            tolerance = tier_tolerance_mm(tier)
+            severity = classify_deviation(
+                rms_mm=reg.rms_error,
+                tolerance_mm=tolerance,
+                out_of_tolerance_count=reg.out_of_tolerance_count,
+                coverage_pct=reg.coverage_pct,
+            )
+            severities.append(severity)
+            items.append(
+                {
+                    "registration_id": reg.id,
+                    "scan_id": reg.scan_id,
+                    "target_ref": reg.target_ref,
+                    "accuracy_tier": tier,
+                    "tier_tolerance_mm": tolerance,
+                    "rms_error": reg.rms_error,
+                    "out_of_tolerance_count": int(reg.out_of_tolerance_count or 0),
+                    "coverage_pct": reg.coverage_pct,
+                    "hole_area": reg.hole_area,
+                    "confidence": reg.confidence,
+                    "deviation_map_uri": reg.deviation_map_uri,
+                    "severity": severity,
+                    "severity_color": severity_color(severity),
+                    "created_at": reg.created_at,
+                }
+            )
+
+        worst = worst_severity(severities)
+        return {
+            "model_id": model_id,
+            "project_id": project_id,
+            "has_deviation": len(items) > 0,
+            "worst_severity": worst,
+            "worst_severity_color": severity_color(worst),
+            "items": items,
+            "total": len(items),
+        }
+
     @staticmethod
     def _scan_storage_prefix(upload_key: str) -> str | None:
         """Return the per-scan object-storage prefix to sweep on delete.

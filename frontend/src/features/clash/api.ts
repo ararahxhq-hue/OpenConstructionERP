@@ -728,7 +728,7 @@ export const clashApi = {
    *  automatically and diffs against the persistent smart-issue identities,
    *  so it answers "what changed since last time" without the user choosing
    *  a baseline. Zeros across the board on a project's very first run. */
-  runDiff: (projectId: string, runId: string) =>
+  runDiff: (_projectId: string, runId: string) =>
     apiGet<ClashRunDiff>(
       `/v1/clash/runs/${runId}/diff`,
     ),
@@ -755,7 +755,7 @@ export const clashApi = {
   /** Suppress a single smart issue - flip it to `ignored` so its signature
    *  stops auto-resurfacing in future runs. `reason` (1..500 chars) is a
    *  required audit note. Returns the updated issue. */
-  suppressIssue: (projectId: string, issueId: string, reason: string) =>
+  suppressIssue: (_projectId: string, issueId: string, reason: string) =>
     apiPost<ClashIssue, { reason: string }>(
       `/v1/clash/issues/${issueId}/suppress`,
       { reason },
@@ -763,7 +763,7 @@ export const clashApi = {
 
   /** Lift a suppression - flip the issue from `ignored` back to
    *  `persisted`. Returns the updated issue. */
-  unsuppressIssue: (projectId: string, issueId: string) =>
+  unsuppressIssue: (_projectId: string, issueId: string) =>
     apiPost<ClashIssue, undefined>(
       `/v1/clash/issues/${issueId}/unsuppress`,
       undefined,

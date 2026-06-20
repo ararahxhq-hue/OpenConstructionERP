@@ -61,6 +61,13 @@ dependencies = [
     "openpyxl>=3.1.0",
     "reportlab>=4.0.0",
     "pdfplumber>=0.11.0",
+    # PDF page-overlay / merge: the approval stamp-burn (app/core/pdf_stamp.py,
+    # used by file_approvals) merges a reportlab-drawn overlay onto every page
+    # of the source PDF, and property_dev counts pages off generated PDFs.
+    # pypdf was imported but never declared, so a clean install only had it by
+    # accident (transitively present in some environments, absent in others) -
+    # which silently degraded the PDF stamp to the JSON sidecar fallback.
+    "pypdf>=4.0.0",
     # PDF takeoff works out of the box. PyMuPDF reads a page's vector drawings
     # (page.get_drawings) for the deterministic vector detector, and
     # opencv-python-headless powers the room/wall detector on scanned/raster

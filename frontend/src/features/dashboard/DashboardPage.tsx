@@ -46,6 +46,8 @@ import { dashboardGuide } from './dashboardGuide';
 import { MultiCurrencyTotal } from '@/shared/ui/MultiCurrencyTotal';
 import { WhatsNewCard } from '@/shared/ui/WhatsNewCard';
 import BIMCoverageCard from './BIMCoverageCard';
+import { FinanceSummaryCard } from './FinanceSummaryCard';
+import { InboxPanel } from '@/features/inbox';
 import { CompactProjectCard } from './components/CompactProjectCard';
 import { DashboardProjectsMap } from './components/DashboardProjectsMap';
 import { WeatherSiteWidget } from './components/NewWidgets';
@@ -2154,6 +2156,8 @@ function DashboardPageInner() {
 
     today: <TodaySnapshot cards={projectCards} />,
 
+    inbox: <InboxPanel limit={8} />,
+
     kpi: (
       <KpiRibbon
         boqs={allBoqs}
@@ -2163,6 +2167,8 @@ function DashboardPageInner() {
         multiCurrency={boqCurrency.multiCurrency}
       />
     ),
+
+    finance_summary: <FinanceSummaryCard />,
 
     projects: (
       <>

@@ -36,6 +36,8 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { scheduleApi } from './api';
 import { PlanningCrossLinks } from './PlanningCrossLinks';
+import { EvmPanel } from './EvmPanel';
+import { Snapshot4DView } from './Snapshot4DView';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1080,7 +1082,7 @@ function ScheduleDetail({
   const addToast = useToastStore((s) => s.addToast);
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
-  const [viewMode, setViewMode] = useState<'table' | 'gantt'>('gantt');
+  const [viewMode, setViewMode] = useState<'table' | 'gantt' | 'evm' | '4d'>('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
   const [selectedBOQId, setSelectedBOQId] = useState('');
@@ -1096,12 +1098,16 @@ function ScheduleDetail({
     activity_type: 'task',
   });
 
-  // Fetch project data for region / work calendar
+  // Fetch project data for region / work calendar / currency
   const { data: projectData } = useQuery({
     queryKey: ['project', projectId],
-    queryFn: () => apiGet<{ id: string; region: string }>(`/v1/projects/${projectId}`),
+    queryFn: () => apiGet<{ id: string; region: string; currency?: string }>(`/v1/projects/${projectId}`),
     staleTime: 300_000,
   });
+  // Project ISO currency drives EVM money formatting; blank -> no symbol
+  // (never mislabel a non-EUR amount). The activity cost columns are all
+  // project-scoped so they share this single currency.
+  const projectCurrency = projectData?.currency ?? '';
   // Resolve the work calendar from the backend so the badge matches the
   // hours-per-day / days-per-week the schedule math actually uses. The
   // client-side WORK_CALENDAR_INFO map only covers 12 exact keys and diverges
@@ -1412,11 +1418,13 @@ function ScheduleDetail({
           </Button>
           {hasActivities && (
             <>
-              {/* View mode toggle: Table vs SVG Gantt */}
+              {/* View mode toggle: Table / Gantt / EVM / 4D */}
               <div className="flex items-center gap-1 rounded-lg border border-border-light p-0.5">
                 {([
                   { key: 'table' as const, label: t('schedule.view_table', 'Table') },
                   { key: 'gantt' as const, label: t('schedule.view_gantt', 'Gantt') },
+                  { key: 'evm' as const, label: t('schedule.view_evm', { defaultValue: 'EVM' }) },
+                  { key: '4d' as const, label: t('schedule.view_4d', { defaultValue: '4D' }) },
                 ]).map((v) => (
                   <button
                     key={v.key}
@@ -1433,7 +1441,12 @@ function ScheduleDetail({
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-1 rounded-lg border border-border-light p-0.5">
+              {/* Zoom only applies to the timeline views (table / gantt). */}
+              <div
+                className={`flex items-center gap-1 rounded-lg border border-border-light p-0.5 ${
+                  viewMode === 'evm' || viewMode === '4d' ? 'hidden' : ''
+                }`}
+              >
                 {(['day', 'week', 'month', 'quarter', 'year'] as const).map((level) => (
                   <button
                     key={level}
@@ -1641,9 +1654,18 @@ function ScheduleDetail({
             </div>
           )}
 
-          {/* Gantt chart */}
+          {/* Main content: timeline (Gantt / Table), EVM panel, or 4D snapshot */}
           <div className="mt-6">
-            {isLoading ? (
+            {viewMode === 'evm' ? (
+              <EvmPanel scheduleId={schedule.id} currency={projectCurrency} />
+            ) : viewMode === '4d' ? (
+              <Snapshot4DView
+                scheduleId={schedule.id}
+                projectId={projectId}
+                scheduleStart={schedule.start_date}
+                scheduleEnd={schedule.end_date}
+              />
+            ) : isLoading ? (
               <SkeletonTable rows={4} columns={4} />
             ) : ganttData ? (
               viewMode === 'gantt' ? (

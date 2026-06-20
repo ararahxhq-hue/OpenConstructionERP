@@ -6,6 +6,8 @@ Endpoints:
     GET   /validation/reports?project_id=X   - List validation reports
     GET   /validation/reports/{report_id}    - Get single report
     GET   /validation/reports/{id}/sarif     - Export report as SARIF v2.1.0 JSON
+    GET   /validation/reports/{id}/export.csv  - Export findings as CSV
+    GET   /validation/reports/{id}/export.xlsx - Export findings as XLSX
     DELETE /validation/reports/{report_id}   - Delete report
     GET   /validation/rule-sets              - List available rule sets
 """
@@ -14,7 +16,7 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +34,7 @@ from app.modules.validation.schemas import (
     ValidationResultItem,
 )
 from app.modules.validation.service import ValidationModuleService
+from app.modules.validation.tabular_exporter import report_to_csv, report_to_xlsx
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +404,80 @@ async def export_report_sarif(
     report = await _require_report_access(session, report_id, user_id)
     sarif_doc = report_to_sarif(report)
     return JSONResponse(content=sarif_doc, media_type="application/sarif+json")
+
+
+# ── GET /reports/{id}/export.csv|.xlsx - Export findings as CSV / XLSX ─────
+
+
+def _export_filename(report: ValidationReport, ext: str) -> str:
+    """ASCII-safe attachment filename for a report export.
+
+    Mirrors the BOQ / reporting export filename handling: the target id is
+    coerced to printable ASCII so it is safe inside a ``Content-Disposition``
+    header (no CR/LF response-splitting, no quotes). Falls back to the report
+    id, then a constant.
+    """
+    raw = str(getattr(report, "target_id", "") or getattr(report, "id", "") or "report")
+    base = raw.encode("ascii", errors="replace").decode("ascii").replace('"', "'")
+    base = "".join(ch for ch in base if " " <= ch <= "~").strip()
+    base = base.replace("/", "-").replace("\\", "-")
+    return f"validation_{base or 'report'}.{ext}"
+
+
+@router.get(
+    "/reports/{report_id}/export.csv",
+    dependencies=[Depends(RequirePermission("validation.read"))],
+)
+async def export_report_csv(
+    report_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> Response:
+    """Export a validation report's findings as a CSV file.
+
+    Project access is verified the IDOR-safe way (``_require_report_access``
+    returns 404 for a missing-or-forbidden report) before any bytes are
+    produced. Every cell is neutralised against spreadsheet formula injection
+    by the exporter.
+    """
+    report = await _require_report_access(session, report_id, user_id)
+    blob = report_to_csv(report)
+    filename = _export_filename(report, "csv")
+    return Response(
+        content=blob,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(blob)),
+        },
+    )
+
+
+@router.get(
+    "/reports/{report_id}/export.xlsx",
+    dependencies=[Depends(RequirePermission("validation.read"))],
+)
+async def export_report_xlsx(
+    report_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> Response:
+    """Export a validation report's findings as an .xlsx workbook.
+
+    Same IDOR guard and formula-injection neutralisation as the CSV export;
+    only the serialisation differs.
+    """
+    report = await _require_report_access(session, report_id, user_id)
+    blob = report_to_xlsx(report)
+    filename = _export_filename(report, "xlsx")
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(blob)),
+        },
+    )
 
 
 # ── GET /rule-sets - List available rule sets ─────────────────────────────
