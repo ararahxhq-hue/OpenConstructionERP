@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The ERP chat assistant and the project-intelligence advisor now honour project team membership when checking access. A user added to a project's team can reach it, while a project the caller may not see returns the same "not found" result as a missing one, so neither data nor a project's existence leaks across the tenant boundary.
 - The property-development broker performance leaderboard now scopes strictly to the caller's own brokers. Previously any account that could open the dashboard saw every tenant's broker activity, gross merchandise value and commission; the figures are now restricted to brokers the account owns (administrators still see the whole platform).
-- Updated the bundled undici, ws and js-yaml build-time dependencies to their patched releases to clear known advisories. These are transitive tooling libraries and the update changes no application behaviour.
+- Updated the bundled undici, ws, js-yaml, vite and @babel/core build-time dependencies to their patched releases, clearing all known advisories (twelve in total, five high-severity). These are development and build-time tooling libraries that do not ship in the running application, so the update changes no application behaviour.
 
 ## [8.7.1] - 2026-06-20
 
