@@ -568,10 +568,10 @@ export function LoginPageNext() {
               <div className="lg:hidden mb-6 flex flex-col items-center">
                 <Logo size="md" animate />
                 <span
-                  className="mt-2.5 text-xl font-extrabold tracking-[-0.02em] text-content-primary dark:text-white"
+                  className="mt-2.5 text-xl font-medium tracking-[-0.02em] text-content-primary dark:text-white"
                   style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
                 >
-                  Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary font-semibold">ERP</span>
+                  Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary">ERP</span>
                 </span>
               </div>
 
@@ -579,10 +579,10 @@ export function LoginPageNext() {
               <div className="hidden lg:flex items-center gap-2.5 mb-7">
                 <Logo size="sm" animate />
                 <span
-                  className="text-[15px] font-extrabold tracking-[-0.02em] text-content-primary dark:text-white"
+                  className="text-[15px] font-medium tracking-[-0.02em] text-content-primary dark:text-white"
                   style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
                 >
-                  Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary font-semibold dark:text-white/50">ERP</span>
+                  Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary dark:text-white/50">ERP</span>
                 </span>
               </div>
 
