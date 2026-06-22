@@ -33,8 +33,16 @@ from app.modules.construction_control.schemas import (
     InspectionResponse,
     InspectionResultIn,
     InspectionUpdate,
+    MaterialRecordCreate,
+    MaterialRecordResponse,
+    MaterialRecordUpdate,
+    MaterialReviewIn,
+    TestResultCreate,
+    TestResultRecordIn,
+    TestResultResponse,
+    TestResultUpdate,
 )
-from app.modules.construction_control.service import ConstructionControlService
+from app.modules.construction_control.service import ConstructionControlService, is_material_expired
 
 router = APIRouter(tags=["construction-control"])
 logger = logging.getLogger(__name__)
@@ -50,6 +58,19 @@ def _criterion_response(criterion) -> AcceptanceCriterionResponse:
 
 def _inspection_response(inspection, elements) -> InspectionResponse:
     resp = InspectionResponse.model_validate(inspection)
+    resp.elements = [ElementRefResponse.model_validate(e) for e in elements]
+    return resp
+
+
+def _material_response(material, elements) -> MaterialRecordResponse:
+    resp = MaterialRecordResponse.model_validate(material)
+    resp.is_expired = is_material_expired(material)
+    resp.elements = [ElementRefResponse.model_validate(e) for e in elements]
+    return resp
+
+
+def _test_response(test, elements) -> TestResultResponse:
+    resp = TestResultResponse.model_validate(test)
     resp.elements = [ElementRefResponse.model_validate(e) for e in elements]
     return resp
 
@@ -227,3 +248,200 @@ async def record_inspection_result(
     inspection = await service.record_result(inspection_id, data, user_id=user_id)
     elements = await service.elements_for(inspection.id)
     return _inspection_response(inspection, elements)
+
+
+# ── Material records (digital passport, EN 10204) ─────────────────────────────
+
+
+@router.get("/materials", response_model=list[MaterialRecordResponse])
+async def list_materials(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    status_filter: str | None = Query(default=None, alias="status"),
+    material_type: str | None = Query(default=None),
+    gr_id: str | None = Query(default=None),
+    service: ConstructionControlService = Depends(_get_service),
+) -> list[MaterialRecordResponse]:
+    await verify_project_access(project_id, user_id, session)
+    items, _ = await service.list_materials(
+        project_id, offset=offset, limit=limit, status_filter=status_filter, material_type=material_type, gr_id=gr_id
+    )
+    elements_by_owner = await service.elements_for_owners("material_record", [m.id for m in items])
+    return [_material_response(m, elements_by_owner.get(str(m.id), [])) for m in items]
+
+
+@router.post("/materials", response_model=MaterialRecordResponse, status_code=201)
+async def create_material(
+    data: MaterialRecordCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.material.create")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> MaterialRecordResponse:
+    await verify_project_access(data.project_id, user_id, session)
+    material = await service.create_material(data, user_id=user_id)
+    elements = await service.elements_for_owner("material_record", material.id)
+    return _material_response(material, elements)
+
+
+@router.get("/materials/{material_id}", response_model=MaterialRecordResponse)
+async def get_material(
+    material_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: ConstructionControlService = Depends(_get_service),
+) -> MaterialRecordResponse:
+    material = await service.get_material(material_id)
+    await verify_project_access(material.project_id, str(user_id), session)
+    elements = await service.elements_for_owner("material_record", material.id)
+    return _material_response(material, elements)
+
+
+@router.patch("/materials/{material_id}", response_model=MaterialRecordResponse)
+async def update_material(
+    material_id: uuid.UUID,
+    data: MaterialRecordUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("cc.material.update")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> MaterialRecordResponse:
+    existing = await service.get_material(material_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    material = await service.update_material(material_id, data)
+    elements = await service.elements_for_owner("material_record", material.id)
+    return _material_response(material, elements)
+
+
+@router.delete("/materials/{material_id}", status_code=204)
+async def delete_material(
+    material_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("cc.material.delete")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> None:
+    existing = await service.get_material(material_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    await service.delete_material(material_id)
+
+
+@router.post("/materials/{material_id}/review", response_model=MaterialRecordResponse)
+async def review_material(
+    material_id: uuid.UUID,
+    data: MaterialReviewIn,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.material.review")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> MaterialRecordResponse:
+    """Record a conformity decision. A reject (or conditional) raises a material NCR."""
+    material = await service.get_material(material_id)
+    await verify_project_access(material.project_id, user_id, session)
+    material = await service.review_material(material_id, data, user_id=user_id)
+    elements = await service.elements_for_owner("material_record", material.id)
+    return _material_response(material, elements)
+
+
+# ── Test results (ISO/IEC 17025 lab) ──────────────────────────────────────────
+
+
+@router.get("/test-results", response_model=list[TestResultResponse])
+async def list_test_results(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    status_filter: str | None = Query(default=None, alias="status"),
+    result: str | None = Query(default=None),
+    material_record_id: str | None = Query(default=None),
+    service: ConstructionControlService = Depends(_get_service),
+) -> list[TestResultResponse]:
+    await verify_project_access(project_id, user_id, session)
+    items, _ = await service.list_test_results(
+        project_id,
+        offset=offset,
+        limit=limit,
+        status_filter=status_filter,
+        result=result,
+        material_record_id=material_record_id,
+    )
+    elements_by_owner = await service.elements_for_owners("test_result", [t.id for t in items])
+    return [_test_response(t, elements_by_owner.get(str(t.id), [])) for t in items]
+
+
+@router.post("/test-results", response_model=TestResultResponse, status_code=201)
+async def create_test_result(
+    data: TestResultCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.test.create")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> TestResultResponse:
+    await verify_project_access(data.project_id, user_id, session)
+    test = await service.create_test_result(data, user_id=user_id)
+    elements = await service.elements_for_owner("test_result", test.id)
+    return _test_response(test, elements)
+
+
+@router.get("/test-results/{result_id}", response_model=TestResultResponse)
+async def get_test_result(
+    result_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: ConstructionControlService = Depends(_get_service),
+) -> TestResultResponse:
+    test = await service.get_test_result(result_id)
+    await verify_project_access(test.project_id, str(user_id), session)
+    elements = await service.elements_for_owner("test_result", test.id)
+    return _test_response(test, elements)
+
+
+@router.patch("/test-results/{result_id}", response_model=TestResultResponse)
+async def update_test_result(
+    result_id: uuid.UUID,
+    data: TestResultUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("cc.test.update")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> TestResultResponse:
+    existing = await service.get_test_result(result_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    test = await service.update_test_result(result_id, data)
+    elements = await service.elements_for_owner("test_result", test.id)
+    return _test_response(test, elements)
+
+
+@router.delete("/test-results/{result_id}", status_code=204)
+async def delete_test_result(
+    result_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("cc.test.delete")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> None:
+    existing = await service.get_test_result(result_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    await service.delete_test_result(result_id)
+
+
+@router.post("/test-results/{result_id}/record-result", response_model=TestResultResponse)
+async def record_test_result(
+    result_id: uuid.UUID,
+    data: TestResultRecordIn,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.test.record_result")),
+    service: ConstructionControlService = Depends(_get_service),
+) -> TestResultResponse:
+    """Record a test outcome. A fail (or conditional) raises a linked NCR."""
+    test = await service.get_test_result(result_id)
+    await verify_project_access(test.project_id, user_id, session)
+    test = await service.record_test_result(result_id, data, user_id=user_id)
+    elements = await service.elements_for_owner("test_result", test.id)
+    return _test_response(test, elements)

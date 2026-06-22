@@ -22,5 +22,19 @@ def register_construction_control_permissions() -> None:
             "cc.inspection.delete": Role.MANAGER,
             # Recording a result can raise an NCR, so it sits at editor (not viewer).
             "cc.inspection.record_result": Role.EDITOR,
+            # Material records (digital passport, EN 10204)
+            "cc.material.read": Role.VIEWER,
+            "cc.material.create": Role.EDITOR,
+            "cc.material.update": Role.EDITOR,
+            "cc.material.delete": Role.MANAGER,
+            # Reviewing a material can raise an NCR, so it sits at editor (not viewer).
+            "cc.material.review": Role.EDITOR,
+            # Test results (ISO/IEC 17025 lab)
+            "cc.test.read": Role.VIEWER,
+            "cc.test.create": Role.EDITOR,
+            "cc.test.update": Role.EDITOR,
+            "cc.test.delete": Role.MANAGER,
+            # Recording a test result can raise an NCR, so it sits at editor (not viewer).
+            "cc.test.record_result": Role.EDITOR,
         },
     )

@@ -10,8 +10,10 @@ manifest = ModuleManifest(
     display_name="Construction Control",
     description=(
         "Universal QA/QC engine: acceptance criteria, inspections (MIR/WIR/IR/"
-        "hidden-works/acceptance) and format-agnostic model linking, with a "
-        "failed inspection automatically raising a non-conformance report."
+        "hidden-works/acceptance), material records (digital passport: EN 10204, "
+        "CE/UKCA, batch/heat/lot traceability) and lab test results, with "
+        "format-agnostic model linking and a failed check automatically raising "
+        "a non-conformance report."
     ),
     author="OpenConstructionERP Core Team",
     category="core",

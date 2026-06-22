@@ -13,6 +13,8 @@ from app.modules.construction_control.models import (
     AcceptanceCriterion,
     ElementRef,
     Inspection,
+    MaterialRecord,
+    TestResult,
 )
 
 # Number-allocation retry cap; a couple of retries cover any realistic concurrency,
@@ -186,3 +188,141 @@ class ElementRefRepository:
         for ref in await self.list_for_owner(owner_type, owner_id):
             await self.session.delete(ref)
         await self.session.flush()
+
+
+class MaterialRecordRepository:
+    """Data access for material records, with collision-safe per-project numbering."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, material_id: uuid.UUID) -> MaterialRecord | None:
+        return await self.session.get(MaterialRecord, material_id)
+
+    async def next_record_number(self, project_id: uuid.UUID) -> str:
+        """Next ``MAT-NNN`` from MAX(suffix)+1 (only canonical ``MAT-<digits>`` rows)."""
+        stmt = (
+            select(func.coalesce(func.max(cast(func.substr(MaterialRecord.record_number, 5), SAInteger)), 0))
+            .where(MaterialRecord.project_id == project_id)
+            .where(MaterialRecord.record_number.regexp_match("^MAT-[0-9]+$"))
+        )
+        max_num = (await self.session.execute(stmt)).scalar_one()
+        return f"MAT-{max_num + 1:03d}"
+
+    async def create(self, material: MaterialRecord) -> MaterialRecord:
+        """Insert a material record, deriving ``record_number`` with a retry on collision."""
+        project_id = material.project_id
+        for _ in range(_NUMBER_RETRY_LIMIT):
+            material.record_number = await self.next_record_number(project_id)
+            savepoint = await self.session.begin_nested()
+            self.session.add(material)
+            try:
+                await self.session.flush()
+            except IntegrityError:
+                await savepoint.rollback()
+                continue
+            return material
+        raise RuntimeError(f"Could not allocate a unique material number for project {project_id}")
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        material_type: str | None = None,
+        gr_id: str | None = None,
+    ) -> tuple[list[MaterialRecord], int]:
+        base = select(MaterialRecord).where(MaterialRecord.project_id == project_id)
+        if status is not None:
+            base = base.where(MaterialRecord.status == status)
+        if material_type is not None:
+            base = base.where(MaterialRecord.material_type == material_type)
+        if gr_id is not None:
+            base = base.where(MaterialRecord.gr_id == gr_id)
+
+        total = (await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+        stmt = base.order_by(MaterialRecord.created_at.desc()).offset(offset).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total
+
+    async def update_fields(self, material_id: uuid.UUID, **fields: object) -> None:
+        await self.session.execute(update(MaterialRecord).where(MaterialRecord.id == material_id).values(**fields))
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, material_id: uuid.UUID) -> None:
+        material = await self.get_by_id(material_id)
+        if material is not None:
+            await self.session.delete(material)
+            await self.session.flush()
+
+
+class TestResultRepository:
+    """Data access for test results, with collision-safe per-project numbering."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, result_id: uuid.UUID) -> TestResult | None:
+        return await self.session.get(TestResult, result_id)
+
+    async def next_result_number(self, project_id: uuid.UUID) -> str:
+        """Next ``TST-NNN`` from MAX(suffix)+1 (only canonical ``TST-<digits>`` rows)."""
+        stmt = (
+            select(func.coalesce(func.max(cast(func.substr(TestResult.result_number, 5), SAInteger)), 0))
+            .where(TestResult.project_id == project_id)
+            .where(TestResult.result_number.regexp_match("^TST-[0-9]+$"))
+        )
+        max_num = (await self.session.execute(stmt)).scalar_one()
+        return f"TST-{max_num + 1:03d}"
+
+    async def create(self, test: TestResult) -> TestResult:
+        """Insert a test result, deriving ``result_number`` with a retry on collision."""
+        project_id = test.project_id
+        for _ in range(_NUMBER_RETRY_LIMIT):
+            test.result_number = await self.next_result_number(project_id)
+            savepoint = await self.session.begin_nested()
+            self.session.add(test)
+            try:
+                await self.session.flush()
+            except IntegrityError:
+                await savepoint.rollback()
+                continue
+            return test
+        raise RuntimeError(f"Could not allocate a unique test-result number for project {project_id}")
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        result: str | None = None,
+        material_record_id: str | None = None,
+    ) -> tuple[list[TestResult], int]:
+        base = select(TestResult).where(TestResult.project_id == project_id)
+        if status is not None:
+            base = base.where(TestResult.status == status)
+        if result is not None:
+            base = base.where(TestResult.result == result)
+        if material_record_id is not None:
+            base = base.where(TestResult.material_record_id == material_record_id)
+
+        total = (await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+        stmt = base.order_by(TestResult.created_at.desc()).offset(offset).limit(limit)
+        result_set = await self.session.execute(stmt)
+        return list(result_set.scalars().all()), total
+
+    async def update_fields(self, result_id: uuid.UUID, **fields: object) -> None:
+        await self.session.execute(update(TestResult).where(TestResult.id == result_id).values(**fields))
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, result_id: uuid.UUID) -> None:
+        test = await self.get_by_id(result_id)
+        if test is not None:
+            await self.session.delete(test)
+            await self.session.flush()
