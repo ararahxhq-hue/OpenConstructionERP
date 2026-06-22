@@ -1154,3 +1154,223 @@ class ScheduleRiskResponse(BaseModel):
     criticality: list[CriticalityStatSchema] = Field(default_factory=list)
     drivers: list[ScheduleDriverSchema] = Field(default_factory=list)
     joint_confidence: JointConfidenceSchema | None = None
+
+
+# ── Forensic delay analysis (T2.2) ───────────────────────────────────────────
+
+_DELAY_METHOD = r"^(tia|windows|as_planned_vs_as_built|impacted_as_planned|collapsed_as_built)$"
+_OOS_MODE = r"^(retained_logic|progress_override)$"
+_APPORTIONMENT = r"^(none|dominant_cause|time_but_for|malmaison)$"
+_RESPONSIBILITY = r"^(employer|contractor|neutral|shared)$"
+_INSERT_MODE = r"^(lengthen_activity|insert_after|insert_parallel|suspend_resume)$"
+
+
+class DelayAnalysisCreate(BaseModel):
+    """Create a draft forensic delay analysis."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(..., min_length=1, max_length=255)
+    method: str = Field(default="tia", pattern=_DELAY_METHOD)
+    schedule_id: UUID | None = None
+    description: str = Field(default="", max_length=8000)
+    as_planned_baseline_id: UUID | None = None
+    as_built_snapshot_id: UUID | None = None
+    oos_mode: str = Field(default="retained_logic", pattern=_OOS_MODE)
+    apportionment_method: str = Field(default="malmaison", pattern=_APPORTIONMENT)
+    data_date: str | None = Field(default=None, max_length=40)
+
+
+class DelayAnalysisPatch(BaseModel):
+    """Edit a draft analysis (status-guarded: only ``draft`` is mutable)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    method: str | None = Field(default=None, pattern=_DELAY_METHOD)
+    description: str | None = Field(default=None, max_length=8000)
+    as_planned_baseline_id: UUID | None = None
+    as_built_snapshot_id: UUID | None = None
+    oos_mode: str | None = Field(default=None, pattern=_OOS_MODE)
+    apportionment_method: str | None = Field(default=None, pattern=_APPORTIONMENT)
+    data_date: str | None = Field(default=None, max_length=40)
+
+
+class DelayEventCreate(BaseModel):
+    """Add a causative event to an analysis."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(..., min_length=1, max_length=500)
+    code: str = Field(default="", max_length=40)
+    description: str = Field(default="", max_length=8000)
+    root_cause: str = Field(default="", max_length=8000)
+    responsibility: str = Field(default="employer", pattern=_RESPONSIBILITY)
+    risk_event_category: str = Field(default="", max_length=120)
+    is_concurrent: bool = False
+    concurrency_group: str = Field(default="", max_length=80)
+    is_pacing: bool = False
+    source_ref_type: str | None = Field(default=None, max_length=40)
+    source_ref_id: UUID | None = None
+    insert_at_activity_ref: str = Field(default="", max_length=255)
+    event_start: str | None = Field(default=None, max_length=40)
+    event_end: str | None = Field(default=None, max_length=40)
+    start_workday: int | None = None
+    end_workday: int | None = None
+
+
+class DelayEventPatch(BaseModel):
+    """Edit a draft event."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    code: str | None = Field(default=None, max_length=40)
+    description: str | None = Field(default=None, max_length=8000)
+    root_cause: str | None = Field(default=None, max_length=8000)
+    responsibility: str | None = Field(default=None, pattern=_RESPONSIBILITY)
+    risk_event_category: str | None = Field(default=None, max_length=120)
+    is_concurrent: bool | None = None
+    concurrency_group: str | None = Field(default=None, max_length=80)
+    is_pacing: bool | None = None
+    insert_at_activity_ref: str | None = Field(default=None, max_length=255)
+    event_start: str | None = Field(default=None, max_length=40)
+    event_end: str | None = Field(default=None, max_length=40)
+    start_workday: int | None = None
+    end_workday: int | None = None
+
+
+class FragnetUpsert(BaseModel):
+    """Define (or replace) the fragnet for an event."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    insert_mode: str = Field(default="lengthen_activity", pattern=_INSERT_MODE)
+    insert_at_activity_ref: str = Field(..., min_length=1, max_length=255)
+    added_duration_days: int = Field(default=0, ge=0, le=100000)
+    fragnet_activities: list[dict] = Field(default_factory=list)
+    rewires: list[dict] = Field(default_factory=list)
+    applies_in_window: int | None = None
+
+
+class AutoFragnetRequest(BaseModel):
+    """Wizard helper: synthesise a default fragnet from a target + delay length."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    delay_event_id: UUID
+    insert_mode: str = Field(default="lengthen_activity", pattern=_INSERT_MODE)
+    insert_at_activity_ref: str = Field(..., min_length=1, max_length=255)
+    added_days: int = Field(..., ge=0, le=100000)
+
+
+class DelayComputeRequest(BaseModel):
+    """Optional overrides for a compute run (defaults to the stored settings)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    apportionment_method: str | None = Field(default=None, pattern=_APPORTIONMENT)
+
+
+class FragnetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    delay_event_id: UUID
+    insert_mode: str
+    insert_at_activity_ref: str
+    added_duration_days: int
+    fragnet_activities: list = Field(default_factory=list)
+    rewires: list = Field(default_factory=list)
+    applies_in_window: int | None = None
+
+
+class DelayEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    analysis_id: UUID
+    code: str = ""
+    title: str = ""
+    description: str = ""
+    root_cause: str = ""
+    responsibility: str = "employer"
+    risk_event_category: str = ""
+    is_concurrent: bool = False
+    concurrency_group: str = ""
+    is_pacing: bool = False
+    source_ref_type: str | None = None
+    source_ref_id: UUID | None = None
+    insert_at_activity_ref: str = ""
+    event_start: str | None = None
+    event_end: str | None = None
+    start_workday: int | None = None
+    end_workday: int | None = None
+    fragnets: list[FragnetResponse] = Field(default_factory=list)
+
+
+class DelayWindowResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    sequence_order: int
+    window_start: str | None = None
+    window_end: str | None = None
+    finish_at_open: int = 0
+    finish_at_close: int = 0
+    gross_slip_days: int = 0
+    employer_days: int = 0
+    contractor_days: int = 0
+    neutral_days: int = 0
+    concurrent_days: int = 0
+    net_entitlement_days: int = 0
+    narrative: str = ""
+
+
+class DelayAnalysisListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    schedule_id: UUID | None = None
+    method: str
+    name: str
+    status: str
+    total_entitlement_days: int = 0
+    window_count: int = 0
+    issued_at: str | None = None
+
+
+class DelayAnalysisResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    schedule_id: UUID | None = None
+    method: str
+    name: str
+    description: str = ""
+    as_planned_baseline_id: UUID | None = None
+    as_built_snapshot_id: UUID | None = None
+    oos_mode: str = "retained_logic"
+    data_date: str | None = None
+    apportionment_method: str = "malmaison"
+    status: str = "draft"
+    window_count: int = 0
+    total_entitlement_days: int = 0
+    concurrent_days: int = 0
+    result_json: dict = Field(default_factory=dict)
+    issued_at: str | None = None
+    issued_by: str | None = None
+    signature_sha256: str | None = None
+    eot_claim_id: UUID | None = None
+    events: list[DelayEventResponse] = Field(default_factory=list)
+    windows: list[DelayWindowResponse] = Field(default_factory=list)
+
+
+class RaiseEotClaimResponse(BaseModel):
+    """Result of raising an Extension-of-Time claim from an analysis."""
+
+    eot_claim_id: UUID
+    delay_analysis_id: UUID
+    requested_days: int

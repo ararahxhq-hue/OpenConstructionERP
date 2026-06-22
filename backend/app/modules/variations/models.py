@@ -420,6 +420,9 @@ class ExtensionOfTimeClaim(Base):
     # TIA result - days the project completion is forecast to slip.
     tia_delta_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tia_computed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Soft back-link to the forensic delay analysis (schedule_advanced T2.2)
+    # this claim was raised from. Plain GUID (no FK across module boundary).
+    delay_analysis_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
 
     def __repr__(self) -> str:
         return f"<EOTClaim {self.id} req={self.requested_days}d ({self.status})>"
