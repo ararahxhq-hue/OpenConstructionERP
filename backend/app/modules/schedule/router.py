@@ -2528,3 +2528,9 @@ async def diff_schedule(
 from app.modules.schedule.codes_router import codes_router as _codes_router  # noqa: E402
 
 router.include_router(_codes_router)
+
+# Progress rigor (T3.2): typed progress, weighted steps, suspend/resume,
+# per-activity calendar and time-phased planned-value preview. Same prefix.
+from app.modules.schedule.progress_router import progress_router as _progress_router  # noqa: E402
+
+router.include_router(_progress_router)

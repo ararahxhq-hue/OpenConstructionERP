@@ -175,6 +175,34 @@ class Activity(Base):
         doc="Actual cost-to-date (AC). Optional - None when no actuals captured.",
     )
 
+    # ── Progress rigor (T3.2) ────────────────────────────────────────────
+    # How ``progress_pct`` is derived: ``physical`` (manual or step-driven,
+    # == today's behaviour, the default), ``duration`` (time-based, remaining
+    # duration auto-computed from the percent) or ``units`` (percent derived
+    # from installed / budgeted quantity). See ``schedule.progress_math``.
+    percent_complete_type: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="physical",
+        server_default="physical",
+        index=True,
+    )
+    # Remaining working days. Authoritative for ``duration`` / ``units``;
+    # ``None`` means "derive from ``progress_pct``" (back-compat default).
+    remaining_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Only read when ``percent_complete_type == "units"``.
+    budgeted_units: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    installed_units: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    # Per-activity working calendar (``oe_schedule_advanced_calendar``). Plain
+    # GUID with no DB-level cross-module FK (matches the codebase precedent);
+    # the resolver falls back to the default calendar when the id is unset or
+    # points at a deleted calendar, so a dangling id degrades gracefully.
+    calendar_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    # Suspend / resume audit (status gains a ``suspended`` value - not a column).
+    suspended_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    resumed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    suspend_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Relationships
     schedule: Mapped[Schedule] = relationship(back_populates="activities")
     children: Mapped[list["Activity"]] = relationship(
@@ -538,3 +566,7 @@ from app.modules.schedule.codes_models import (  # noqa: E402,F401
     ScheduleUdf,
     ScheduleUdfValue,
 )
+
+# Progress-rigor steps (T3.2). Imported for the side effect of registering the
+# ``oe_schedule_activity_step`` table on ``Base.metadata``.
+from app.modules.schedule.progress_models import ProgressStep  # noqa: E402,F401
