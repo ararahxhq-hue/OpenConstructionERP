@@ -23,7 +23,9 @@ from datetime import date
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.modules.schedule_advanced.delay_service import DelayAnalysisService
 from app.modules.schedule_advanced.schemas import (
+    AutoFragnetRequest,
     BaselineCreate,
     BaselineDeltaResponse,
     BaselineResponse,
@@ -42,8 +44,19 @@ from app.modules.schedule_advanced.schemas import (
     CPMComputeSummary,
     CPMRequest,
     CPMResponse,
+    DelayAnalysisCreate,
+    DelayAnalysisListItem,
+    DelayAnalysisPatch,
+    DelayAnalysisResponse,
+    DelayComputeRequest,
+    DelayEventCreate,
+    DelayEventPatch,
+    DelayEventResponse,
+    DelayWindowResponse,
     EVMRequest,
     EVMResponse,
+    FragnetResponse,
+    FragnetUpsert,
     LevelResourcesRequest,
     LevelResourcesResponse,
     LevelResourcesShift,
@@ -62,6 +75,7 @@ from app.modules.schedule_advanced.schemas import (
     PhasePlanUpdate,
     PPCResponse,
     PPCWeeklyResponse,
+    RaiseEotClaimResponse,
     RNCCreate,
     RNCParetoResponse,
     RNCParetoSortedResponse,
@@ -2149,3 +2163,407 @@ async def schedule_risk_for_schedule(
         ) from exc
 
     return ScheduleRiskResponse(schedule_id=schedule_id, **_risk_result_to_dict(result))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Forensic delay analysis (T2.2) - persisted, exhibit-producing flow
+# ────────────────────────────────────────────────────────────────────────────
+# CRUD over the delay-analysis spine + the compute endpoint that runs the pure
+# delay engine and persists windows + the exhibit ``result_json``. Read-only
+# what-if stays on ``POST /tia`` / ``/compute-cpm``; this is the persisted path.
+# Access control mirrors the compute-cpm IDOR pattern: resolve the analysis,
+# then ``verify_project_access`` against its ``project_id``.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _get_delay_service(session: SessionDep) -> DelayAnalysisService:
+    return DelayAnalysisService(session)
+
+
+def _build_str_network(act_rows: list, rel_rows: list):
+    """Build a ``cpm.TaskNetwork`` keyed by STRING activity ids.
+
+    Fragnet ``host_id`` / event ``insert_at`` are stored as strings, so the
+    delay engine must compare them against string activity ids (the
+    UUID-keyed :func:`_build_cpm_network` would never match a stored ref).
+    """
+    from app.modules.schedule_advanced.cpm import Activity as _CPMActivity
+    from app.modules.schedule_advanced.cpm import TaskNetwork as _CPMNetwork
+
+    rel_index: dict[str, list[tuple[str, str, int]]] = {}
+    for r in rel_rows:
+        rel_index.setdefault(str(r.successor_id), []).append(
+            (str(r.predecessor_id), r.relationship_type or "FS", int(r.lag_days or 0)),
+        )
+    cpm_acts: list = []
+    for a in act_rows:
+        cpm_acts.append(
+            _CPMActivity(
+                id=str(a.id),
+                duration=int(a.duration_days or 0),
+                predecessors=rel_index.get(str(a.id), []),
+            ),
+        )
+    return _CPMNetwork(cpm_acts)
+
+
+async def _load_delay_analysis(
+    analysis_id: uuid.UUID,
+    svc: DelayAnalysisService,
+    user_id: CurrentUserId,
+    session: SessionDep,
+):
+    """Load an analysis, enforce project access (IDOR), or 404."""
+    analysis = await svc.get_analysis(analysis_id)
+    if analysis is None:
+        raise _not_found("Delay analysis not found")
+    await verify_project_access(analysis.project_id, user_id, session)
+    return analysis
+
+
+def _assert_draft(analysis) -> None:
+    if analysis.status != "draft":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Delay analysis is {analysis.status!r}; only a draft can be edited.",
+        )
+
+
+async def _delay_response(svc: DelayAnalysisService, analysis) -> DelayAnalysisResponse:
+    resp = DelayAnalysisResponse.model_validate(analysis)
+    ev_resps: list[DelayEventResponse] = []
+    for ev in await svc.list_events(analysis.id):
+        ev_resp = DelayEventResponse.model_validate(ev)
+        ev_resp.fragnets = [FragnetResponse.model_validate(f) for f in await svc.list_fragnets(ev.id)]
+        ev_resps.append(ev_resp)
+    resp.events = ev_resps
+    resp.windows = [DelayWindowResponse.model_validate(w) for w in await svc.list_windows(analysis.id)]
+    return resp
+
+
+@router.post("/delay-analyses", response_model=DelayAnalysisResponse, status_code=status.HTTP_201_CREATED)
+async def create_delay_analysis(
+    data: DelayAnalysisCreate,
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.create")),
+) -> DelayAnalysisResponse:
+    """Create a draft forensic delay analysis under ``project_id``."""
+    await verify_project_access(project_id, user_id, session)
+    svc = _get_delay_service(session)
+    analysis = await svc.create_analysis(project_id, data, user_id)
+    return await _delay_response(svc, analysis)
+
+
+@router.get("/delay-analyses", response_model=list[DelayAnalysisListItem])
+async def list_delay_analyses(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.read")),
+) -> list[DelayAnalysisListItem]:
+    """List the delay analyses for a project."""
+    await verify_project_access(project_id, user_id, session)
+    svc = _get_delay_service(session)
+    return [DelayAnalysisListItem.model_validate(a) for a in await svc.list_analyses(project_id)]
+
+
+@router.get("/delay-analyses/{analysis_id}", response_model=DelayAnalysisResponse)
+async def get_delay_analysis(
+    analysis_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.read")),
+) -> DelayAnalysisResponse:
+    """Fetch an analysis with its events, fragnets, windows and result."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    return await _delay_response(svc, analysis)
+
+
+@router.patch("/delay-analyses/{analysis_id}", response_model=DelayAnalysisResponse)
+async def patch_delay_analysis(
+    analysis_id: uuid.UUID,
+    data: DelayAnalysisPatch,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> DelayAnalysisResponse:
+    """Edit a draft analysis (only a draft is mutable)."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    _assert_draft(analysis)
+    await svc.patch_analysis(analysis, data)
+    return await _delay_response(svc, analysis)
+
+
+@router.delete("/delay-analyses/{analysis_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_delay_analysis(
+    analysis_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.delete")),
+) -> None:
+    """Delete a draft analysis (issued analyses are immutable)."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    if analysis.status == "issued":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An issued analysis cannot be deleted.")
+    await svc.delete_analysis(analysis)
+
+
+@router.post(
+    "/delay-analyses/{analysis_id}/events",
+    response_model=DelayEventResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_delay_event(
+    analysis_id: uuid.UUID,
+    data: DelayEventCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> DelayEventResponse:
+    """Add a causative event to a draft analysis."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    _assert_draft(analysis)
+    event = await svc.add_event(analysis.id, data)
+    return DelayEventResponse.model_validate(event)
+
+
+@router.patch("/delay-analyses/{analysis_id}/events/{event_id}", response_model=DelayEventResponse)
+async def patch_delay_event(
+    analysis_id: uuid.UUID,
+    event_id: uuid.UUID,
+    data: DelayEventPatch,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> DelayEventResponse:
+    """Edit an event on a draft analysis."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    _assert_draft(analysis)
+    event = await svc.get_event(event_id)
+    if event is None or event.analysis_id != analysis.id:
+        raise _not_found("Delay event not found")
+    await svc.patch_event(event, data)
+    ev_resp = DelayEventResponse.model_validate(event)
+    ev_resp.fragnets = [FragnetResponse.model_validate(f) for f in await svc.list_fragnets(event.id)]
+    return ev_resp
+
+
+@router.delete(
+    "/delay-analyses/{analysis_id}/events/{event_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_delay_event(
+    analysis_id: uuid.UUID,
+    event_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> None:
+    """Delete an event (and its fragnet) from a draft analysis."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    _assert_draft(analysis)
+    event = await svc.get_event(event_id)
+    if event is None or event.analysis_id != analysis.id:
+        raise _not_found("Delay event not found")
+    await svc.delete_event(event)
+
+
+@router.put("/delay-analyses/{analysis_id}/events/{event_id}/fragnet", response_model=FragnetResponse)
+async def set_delay_fragnet(
+    analysis_id: uuid.UUID,
+    event_id: uuid.UUID,
+    data: FragnetUpsert,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> FragnetResponse:
+    """Define (replace) the fragnet for an event on a draft analysis."""
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    _assert_draft(analysis)
+    event = await svc.get_event(event_id)
+    if event is None or event.analysis_id != analysis.id:
+        raise _not_found("Delay event not found")
+    frag = await svc.set_fragnet(event.id, data)
+    return FragnetResponse.model_validate(frag)
+
+
+@router.post("/delay-analyses/{analysis_id}/auto-fragnet", response_model=FragnetResponse)
+async def auto_delay_fragnet(
+    analysis_id: uuid.UUID,
+    data: AutoFragnetRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> FragnetResponse:
+    """Wizard helper: synthesise a default fragnet and attach it to an event."""
+    from app.modules.schedule_advanced.delay_engine import auto_fragnet as _auto_fragnet
+
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    _assert_draft(analysis)
+    event = await svc.get_event(data.delay_event_id)
+    if event is None or event.analysis_id != analysis.id:
+        raise _not_found("Delay event not found")
+    if analysis.schedule_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Analysis has no schedule to synthesise a fragnet against.",
+        )
+    act_rows, rel_rows = await _load_schedule_rows(analysis.schedule_id, session)
+    network = _build_str_network(act_rows, rel_rows)
+    frag = _auto_fragnet(network, data.insert_at_activity_ref, data.insert_mode, data.added_days)
+    upsert = FragnetUpsert(
+        insert_mode=frag.insert_mode,
+        insert_at_activity_ref=str(frag.host_id),
+        added_duration_days=frag.added_duration_days,
+        fragnet_activities=list(frag.new_activities),
+        rewires=[
+            {
+                "successor_id": rw.successor_id,
+                "pred_id": rw.pred_id,
+                "op": rw.op,
+                "dep_type": rw.dep_type,
+                "lag": rw.lag,
+            }
+            for rw in frag.rewires
+        ],
+    )
+    saved = await svc.set_fragnet(event.id, upsert)
+    return FragnetResponse.model_validate(saved)
+
+
+@router.post("/delay-analyses/{analysis_id}/compute", response_model=DelayAnalysisResponse)
+async def compute_delay_analysis(
+    analysis_id: uuid.UUID,
+    data: DelayComputeRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> DelayAnalysisResponse:
+    """Run the analysis method, persist the windows + totals + exhibit result."""
+    from app.modules.schedule_advanced.cpm import CycleError
+    from app.modules.schedule_advanced.delay_report import run_analysis
+
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    if analysis.status == "issued":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An issued analysis is immutable.")
+    if analysis.schedule_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Analysis has no schedule to compute against.",
+        )
+    act_rows, rel_rows = await _load_schedule_rows(analysis.schedule_id, session)
+    if not act_rows:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Schedule has no activities to analyse.",
+        )
+    network = _build_str_network(act_rows, rel_rows)
+    baseline = network.activities
+    event_specs = await svc.build_event_specs(analysis.id)
+    apportionment = data.apportionment_method or analysis.apportionment_method
+    try:
+        result = run_analysis(
+            analysis.method,
+            baseline_activities=baseline,
+            asbuilt_activities=baseline,
+            events=event_specs,
+            apportionment=apportionment,
+            snapshots=[baseline, baseline],
+        )
+    except CycleError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    await svc.persist_compute(analysis, result)
+    return await _delay_response(svc, analysis)
+
+
+@router.post("/delay-analyses/{analysis_id}/issue", response_model=DelayAnalysisResponse)
+async def issue_delay_analysis(
+    analysis_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> DelayAnalysisResponse:
+    """Freeze + e-sign a computed analysis (issued analyses are immutable)."""
+    from datetime import UTC, datetime
+
+    from app.modules.construction_control.signing import snapshot_sha256
+
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    if analysis.status == "issued":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Analysis already issued.")
+    if analysis.status != "computed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a computed analysis can be issued.",
+        )
+    snapshot = {
+        "id": str(analysis.id),
+        "project_id": str(analysis.project_id),
+        "method": analysis.method,
+        "name": analysis.name,
+        "total_entitlement_days": analysis.total_entitlement_days,
+        "result_json": analysis.result_json,
+    }
+    sha = snapshot_sha256(snapshot)
+    await svc.issue(
+        analysis,
+        user_id=user_id,
+        signature_sha256=sha,
+        signature_snapshot=snapshot,
+        issued_at=datetime.now(UTC).isoformat(),
+    )
+    return await _delay_response(svc, analysis)
+
+
+@router.post("/delay-analyses/{analysis_id}/raise-eot-claim", response_model=RaiseEotClaimResponse)
+async def raise_eot_claim(
+    analysis_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> RaiseEotClaimResponse:
+    """Create an Extension-of-Time claim pre-filled from a computed analysis."""
+    from datetime import UTC, datetime
+
+    from app.modules.variations.models import ExtensionOfTimeClaim
+
+    svc = _get_delay_service(session)
+    analysis = await _load_delay_analysis(analysis_id, svc, user_id, session)
+    if analysis.status not in ("computed", "issued"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Compute the analysis before raising an EOT claim.",
+        )
+    claim = ExtensionOfTimeClaim(
+        project_id=analysis.project_id,
+        raised_at=datetime.now(UTC).isoformat(),
+        raised_by=str(user_id) if user_id is not None else None,
+        description=f"Raised from forensic delay analysis '{analysis.name}' ({analysis.method}).",
+        root_cause_category="employer",
+        requested_days=analysis.total_entitlement_days,
+        critical_path_impact=bool(analysis.total_entitlement_days > 0),
+        status="draft",
+        tia_delta_days=analysis.total_entitlement_days,
+        tia_computed_at=datetime.now(UTC).isoformat(),
+        delay_analysis_id=analysis.id,
+    )
+    session.add(claim)
+    await session.flush()
+    await svc.set_eot_claim(analysis, claim.id)
+    return RaiseEotClaimResponse(
+        eot_claim_id=claim.id,
+        delay_analysis_id=analysis.id,
+        requested_days=analysis.total_entitlement_days,
+    )
