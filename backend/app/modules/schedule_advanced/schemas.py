@@ -940,3 +940,181 @@ class LineOfBalanceResponse(BaseModel):
     total_locations: int = 0
     total_activities: int = 0
     average_cycle_days: float = 0.0
+
+
+# ── Claims-grade schedule quality (T1.2) ─────────────────────────────────────
+
+
+class FloatPathSchema(BaseModel):
+    """One ranked float path. Index 0 is the Longest (driving) path."""
+
+    index: int = 0
+    activity_ids: list[str] = Field(default_factory=list)
+    length_days: int = 0
+    relative_float: int = 0
+
+
+class QAFindingSchema(BaseModel):
+    """One scheduling-quality finding (a row in the QA log)."""
+
+    code: str
+    severity: int = 0
+    activity_id: str
+    message: str = ""
+
+
+class ActivityExplanationSchema(BaseModel):
+    """Generated, numbers-faithful explain strings for one activity."""
+
+    activity_id: str
+    why_critical: str = ""
+    float_explanation: str = ""
+
+
+class ScheduleQualityResponse(BaseModel):
+    """Response for ``POST /schedule-advanced/{schedule_id}/schedule-quality``.
+
+    Read-only forensic view: Longest Path, ranked float paths, the scheduling
+    QA log and per-activity explain strings, all derived from a single CPM pass.
+    Nothing is written back to the schedule.
+    """
+
+    schedule_id: UUID
+    project_finish_workday: int = 0
+    num_activities: int = 0
+    num_critical: int = 0
+    longest_path: list[str] = Field(default_factory=list)
+    longest_path_length_days: int = 0
+    critical_activity_ids: list[str] = Field(default_factory=list)
+    float_paths: list[FloatPathSchema] = Field(default_factory=list)
+    qa_log: list[QAFindingSchema] = Field(default_factory=list)
+    explanations: list[ActivityExplanationSchema] = Field(default_factory=list)
+
+
+# ── Monte-Carlo schedule risk + Joint Confidence Level (T2.1) ────────────────
+
+
+class ActivityRiskInputSchema(BaseModel):
+    """Optional per-activity three-point duration override for a risk run.
+
+    Activities without an entry fall back to a band derived from their stored
+    duration and the run's optimistic / pessimistic percentages.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    activity_id: UUID
+    low: float | None = Field(default=None, ge=0)
+    mode: float | None = Field(default=None, ge=0)
+    high: float | None = Field(default=None, ge=0)
+    distribution: str = Field(default="pert", pattern=r"^(pert|triangular|uniform|normal|lognormal)$")
+
+
+class CostRiskInputSchema(BaseModel):
+    """Optional cost side of a run - enables the Joint Confidence Level."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    base_cost: float = Field(..., ge=0)
+    cost_low: float | None = Field(default=None, ge=0)
+    cost_mode: float | None = Field(default=None, ge=0)
+    cost_high: float | None = Field(default=None, ge=0)
+    cost_target: float | None = Field(default=None, ge=0)
+    distribution: str = Field(default="pert", pattern=r"^(pert|triangular|uniform|normal|lognormal)$")
+
+
+class ScheduleRiskRequest(BaseModel):
+    """Body for ``POST /schedule-advanced/{schedule_id}/schedule-risk``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    iterations: int = Field(default=2000, ge=100, le=100000)
+    correlation: float = Field(default=0.0, ge=0.0, le=0.95)
+    seed: int | None = None
+    sampling: str = Field(default="lhs", pattern=r"^(lhs|mc)$")
+    target_confidence: int = Field(default=80, ge=50, le=99)
+    optimistic_pct: float = Field(default=15.0, ge=0, le=100)
+    pessimistic_pct: float = Field(default=25.0, ge=0, le=300)
+    activity_risks: list[ActivityRiskInputSchema] = Field(default_factory=list)
+    cost_inputs: CostRiskInputSchema | None = None
+
+
+class CriticalityStatSchema(BaseModel):
+    """How often an activity drives the schedule, and how strongly."""
+
+    activity_id: str
+    criticality_index: float = 0.0
+    cruciality: float = 0.0
+    duration_sensitivity: float = 0.0
+    mean_duration: float = 0.0
+
+
+class ScheduleDriverSchema(BaseModel):
+    """A tornado entry: an activity's rank correlation to the finish."""
+
+    activity_id: str
+    rank_correlation: float = 0.0
+    swing_low: float = 0.0
+    swing_high: float = 0.0
+
+
+class HistBinSchema(BaseModel):
+    """One histogram bar over the simulated finish-day distribution."""
+
+    bin_start: float = 0.0
+    bin_end: float = 0.0
+    count: int = 0
+
+
+class CdfPointSchema(BaseModel):
+    """One point on the cumulative S-curve (``x`` = finish work-day)."""
+
+    x: float = 0.0
+    cumulative_prob: float = 0.0
+
+
+class ScatterPointSchema(BaseModel):
+    """One sampled (finish, cost) draw for the JCL scatter cloud."""
+
+    finish: float = 0.0
+    cost: float = 0.0
+
+
+class JointConfidenceSchema(BaseModel):
+    """Joint cost / schedule confidence summary."""
+
+    target_finish: float = 0.0
+    target_cost: float = 0.0
+    jcl: float = 0.0
+    prob_on_time: float = 0.0
+    prob_on_budget: float = 0.0
+    cost_mean: float = 0.0
+    cost_percentiles: dict[str, float] = Field(default_factory=dict)
+    correlation: float = 0.0
+    scatter: list[ScatterPointSchema] = Field(default_factory=list)
+
+
+class ScheduleRiskResponse(BaseModel):
+    """Response for ``POST /schedule-advanced/{schedule_id}/schedule-risk``."""
+
+    schedule_id: UUID
+    iterations: int = 0
+    deterministic_finish: float = 0.0
+    mean: float = 0.0
+    std_dev: float = 0.0
+    cv_pct: float = 0.0
+    percentiles: dict[str, float] = Field(default_factory=dict)
+    contingency: float = 0.0
+    contingency_pct: float = 0.0
+    recommended_finish: float = 0.0
+    target_confidence: int = 0
+    prob_within_deterministic: float = 0.0
+    correlation: float = 0.0
+    seed: int = 0
+    convergence_status: str = ""
+    convergence_margin_pct: float = 0.0
+    histogram: list[HistBinSchema] = Field(default_factory=list)
+    cdf: list[CdfPointSchema] = Field(default_factory=list)
+    criticality: list[CriticalityStatSchema] = Field(default_factory=list)
+    drivers: list[ScheduleDriverSchema] = Field(default_factory=list)
+    joint_confidence: JointConfidenceSchema | None = None

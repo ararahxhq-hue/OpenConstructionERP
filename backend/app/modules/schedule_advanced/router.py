@@ -67,6 +67,9 @@ from app.modules.schedule_advanced.schemas import (
     RNCParetoSortedResponse,
     RNCResponse,
     RNCUpdate,
+    ScheduleQualityResponse,
+    ScheduleRiskRequest,
+    ScheduleRiskResponse,
     TaktActivityImport,
     TaktActivityResponse,
     TaktActivityUpdate,
@@ -1891,3 +1894,250 @@ async def get_takt_violations(
     project_id = await _project_id_for_takt(takt_id, takt_service, service)
     await verify_project_access(project_id, user_id, session)
     return await takt_service.detect_violations(takt_id)
+
+
+# ── Claims-grade CPM analytics (T1.2) + Monte-Carlo schedule risk (T2.1) ─────
+#
+# Both read the schedule's activities + relationships, build the shared pure
+# ``cpm.TaskNetwork`` and run a pure engine over it. Neither mutates the
+# schedule, so both are gated by ``schedule_advanced.read`` (plus the usual
+# project-access check).
+
+
+async def _load_schedule_rows(schedule_id: uuid.UUID, session: SessionDep) -> tuple[list, list]:
+    """Load all Activity + ScheduleRelationship rows for a schedule."""
+    from sqlalchemy import select
+
+    from app.modules.schedule.models import Activity as _Activity
+    from app.modules.schedule.models import ScheduleRelationship as _Rel
+
+    act_rows = (await session.execute(select(_Activity).where(_Activity.schedule_id == schedule_id))).scalars().all()
+    rel_rows = (await session.execute(select(_Rel).where(_Rel.schedule_id == schedule_id))).scalars().all()
+    return list(act_rows), list(rel_rows)
+
+
+def _build_cpm_network(act_rows: list, rel_rows: list):
+    """Build a pure ``cpm.TaskNetwork`` from ORM Activity + relationship rows.
+
+    Predecessor links carry their relationship type (FS/SS/FF/SF) and lag, so
+    all four PDM link types flow into the engine. Resource demand is read from
+    each activity's ``resources`` JSON (``name`` -> integer ``count``).
+    """
+    from app.modules.schedule_advanced.cpm import Activity as _CPMActivity
+    from app.modules.schedule_advanced.cpm import TaskNetwork as _CPMNetwork
+
+    rel_index: dict[uuid.UUID, list[tuple[uuid.UUID, str, int]]] = {}
+    for r in rel_rows:
+        rel_index.setdefault(r.successor_id, []).append(
+            (r.predecessor_id, r.relationship_type or "FS", int(r.lag_days or 0)),
+        )
+
+    cpm_acts: list = []
+    for a in act_rows:
+        required: dict[str, int] = {}
+        for res in a.resources or []:
+            if isinstance(res, dict) and res.get("name"):
+                required[str(res["name"])] = int(res.get("count", 1) or 1)
+        cpm_acts.append(
+            _CPMActivity(
+                id=a.id,
+                duration=int(a.duration_days or 0),
+                predecessors=rel_index.get(a.id, []),
+                required_resources=required,
+            ),
+        )
+    return _CPMNetwork(cpm_acts)
+
+
+@router.post(
+    "/{schedule_id}/schedule-quality",
+    response_model=ScheduleQualityResponse,
+)
+async def schedule_quality_for_schedule(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.read")),
+) -> ScheduleQualityResponse:
+    """Claims-grade read-only schedule analysis for ``schedule_id``.
+
+    Returns the Longest Path, the ranked float-path decomposition, the
+    scheduling QA log (open ends, hard constraints, out-of-sequence, lag
+    issues) and per-activity explain strings - all from a single CPM pass over
+    the four PDM link types. Nothing is written back to the schedule.
+    """
+    from app.modules.schedule_advanced.cpm import CycleError, QAOptions
+    from app.modules.schedule_advanced.cpm_report import quality_report
+
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    act_rows, rel_rows = await _load_schedule_rows(schedule_id, session)
+    network = _build_cpm_network(act_rows, rel_rows)
+
+    # Mandatory date constraints surface as HARD_CONSTRAINT findings.
+    hard = {a.id for a in act_rows if (a.constraint_type or "") in {"must_start_on", "must_finish_on"}}
+    options = QAOptions(hard_constrained=hard)
+
+    try:
+        report = quality_report(network, options=options)
+    except CycleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return ScheduleQualityResponse(schedule_id=schedule_id, **report)
+
+
+def _risk_result_to_dict(result) -> dict:
+    """Map a pure ``ScheduleRiskResult`` dataclass into a response dict.
+
+    Note ``cpm`` ids are stringified, and the cost-engine CDF point's ``cost``
+    field carries the finish-day x-value for a schedule run (the engine reuses
+    the cost-engine CDF container), so it maps to ``x`` here.
+    """
+    jc = result.joint_confidence
+    return {
+        "iterations": result.iterations,
+        "deterministic_finish": result.deterministic_finish,
+        "mean": result.mean,
+        "std_dev": result.std_dev,
+        "cv_pct": result.cv_pct,
+        "percentiles": result.percentiles,
+        "contingency": result.contingency,
+        "contingency_pct": result.contingency_pct,
+        "recommended_finish": result.recommended_finish,
+        "target_confidence": result.target_confidence,
+        "prob_within_deterministic": result.prob_within_deterministic,
+        "correlation": result.correlation,
+        "seed": result.seed,
+        "convergence_status": result.convergence_status,
+        "convergence_margin_pct": result.convergence_margin_pct,
+        "histogram": [{"bin_start": h.bin_start, "bin_end": h.bin_end, "count": h.count} for h in result.histogram],
+        "cdf": [{"x": c.cost, "cumulative_prob": c.cumulative_prob} for c in result.cdf],
+        "criticality": [
+            {
+                "activity_id": str(s.activity_id),
+                "criticality_index": s.criticality_index,
+                "cruciality": s.cruciality,
+                "duration_sensitivity": s.duration_sensitivity,
+                "mean_duration": s.mean_duration,
+            }
+            for s in result.criticality
+        ],
+        "drivers": [
+            {
+                "activity_id": str(d.activity_id),
+                "rank_correlation": d.rank_correlation,
+                "swing_low": d.swing_low,
+                "swing_high": d.swing_high,
+            }
+            for d in result.drivers
+        ],
+        "joint_confidence": None
+        if jc is None
+        else {
+            "target_finish": jc.target_finish,
+            "target_cost": jc.target_cost,
+            "jcl": jc.jcl,
+            "prob_on_time": jc.prob_on_time,
+            "prob_on_budget": jc.prob_on_budget,
+            "cost_mean": jc.cost_mean,
+            "cost_percentiles": jc.cost_percentiles,
+            "correlation": jc.correlation,
+            "scatter": [{"finish": p.finish, "cost": p.cost} for p in jc.scatter],
+        },
+    }
+
+
+@router.post(
+    "/{schedule_id}/schedule-risk",
+    response_model=ScheduleRiskResponse,
+)
+async def schedule_risk_for_schedule(
+    schedule_id: uuid.UUID,
+    data: ScheduleRiskRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.read")),
+) -> ScheduleRiskResponse:
+    """Run a correlated Monte-Carlo schedule-risk simulation for ``schedule_id``.
+
+    Activity durations are sampled (Latin Hypercube by default) around their
+    stored value using the run's optimistic / pessimistic band, or an explicit
+    three-point override per activity. Returns finish-date percentiles, an
+    S-curve, the per-activity criticality index, a duration tornado and - when
+    ``cost_inputs`` is supplied - the Joint Confidence Level. Read-only.
+    """
+    from app.modules.schedule_advanced.cpm import CycleError
+    from app.modules.schedule_advanced.schedule_risk_engine import (
+        ActivityDurationInput,
+        CostInputs,
+        simulate_schedule,
+    )
+
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    act_rows, rel_rows = await _load_schedule_rows(schedule_id, session)
+    if not act_rows:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Schedule has no activities to analyse.",
+        )
+
+    network = _build_cpm_network(act_rows, rel_rows)
+    base_by_id = {a.id: a.duration for a in network.activities}
+    valid_ids = set(network.ids())
+
+    risks: list[ActivityDurationInput] = []
+    for r in data.activity_risks:
+        if r.activity_id in valid_ids:
+            risks.append(
+                ActivityDurationInput(
+                    activity_id=r.activity_id,
+                    base=float(base_by_id.get(r.activity_id, 0)),
+                    low=r.low,
+                    mode=r.mode,
+                    high=r.high,
+                    distribution=r.distribution,
+                ),
+            )
+
+    cost_inputs = None
+    if data.cost_inputs is not None:
+        ci = data.cost_inputs
+        cost_inputs = CostInputs(
+            base_cost=ci.base_cost,
+            cost_low=ci.cost_low,
+            cost_mode=ci.cost_mode,
+            cost_high=ci.cost_high,
+            cost_target=ci.cost_target,
+            distribution=ci.distribution,
+            optimistic_pct=data.optimistic_pct,
+            pessimistic_pct=data.pessimistic_pct,
+        )
+
+    try:
+        result = simulate_schedule(
+            network.activities,
+            None,
+            risks,
+            None,
+            iterations=data.iterations,
+            correlation=data.correlation,
+            seed=data.seed,
+            sampling=data.sampling,
+            target_confidence=data.target_confidence,
+            optimistic_pct=data.optimistic_pct,
+            pessimistic_pct=data.pessimistic_pct,
+            cost_inputs=cost_inputs,
+        )
+    except CycleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return ScheduleRiskResponse(schedule_id=schedule_id, **_risk_result_to_dict(result))
