@@ -156,6 +156,109 @@ export interface ScheduleSnapshot {
   elements: Record<string, string>;
 }
 
+/* ── Baselines ─────────────────────────────────────────────────────────── */
+
+/**
+ * A schedule baseline snapshot. ``snapshot_data`` is the frozen activity set
+ * captured at ``baseline_date``; the diff engine consumes it as the base side
+ * of a comparison. Mirrors the backend ``BaselineResponse`` (schedule module).
+ */
+export interface ScheduleBaseline {
+  id: string;
+  schedule_id: string | null;
+  project_id: string;
+  name: string;
+  baseline_date: string;
+  snapshot_data: Record<string, unknown>;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/* ── Schedule comparison / diff (T1.3) ─────────────────────────────────────
+ *
+ * Compares two snapshots of a schedule (a captured baseline, or an inline
+ * envelope, against the live schedule or another baseline) and returns a
+ * categorized diff plus roll-up metrics. Mirrors the backend schemas
+ * SnapshotEnvelopeResponse / ScheduleDiffRequest / ScheduleDiffResponse.
+ */
+
+export interface SnapshotEnvelope {
+  schedule_id: string;
+  envelope: Record<string, unknown>;
+}
+
+export interface ScheduleDiffRequestBody {
+  base_baseline_id?: string | null;
+  base_envelope?: Record<string, unknown> | null;
+  target_baseline_id?: string | null;
+}
+
+/**
+ * Per-field change map: field name -> a small object describing the before/after
+ * values. The inner shape is engine-defined (e.g. ``{from, to}``); the UI only
+ * needs the field names, so the inner value is left opaque.
+ */
+export type DiffFieldChange = Record<string, Record<string, unknown>>;
+
+export interface DiffActivityChange {
+  key: string;
+  /** "added" | "removed" | "modified" */
+  change_type: string;
+  categories: string[];
+  fields: DiffFieldChange;
+  finish_movement_days: number;
+  critical_path: boolean;
+  name: string | null;
+  wbs_code: string | null;
+}
+
+export interface DiffRelationshipChange {
+  /** [predecessor_key, successor_key] */
+  key: string[];
+  /** "added" | "removed" | "retyped" | "relagged" */
+  change_type: string;
+  categories: string[];
+  fields: DiffFieldChange;
+}
+
+export interface DiffCalendarChange {
+  key: string;
+  /** "added" | "removed" | "modified" */
+  change_type: string;
+  categories: string[];
+}
+
+export interface DiffSummary {
+  net_finish_movement_days: number;
+  count_by_category: Record<string, number>;
+  activities_added: number;
+  activities_removed: number;
+  activities_changed: number;
+  relationships_added: number;
+  relationships_removed: number;
+  relationships_retyped: number;
+  relationships_relagged: number;
+  critical_path_in: number;
+  critical_path_out: number;
+  /** Decimal-as-string money delta. */
+  cost_planned_delta: string;
+  /** Decimal-as-string money delta. */
+  cost_actual_delta: string;
+  largest_slips: Array<Record<string, unknown>>;
+}
+
+export interface ScheduleDiff {
+  schedule_id: string;
+  base_label: string;
+  target_label: string;
+  activities: DiffActivityChange[];
+  relationships: DiffRelationshipChange[];
+  calendars: DiffCalendarChange[];
+  summary: DiffSummary;
+}
+
 /** Defensive unwrap: handle both plain array and paginated {items, total} responses. */
 function unwrapList<T>(res: T[] | { items: T[] }): T[] {
   return Array.isArray(res) ? res : res.items ?? [];
@@ -226,4 +329,28 @@ export const scheduleApi = {
     apiPost<WorkOrder>(`/v1/schedule/activities/${activityId}/work-orders/`, data),
   updateWorkOrder: (id: string, data: Partial<WorkOrder>) =>
     apiPatch<WorkOrder>(`/v1/schedule/work-orders/${id}`, data),
+
+  // Baselines (project-scoped). Used as the base side of a schedule diff.
+  listBaselines: (projectId: string) =>
+    apiGet<ScheduleBaseline[] | { items: ScheduleBaseline[] }>(
+      `/v1/schedule/baselines/?project_id=${encodeURIComponent(projectId)}`,
+    ).then(unwrapList),
+
+  // Schedule comparison / diff (T1.3)
+  /** Flatten the live schedule into the canonical diff envelope (e.g. to store as a baseline). */
+  getSnapshotEnvelope: (scheduleId: string) =>
+    apiGet<SnapshotEnvelope>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/snapshot-envelope`,
+    ),
+  /**
+   * Categorized diff between a base and a target snapshot of this schedule.
+   * Base is a captured baseline (``base_baseline_id``) or an inline envelope
+   * (``base_envelope``); target defaults to the live schedule, or another
+   * baseline via ``target_baseline_id``.
+   */
+  diffSchedule: (scheduleId: string, body: ScheduleDiffRequestBody) =>
+    apiPost<ScheduleDiff, ScheduleDiffRequestBody>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/diff`,
+      body,
+    ),
 };

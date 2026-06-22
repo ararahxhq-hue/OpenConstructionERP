@@ -848,3 +848,195 @@ export function getLOB(taktId: string): Promise<LineOfBalance> {
     )}/line-of-balance`,
   );
 }
+
+/* ── Claims-grade schedule quality (T1.2) ─────────────────────────────────
+ *
+ * Read-only forensic analysis of a base ``schedule`` (its Activity +
+ * ScheduleRelationship rows) - NOT a Last Planner master schedule. The
+ * ``scheduleId`` is therefore a /v1/schedule schedule id. One CPM pass over
+ * the four PDM link types yields the Longest Path, the ranked float-path
+ * decomposition, the scheduling QA log and per-activity explain strings.
+ * Backend: POST /v1/schedule-advanced/{schedule_id}/schedule-quality
+ * (schemas: ScheduleQualityResponse, FloatPathSchema, QAFindingSchema,
+ * ActivityExplanationSchema).
+ */
+
+/** One ranked float path. Index 0 is the Longest (driving) path. */
+export interface FloatPath {
+  index: number;
+  activity_ids: string[];
+  length_days: number;
+  relative_float: number;
+}
+
+/** One scheduling-quality finding (a row in the QA log). */
+export interface QAFinding {
+  code: string;
+  /** Numeric severity: higher is worse. 3 = error, 2 = warning, 1 = info. */
+  severity: number;
+  activity_id: string;
+  message: string;
+}
+
+/** Generated, numbers-faithful explain strings for one activity. */
+export interface ActivityExplanation {
+  activity_id: string;
+  why_critical: string;
+  float_explanation: string;
+}
+
+export interface ScheduleQuality {
+  schedule_id: string;
+  project_finish_workday: number;
+  num_activities: number;
+  num_critical: number;
+  longest_path: string[];
+  longest_path_length_days: number;
+  critical_activity_ids: string[];
+  float_paths: FloatPath[];
+  qa_log: QAFinding[];
+  explanations: ActivityExplanation[];
+}
+
+/**
+ * Run the claims-grade schedule-quality analysis for a base schedule.
+ * The endpoint takes no request body; the schedule is read server-side.
+ */
+export function scheduleQuality(scheduleId: string): Promise<ScheduleQuality> {
+  return apiPost<ScheduleQuality>(
+    `/v1/schedule-advanced/${encodeURIComponent(scheduleId)}/schedule-quality`,
+    {},
+  );
+}
+
+/* ── Monte-Carlo schedule risk + Joint Confidence Level (T2.1) ────────────
+ *
+ * Correlated Monte-Carlo schedule-risk simulation for a base ``schedule``.
+ * Activity durations are sampled (Latin Hypercube by default) around their
+ * stored value, returning finish-date percentiles, an S-curve, a histogram,
+ * the per-activity criticality index, a duration tornado and - when
+ * ``cost_inputs`` is supplied - the Joint Confidence Level.
+ * Backend: POST /v1/schedule-advanced/{schedule_id}/schedule-risk
+ * (schemas: ScheduleRiskRequest, ScheduleRiskResponse).
+ */
+
+export type RiskDistribution =
+  | 'pert'
+  | 'triangular'
+  | 'uniform'
+  | 'normal'
+  | 'lognormal';
+
+/** Optional cost side of a run - enables the Joint Confidence Level. */
+export interface CostRiskInput {
+  base_cost: number;
+  cost_low?: number | null;
+  cost_mode?: number | null;
+  cost_high?: number | null;
+  cost_target?: number | null;
+  distribution?: RiskDistribution;
+}
+
+/** Optional per-activity three-point duration override for a risk run. */
+export interface ActivityRiskInput {
+  activity_id: string;
+  low?: number | null;
+  mode?: number | null;
+  high?: number | null;
+  distribution?: RiskDistribution;
+}
+
+export interface ScheduleRiskRequestBody {
+  iterations?: number;
+  correlation?: number;
+  seed?: number | null;
+  sampling?: 'lhs' | 'mc';
+  target_confidence?: number;
+  optimistic_pct?: number;
+  pessimistic_pct?: number;
+  activity_risks?: ActivityRiskInput[];
+  cost_inputs?: CostRiskInput | null;
+}
+
+/** How often an activity drives the schedule, and how strongly. */
+export interface CriticalityStat {
+  activity_id: string;
+  criticality_index: number;
+  cruciality: number;
+  duration_sensitivity: number;
+  mean_duration: number;
+}
+
+/** A tornado entry: an activity's rank correlation to the finish. */
+export interface ScheduleDriver {
+  activity_id: string;
+  rank_correlation: number;
+  swing_low: number;
+  swing_high: number;
+}
+
+/** One histogram bar over the simulated finish-day distribution. */
+export interface HistBin {
+  bin_start: number;
+  bin_end: number;
+  count: number;
+}
+
+/** One point on the cumulative S-curve (``x`` = finish work-day). */
+export interface CdfPoint {
+  x: number;
+  cumulative_prob: number;
+}
+
+/** One sampled (finish, cost) draw for the JCL scatter cloud. */
+export interface ScatterPoint {
+  finish: number;
+  cost: number;
+}
+
+export interface JointConfidence {
+  target_finish: number;
+  target_cost: number;
+  jcl: number;
+  prob_on_time: number;
+  prob_on_budget: number;
+  cost_mean: number;
+  cost_percentiles: Record<string, number>;
+  correlation: number;
+  scatter: ScatterPoint[];
+}
+
+export interface ScheduleRisk {
+  schedule_id: string;
+  iterations: number;
+  deterministic_finish: number;
+  mean: number;
+  std_dev: number;
+  cv_pct: number;
+  percentiles: Record<string, number>;
+  contingency: number;
+  contingency_pct: number;
+  recommended_finish: number;
+  target_confidence: number;
+  prob_within_deterministic: number;
+  correlation: number;
+  seed: number;
+  convergence_status: string;
+  convergence_margin_pct: number;
+  histogram: HistBin[];
+  cdf: CdfPoint[];
+  criticality: CriticalityStat[];
+  drivers: ScheduleDriver[];
+  joint_confidence: JointConfidence | null;
+}
+
+/** Run a Monte-Carlo schedule-risk simulation for a base schedule. */
+export function scheduleRisk(
+  scheduleId: string,
+  body: ScheduleRiskRequestBody = {},
+): Promise<ScheduleRisk> {
+  return apiPost<ScheduleRisk, ScheduleRiskRequestBody>(
+    `/v1/schedule-advanced/${encodeURIComponent(scheduleId)}/schedule-risk`,
+    body,
+  );
+}
