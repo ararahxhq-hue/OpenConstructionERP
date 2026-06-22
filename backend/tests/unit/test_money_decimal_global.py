@@ -198,6 +198,10 @@ RATIO_OR_NON_MONEY: set[str] = {
     "share_pct",
     "completion_pct",
     "abc_percentage",
+    # Joint Confidence Level probability of finishing within the cost target
+    # (schedule_advanced risk). The word "budget" trips the money regex, but
+    # this is a 0..1 probability, not a currency amount.
+    "prob_on_budget",
 }
 
 # Qualified ``module.Class.field`` names that match the money regex but are
@@ -214,6 +218,12 @@ IGNORE_QUALIFIED_MONEY: set[str] = {
     # headline figures on the response (base_total / mean / std_dev /
     # recommended_budget) ARE Decimal-as-string; only the chart series is float.
     "boq.CostRiskCdfPoint.cost",
+    # Monte-Carlo schedule-risk Joint-Confidence scatter cloud: each point is a
+    # plotted (finish, cost) sample draw - a chart coordinate like the sibling
+    # ``boq.CostRiskCdfPoint.cost``, not a ledger amount. The headline cost
+    # figures on the same response (``JointConfidenceSchema.target_cost`` /
+    # ``cost_mean``) ARE Decimal-as-string; only the scatter series is float.
+    "schedule_advanced.ScatterPointSchema.cost",
 }
 
 
@@ -254,6 +264,14 @@ def _is_money_named(field_name: str) -> bool:
 #     percentile ladder), not a ledger amount - exempted by qualified name
 #     via ``IGNORE_QUALIFIED_MONEY`` rather than raising the cap, so the
 #     guard stays at 1 and every other new money-float still trips it.
+#   * Schedule-risk (T2.1) wave: the Joint-Confidence-Level cost side mirrors
+#     the BOQ precedent exactly. The headline figures
+#     (``CostRiskInputSchema.base_cost`` + the three-point band,
+#     ``JointConfidenceSchema.target_cost`` / ``cost_mean``) were made
+#     Decimal-as-string; ``schedule_advanced.ScatterPointSchema.cost`` is a
+#     plotted (finish, cost) chart coordinate exempted by qualified name; and
+#     ``prob_on_budget`` (a 0..1 probability whose name trips the "budget"
+#     regex) was taught to the ratio filter. The cap stays 1.
 # Sibling agents that fix further money fields should *lower* this
 # constant to lock in their progress. New money-as-float fields ADDED
 # to a schema will push the count over the cap and fail CI.

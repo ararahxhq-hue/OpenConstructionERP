@@ -1996,7 +1996,13 @@ def _risk_result_to_dict(result) -> dict:
     Note ``cpm`` ids are stringified, and the cost-engine CDF point's ``cost``
     field carries the finish-day x-value for a schedule run (the engine reuses
     the cost-engine CDF container), so it maps to ``x`` here.
+
+    The headline cost figures (``target_cost`` / ``cost_mean``) are emitted as
+    money (Decimal-as-string, v3 §10); the engine produces them as floats so we
+    convert via ``Decimal(str(...))`` to avoid binary-float artefacts.
     """
+    from decimal import Decimal
+
     jc = result.joint_confidence
     return {
         "iterations": result.iterations,
@@ -2039,11 +2045,11 @@ def _risk_result_to_dict(result) -> dict:
         if jc is None
         else {
             "target_finish": jc.target_finish,
-            "target_cost": jc.target_cost,
+            "target_cost": Decimal(str(jc.target_cost)),
             "jcl": jc.jcl,
             "prob_on_time": jc.prob_on_time,
             "prob_on_budget": jc.prob_on_budget,
-            "cost_mean": jc.cost_mean,
+            "cost_mean": Decimal(str(jc.cost_mean)),
             "cost_percentiles": jc.cost_percentiles,
             "correlation": jc.correlation,
             "scatter": [{"finish": p.finish, "cost": p.cost} for p in jc.scatter],
@@ -2108,12 +2114,14 @@ async def schedule_risk_for_schedule(
     cost_inputs = None
     if data.cost_inputs is not None:
         ci = data.cost_inputs
+        # The pure engine does float math; the schema carries Decimal money
+        # (v3 §10), so coerce to float at the engine boundary.
         cost_inputs = CostInputs(
-            base_cost=ci.base_cost,
-            cost_low=ci.cost_low,
-            cost_mode=ci.cost_mode,
-            cost_high=ci.cost_high,
-            cost_target=ci.cost_target,
+            base_cost=float(ci.base_cost),
+            cost_low=float(ci.cost_low) if ci.cost_low is not None else None,
+            cost_mode=float(ci.cost_mode) if ci.cost_mode is not None else None,
+            cost_high=float(ci.cost_high) if ci.cost_high is not None else None,
+            cost_target=float(ci.cost_target) if ci.cost_target is not None else None,
             distribution=ci.distribution,
             optimistic_pct=data.optimistic_pct,
             pessimistic_pct=data.pessimistic_pct,

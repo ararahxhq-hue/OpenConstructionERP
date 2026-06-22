@@ -11,9 +11,27 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 # ── Common patterns ────────────────────────────────────────────────────────
+
+
+# Money fields are accepted as ``Decimal`` and emitted as plain decimal
+# *strings* in JSON (v3 §10): floats lose precision past ~15 sig figs and force
+# every consumer to parse a locale-coloured number. Canonical helper mirrored
+# from ``boq.schemas._serialise_money`` - keep the siblings in sync.
+def _serialise_money(v: Decimal | None) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, Decimal):
+        try:
+            v = Decimal(str(v))
+        except (ArithmeticError, ValueError):
+            return "0"
+    if not v.is_finite():
+        return "0"
+    return format(v, "f")
+
 
 _PHASE_STATUS = r"^(in_planning|pulled|active|completed)$"
 _LOOK_AHEAD_STATUS = r"^(draft|reviewed|published)$"
@@ -1011,16 +1029,24 @@ class ActivityRiskInputSchema(BaseModel):
 
 
 class CostRiskInputSchema(BaseModel):
-    """Optional cost side of a run - enables the Joint Confidence Level."""
+    """Optional cost side of a run - enables the Joint Confidence Level.
+
+    The three-point cost estimate is real project money, so it is Decimal-in /
+    Decimal-as-string out (v3 §10); Pydantic coerces int/float/str on input.
+    """
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    base_cost: float = Field(..., ge=0)
-    cost_low: float | None = Field(default=None, ge=0)
-    cost_mode: float | None = Field(default=None, ge=0)
-    cost_high: float | None = Field(default=None, ge=0)
-    cost_target: float | None = Field(default=None, ge=0)
+    base_cost: Decimal = Field(..., ge=0)
+    cost_low: Decimal | None = Field(default=None, ge=0)
+    cost_mode: Decimal | None = Field(default=None, ge=0)
+    cost_high: Decimal | None = Field(default=None, ge=0)
+    cost_target: Decimal | None = Field(default=None, ge=0)
     distribution: str = Field(default="pert", pattern=r"^(pert|triangular|uniform|normal|lognormal)$")
+
+    @field_serializer("base_cost", "cost_low", "cost_mode", "cost_high", "cost_target", when_used="json")
+    def _ser_money(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
 
 
 class ScheduleRiskRequest(BaseModel):
@@ -1081,17 +1107,27 @@ class ScatterPointSchema(BaseModel):
 
 
 class JointConfidenceSchema(BaseModel):
-    """Joint cost / schedule confidence summary."""
+    """Joint cost / schedule confidence summary.
+
+    ``target_cost`` (the cost target) and ``cost_mean`` (the simulated expected
+    cost) are headline money figures - Decimal-as-string (v3 §10), mirroring the
+    BOQ cost-risk response. ``prob_*`` are probabilities (0..1) and the scatter
+    cloud carries plotted stochastic coordinates, so both stay float.
+    """
 
     target_finish: float = 0.0
-    target_cost: float = 0.0
+    target_cost: Decimal = Decimal("0")
     jcl: float = 0.0
     prob_on_time: float = 0.0
     prob_on_budget: float = 0.0
-    cost_mean: float = 0.0
+    cost_mean: Decimal = Decimal("0")
     cost_percentiles: dict[str, float] = Field(default_factory=dict)
     correlation: float = 0.0
     scatter: list[ScatterPointSchema] = Field(default_factory=list)
+
+    @field_serializer("target_cost", "cost_mean", when_used="json")
+    def _ser_money(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
 
 
 class ScheduleRiskResponse(BaseModel):
