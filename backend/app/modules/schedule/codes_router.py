@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.saved_views.errors import RegistrationError, ScopeDenied, WhitelistError
+from app.modules.schedule.codes_grouped import resolve_grouped_layout
 from app.modules.schedule.codes_models import CodeDictionary, ScheduleLayout, ScheduleUdf
 from app.modules.schedule.codes_schemas import (
     ActivityCodesSet,
@@ -31,10 +32,13 @@ from app.modules.schedule.codes_schemas import (
     CodeValueCreate,
     CodeValuePatch,
     CodeValueResponse,
+    GroupedRequest,
+    GroupedResponse,
     ImportLibraryRequest,
     LayoutCreate,
     LayoutPatch,
     LayoutResponse,
+    LayoutSpec,
     UdfCreate,
     UdfPatch,
     UdfResponse,
@@ -539,3 +543,56 @@ async def delete_layout(
     svc = _svc(session)
     layout = await _require_owned_layout(layout_id, svc, user_id, session)
     await svc.delete_layout(layout)
+
+
+# ── grouped grid (the 20k-activity workhorse) ─────────────────────────────────
+
+
+@codes_router.post("/schedules/{schedule_id}/activities/grouped/", response_model=GroupedResponse)
+async def grouped_activities(
+    schedule_id: uuid.UUID,
+    data: GroupedRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule.read")),
+) -> GroupedResponse:
+    """Resolve a layout into a grouped, filtered, paged activity grid.
+
+    Read-only; POST because the layout spec is a structured body. The spec comes
+    from an inline body or a saved (and visible) layout; an empty spec returns a
+    flat first page.
+    """
+    svc = _svc(session)
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    if data.spec is not None:
+        spec = data.spec
+    elif data.layout_id is not None:
+        layout = await svc.get_layout(data.layout_id)
+        if layout is None or layout.schedule_id != schedule_id:
+            raise _not_found("Layout not found")
+        visible = (
+            str(layout.owner_id) == str(user_id)
+            or layout.share_scope == "workspace"
+            or (layout.share_scope == "project" and layout.project_id == project_id)
+        )
+        if not visible:
+            raise _not_found("Layout not found")
+        spec = LayoutSpec.model_validate(layout.spec)
+    else:
+        spec = LayoutSpec()
+
+    try:
+        result = await resolve_grouped_layout(
+            session,
+            schedule_id,
+            project_id,
+            spec,
+            page=data.page,
+            page_size=data.page_size,
+            expanded_groups=data.expanded_groups,
+        )
+    except (WhitelistError, ScopeDenied, RegistrationError) as exc:
+        raise _unprocessable(f"Invalid layout: {exc}") from exc
+    return GroupedResponse.model_validate(result)
