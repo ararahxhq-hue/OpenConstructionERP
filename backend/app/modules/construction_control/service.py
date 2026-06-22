@@ -303,8 +303,7 @@ class ConstructionControlService:
                 )
 
         description_parts = [
-            f"Raised automatically from inspection {inspection.inspection_number} "
-            f"({inspection.inspection_type}).",
+            f"Raised automatically from inspection {inspection.inspection_number} ({inspection.inspection_type}).",
         ]
         if inspection.description:
             description_parts.append(inspection.description)

@@ -120,8 +120,18 @@ async def cc_world(http_client):
     # One model per format, each with a single element. stable_id mimics each
     # format's native stable id (IFC GlobalId / Revit UniqueId / DWG handle).
     models = {
-        "ifc": {"model_id": uuid.uuid4(), "element_id": uuid.uuid4(), "stable_id": "3kdF2hSdf9$RtY0bGq1aZ9", "type": "IfcWall"},
-        "revit": {"model_id": uuid.uuid4(), "element_id": uuid.uuid4(), "stable_id": "a1b2c3d4-0000-1111-2222-333344445555-0007abcd", "type": "Wall"},
+        "ifc": {
+            "model_id": uuid.uuid4(),
+            "element_id": uuid.uuid4(),
+            "stable_id": "3kdF2hSdf9$RtY0bGq1aZ9",
+            "type": "IfcWall",
+        },
+        "revit": {
+            "model_id": uuid.uuid4(),
+            "element_id": uuid.uuid4(),
+            "stable_id": "a1b2c3d4-0000-1111-2222-333344445555-0007abcd",
+            "type": "Wall",
+        },
         "dwg": {"model_id": uuid.uuid4(), "element_id": uuid.uuid4(), "stable_id": "1A2F", "type": "LINE"},
     }
 
@@ -178,7 +188,9 @@ async def cc_world(http_client):
         "v": {"uid": v_uid, "headers": v_headers},
         "p_a": str(p_a),
         "p_b": str(p_b),
-        "models": {k: {ik: str(iv) if isinstance(iv, uuid.UUID) else iv for ik, iv in v.items()} for k, v in models.items()},
+        "models": {
+            k: {ik: str(iv) if isinstance(iv, uuid.UUID) else iv for ik, iv in v.items()} for k, v in models.items()
+        },
         "criterion_id": criterion_id,
     }
 
@@ -346,7 +358,9 @@ async def test_idor_cannot_link_foreign_model(http_client, cc_world):
         },
         headers=b["headers"],
     )
-    assert resp.status_code == 404, f"LEAK: B linked an inspection to A's model (status {resp.status_code}): {resp.text!r}"
+    assert resp.status_code == 404, (
+        f"LEAK: B linked an inspection to A's model (status {resp.status_code}): {resp.text!r}"
+    )
 
 
 @pytest.mark.asyncio
