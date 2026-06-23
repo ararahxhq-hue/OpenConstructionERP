@@ -165,6 +165,9 @@ const MoCPage = lazy(() =>
 const ConstructionControlPage = lazy(() =>
   import('@/features/construction_control').then((m) => ({ default: m.ConstructionControlPage }))
 );
+const PortfolioPage = lazy(() =>
+  import('@/features/portfolio').then((m) => ({ default: m.PortfolioPage }))
+);
 const ReportingPage = lazy(() =>
   import('@/features/reporting/ReportingPage').then((m) => ({ default: m.ReportingPage }))
 );
@@ -992,6 +995,10 @@ export default function App() {
             material passports, as-built records, hold points, handover. */}
         <Route path="/construction-control" element={<P title="Construction Control"><ConstructionControlPage /></P>} />
         <Route path="/projects/:projectId/construction-control" element={<P title="Construction Control"><ConstructionControlPage /></P>} />
+        {/* Portfolio / multi-project (schedule-of-schedules) - cross-project,
+            so it is NOT scoped to the active project. Note: /portfolio/capacity
+            and /portfolio/leveling are distinct resource-planning surfaces. */}
+        <Route path="/portfolio" element={<P title="Portfolio"><PortfolioPage /></P>} />
 
         <Route path="/users" element={<P title="User Management"><UserManagementPage /></P>} />
         <Route path="/admin/audit-log" element={<P title="Audit Log"><AuditLogPage /></P>} />

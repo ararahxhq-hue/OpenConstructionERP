@@ -78,6 +78,7 @@ import {
   LineChart,
   Radar,
   ScrollText,
+  Network,
   CalendarRange,
   Gauge,
   Wand2,
@@ -302,6 +303,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'schedule.title', to: '/schedule', icon: CalendarDays, moduleKey: 'schedule' },
       { labelKey: 'nav.schedule_advanced', to: '/schedule-advanced', icon: LineChart, advancedOnly: true },
+      { labelKey: 'portfolio.title', to: '/portfolio', icon: Network, advancedOnly: true },
       { labelKey: 'nav.takt', to: '/takt', icon: GitBranch, advancedOnly: true },
       { labelKey: 'tasks.title', to: '/tasks', icon: ClipboardList },
     ],
@@ -665,6 +667,7 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   // Planning
   '/schedule': 'oe_schedule',
   '/schedule-advanced': 'oe_schedule_advanced',
+  '/portfolio': 'oe_portfolio',
   '/takt': 'oe_schedule_advanced',
   '/tasks': 'oe_tasks',
   '/5d': 'oe_costmodel',
@@ -772,6 +775,7 @@ const ROUTE_MODULE_KEY: Record<string, string> = {
   // Planning
   '/schedule': 'schedule',
   '/schedule-advanced': 'schedule_advanced',
+  '/portfolio': 'schedule_advanced',
   '/takt': 'schedule_advanced',
   '/tasks': 'tasks',
   '/5d': 'costmodel',
