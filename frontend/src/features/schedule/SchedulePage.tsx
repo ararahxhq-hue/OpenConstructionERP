@@ -41,6 +41,7 @@ import { Snapshot4DView } from './Snapshot4DView';
 import { ScheduleQualityPanel } from './ScheduleQualityPanel';
 import { ScheduleRiskPanel } from './ScheduleRiskPanel';
 import { ScheduleComparePanel } from './ScheduleComparePanel';
+import { ScheduleInterchangePanel } from './ScheduleInterchangePanel';
 import { ProgressRigorPanel } from './ProgressRigorPanel';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
@@ -1087,7 +1088,7 @@ function ScheduleDetail({
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [viewMode, setViewMode] = useState<
-    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress'
+    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'interchange'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
@@ -1444,6 +1445,7 @@ function ScheduleDetail({
                   { key: 'risk' as const, label: t('schedule.view_risk', { defaultValue: 'Risk' }) },
                   { key: 'compare' as const, label: t('schedule.view_compare', { defaultValue: 'Compare' }) },
                   { key: 'progress' as const, label: t('schedule.view_progress', { defaultValue: 'Progress' }) },
+                  { key: 'interchange' as const, label: t('schedule.view_interchange', { defaultValue: 'Interchange' }) },
                 ]).map((v) => (
                   <button
                     key={v.key}
@@ -1696,6 +1698,8 @@ function ScheduleDetail({
                 currency={projectCurrency}
                 activitiesById={activitiesById}
               />
+            ) : viewMode === 'interchange' ? (
+              <ScheduleInterchangePanel scheduleId={schedule.id} projectId={projectId} />
             ) : viewMode === 'progress' ? (
               <ProgressRigorPanel
                 scheduleId={schedule.id}

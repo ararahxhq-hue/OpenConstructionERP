@@ -259,6 +259,71 @@ export interface ScheduleDiff {
   summary: DiffSummary;
 }
 
+/* ── Schedule interchange (T1.1) ────────────────────────────────────────────
+ *
+ * Lossless export / import of a schedule in the canonical interchange JSON
+ * (``{format, format_version, schedule, activities, relationships}``), plus a
+ * read-only DCMA-style hygiene dry-run ("clean preview") and a normalise-on-
+ * import option. Mirrors the backend interchange schemas. The interchange
+ * document is engine-defined, so it is treated as an opaque record on the wire.
+ */
+
+/** The canonical interchange JSON envelope (opaque to the UI). */
+export type InterchangeDocument = Record<string, unknown>;
+
+/**
+ * One hygiene action the cleaner would (or did) apply. ``code`` is a stable
+ * machine key (e.g. ``drop_dangling_relationship``), ``target`` names the
+ * affected entity and ``detail`` is a human-readable description.
+ */
+export interface CleanAction {
+  code: string;
+  target: string;
+  detail: string;
+}
+
+/**
+ * Read-only DCMA-style hygiene dry-run for a schedule. ``actions`` is the list
+ * of repairs that *would* apply; ``stats`` carries the counts (activities,
+ * relationships, lead_count, hard_constraint_count, the missing-logic tallies,
+ * and the per-repair would-fix counts). Nothing is mutated.
+ */
+export interface ScheduleCleanPreview {
+  schedule_id: string;
+  actions: CleanAction[];
+  stats: Record<string, number>;
+}
+
+/** Lossless export of a schedule as the interchange document. */
+export interface ScheduleExport {
+  schedule_id: string;
+  document: InterchangeDocument;
+}
+
+/** Request body for importing an interchange document into a project. */
+export interface ScheduleImportBody {
+  project_id: string;
+  document: InterchangeDocument;
+  /** Normalise (DCMA-clean) the schedule on import. Defaults to true server-side. */
+  clean?: boolean;
+  /** Override the imported schedule's name (null / omitted keeps the document's). */
+  name_override?: string | null;
+}
+
+/**
+ * Result of an import. Returns the new schedule id, the created counts, the
+ * hygiene actions actually applied (when ``clean``), the stats, and a
+ * ``ref_map`` from the document's source activity refs to the new ids.
+ */
+export interface ScheduleImportResult {
+  schedule_id: string;
+  activity_count: number;
+  relationship_count: number;
+  clean_actions: CleanAction[];
+  stats: Record<string, number>;
+  ref_map: Record<string, string>;
+}
+
 /* ── Progress rigor (T3.2) ─────────────────────────────────────────────────
  *
  * Typed percent-complete (duration/units/physical), weighted steps, suspend/
@@ -450,6 +515,25 @@ export const scheduleApi = {
   diffSchedule: (scheduleId: string, body: ScheduleDiffRequestBody) =>
     apiPost<ScheduleDiff, ScheduleDiffRequestBody>(
       `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/diff`,
+      body,
+    ),
+
+  /* ── Schedule interchange (T1.1) ────────────────────────────────────── */
+
+  /** Lossless export of a schedule as the canonical interchange document. */
+  exportSchedule: (scheduleId: string) =>
+    apiGet<ScheduleExport>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/export`,
+    ),
+  /** Read-only DCMA-style hygiene dry-run for a schedule (mutates nothing). */
+  cleanPreviewSchedule: (scheduleId: string) =>
+    apiGet<ScheduleCleanPreview>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/clean-preview`,
+    ),
+  /** Import an interchange document into a project (optionally normalising it). */
+  importSchedule: (body: ScheduleImportBody) =>
+    apiPost<ScheduleImportResult, ScheduleImportBody>(
+      `/v1/schedule/schedules/import`,
       body,
     ),
 
