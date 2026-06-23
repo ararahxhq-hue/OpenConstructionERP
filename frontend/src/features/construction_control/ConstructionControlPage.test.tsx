@@ -17,17 +17,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
-vi.mock('./api', () => ({
-  listCriteria: vi.fn(),
-  listInspections: vi.fn(),
-  createInspection: vi.fn(),
-  recordInspectionResult: vi.fn(),
-  listMaterials: vi.fn(),
-  listTestResults: vi.fn(),
-  listAsBuilt: vi.fn(),
-  listGates: vi.fn(),
-  listHandoverPackages: vi.fn(),
-}));
+// Automock the whole API: this page renders every pillar section, and the
+// sections reference their create and action endpoints (createMaterial,
+// createGate, createHandoverPackage and so on) at render through useMutation. A
+// partial factory mock would omit those exports and crash the sections, so we
+// automock and stub every export, then configure the list endpoints below.
+vi.mock('./api');
 
 import {
   listCriteria,
@@ -132,7 +127,8 @@ describe('ConstructionControlPage', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('cc-tab-materials'));
     await waitFor(() => expect(listMaterials).toHaveBeenCalledWith(PROJECT_ID));
-    expect(listTestResults).toHaveBeenCalledWith(PROJECT_ID);
+    // The materials section passes a filter options object as the second arg.
+    expect(listTestResults).toHaveBeenCalledWith(PROJECT_ID, expect.anything());
     expect(
       await screen.findByText(/No material records yet/i),
     ).toBeInTheDocument();

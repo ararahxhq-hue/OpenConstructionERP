@@ -18,15 +18,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
-vi.mock('../api', () => ({
-  listHandoverPackages: vi.fn(),
-  createHandoverPackage: vi.fn(),
-  getHandoverGates: vi.fn(),
-  assembleHandoverPackage: vi.fn(),
-  overrideHandoverGate: vi.fn(),
-  issueHandoverCertificate: vi.fn(),
-  revokeHandoverPackage: vi.fn(),
-}));
+// Automock the whole feature-local API so every export is a vi.fn(). A partial
+// factory mock here would bleed across the construction_control suite (the
+// module path is shared) and strip exports the sibling sections need, so the
+// section tests all automock '../api' consistently.
+vi.mock('../api');
 
 import {
   listHandoverPackages,
