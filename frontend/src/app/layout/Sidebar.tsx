@@ -402,6 +402,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'validation.title', to: '/validation', icon: ShieldCheck, moduleKey: 'validation' },
       { labelKey: 'inspections.title', to: '/inspections', icon: ClipboardCheck },
+      { labelKey: 'construction_control.title', to: '/construction-control', icon: ClipboardList },
       { labelKey: 'ncr.title', to: '/ncr', icon: AlertOctagon },
       { labelKey: 'nav.punchlist', to: '/punchlist', icon: ListChecks },
       { labelKey: 'closeout.title', to: '/closeout', icon: PackageCheck },
@@ -679,6 +680,7 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   // Quality
   '/validation': 'oe_validation',
   '/inspections': 'oe_inspections',
+  '/construction-control': 'oe_construction_control',
   '/ncr': 'oe_ncr',
   '/punchlist': 'oe_punchlist',
   '/closeout': 'oe_closeout',
@@ -786,6 +788,7 @@ const ROUTE_MODULE_KEY: Record<string, string> = {
   // Quality
   '/validation': 'validation',
   '/inspections': 'inspections',
+  '/construction-control': 'construction_control',
   '/ncr': 'ncr',
   '/punchlist': 'punchlist',
   '/closeout': 'closeout',

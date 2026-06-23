@@ -162,6 +162,9 @@ const NCRPage = lazy(() =>
 const MoCPage = lazy(() =>
   import('@/features/moc/MoCPage').then((m) => ({ default: m.MoCPage }))
 );
+const ConstructionControlPage = lazy(() =>
+  import('@/features/construction_control').then((m) => ({ default: m.ConstructionControlPage }))
+);
 const ReportingPage = lazy(() =>
   import('@/features/reporting/ReportingPage').then((m) => ({ default: m.ReportingPage }))
 );
@@ -985,6 +988,10 @@ export default function App() {
         <Route path="/ncr" element={<P title="NCR"><NCRPage /></P>} />
         <Route path="/projects/:projectId/moc" element={<P title="Management of Change"><MoCPage /></P>} />
         <Route path="/moc" element={<P title="Management of Change"><MoCPage /></P>} />
+        {/* Construction Control (QA/QC) - acceptance criteria, inspections,
+            material passports, as-built records, hold points, handover. */}
+        <Route path="/construction-control" element={<P title="Construction Control"><ConstructionControlPage /></P>} />
+        <Route path="/projects/:projectId/construction-control" element={<P title="Construction Control"><ConstructionControlPage /></P>} />
 
         <Route path="/users" element={<P title="User Management"><UserManagementPage /></P>} />
         <Route path="/admin/audit-log" element={<P title="Audit Log"><AuditLogPage /></P>} />
