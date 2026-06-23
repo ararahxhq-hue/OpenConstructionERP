@@ -440,6 +440,67 @@ export interface TypedProgressBody {
  * identifier we track is that ``path`` joined by NUL.
  */
 
+/* ── T3.4 realtime collaboration ────────────────────────────────────────────
+ *
+ * Presence snapshot of who is editing a schedule, plus an optimistic-concurrency
+ * guarded activity update keyed off a client-held base revision. Mirrors the
+ * backend realtime_schemas.py. Routes are mounted under the same
+ * ``/v1/schedule`` prefix as the core schedule router:
+ *   GET   /v1/schedule/schedules/{id}/presence/
+ *   GET   /v1/schedule/activities/{id}/revision/
+ *   PATCH /v1/schedule/activities/{id}/guarded/   (409 stale / 422 invalid)
+ *
+ * The guarded PATCH returns the up-to-date activity + its new revision on apply
+ * or no-op; HTTP 409 carries the authoritative revision + current state so the
+ * client can rebase; HTTP 422 means a malformed base revision or a field outside
+ * the editable allowlist. Both non-2xx codes surface as an ``ApiError`` from the
+ * shared client (branch on ``err.status``); the 409 body is ``RevisionConflict``.
+ */
+
+/** One connected co-editor in a schedule presence room. */
+export interface SchedulePresenceUser {
+  user_id: string;
+  user_name: string;
+}
+
+/** REST snapshot of who is currently connected to a schedule room. */
+export interface SchedulePresence {
+  schedule_id: string;
+  users: SchedulePresenceUser[];
+}
+
+/** The current optimistic-concurrency revision of an activity. */
+export interface ActivityRevision {
+  activity_id: string;
+  revision: number;
+}
+
+/** Result of an applied (or no-op) guarded update: the activity + its revision. */
+export interface GuardedUpdateResult {
+  activity: Record<string, unknown>;
+  revision: number;
+}
+
+/**
+ * Body of the HTTP 409 returned when the client's base revision is stale. Read
+ * off ``ApiError.body`` when the guarded PATCH rejects with status 409.
+ */
+export interface RevisionConflict {
+  detail: string;
+  current_revision: number;
+  current_state: Record<string, unknown>;
+}
+
+/** Editable fields a guarded activity update may carry (allowlist is enforced server-side). */
+export interface GuardedUpdateFields {
+  progress_pct?: number;
+  status?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+/* ── T2.3 codes / UDFs / layouts (continued) ───────────────────────────────── */
+
 /** Sentinel key the backend uses for an unassigned ``(none)`` band/path level. */
 export const GROUP_NONE_KEY = '__none__';
 
@@ -876,5 +937,34 @@ export const scheduleApi = {
     apiPost<GroupedResponse, GroupedRequestBody>(
       `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/activities/grouped/`,
       body,
+    ),
+
+  /* ── T3.4 realtime collaboration ────────────────────────────────────── */
+
+  /** Snapshot of who is currently connected to (editing) a schedule room. */
+  getPresence: (scheduleId: string) =>
+    apiGet<SchedulePresence>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/presence/`,
+    ),
+  /** The activity's current optimistic-concurrency revision token. */
+  getActivityRevision: (activityId: string) =>
+    apiGet<ActivityRevision>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/revision/`,
+    ),
+  /**
+   * Patch an activity only if ``baseRevision`` is still current. Resolves with
+   * the up-to-date activity + new revision on apply / no-op. Rejects with an
+   * ``ApiError``: status 409 (stale - body is ``RevisionConflict`` with the
+   * authoritative revision + current state) or 422 (malformed base revision /
+   * non-editable field).
+   */
+  guardedUpdateActivity: (
+    activityId: string,
+    baseRevision: number | null,
+    fields: GuardedUpdateFields,
+  ) =>
+    apiPatch<GuardedUpdateResult, { base_revision: number | null; fields: GuardedUpdateFields }>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/guarded/`,
+      { base_revision: baseRevision, fields },
     ),
 };
