@@ -41,6 +41,7 @@ import { Snapshot4DView } from './Snapshot4DView';
 import { ScheduleQualityPanel } from './ScheduleQualityPanel';
 import { ScheduleRiskPanel } from './ScheduleRiskPanel';
 import { ScheduleComparePanel } from './ScheduleComparePanel';
+import { ProgressRigorPanel } from './ProgressRigorPanel';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1086,7 +1087,7 @@ function ScheduleDetail({
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [viewMode, setViewMode] = useState<
-    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare'
+    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
@@ -1442,6 +1443,7 @@ function ScheduleDetail({
                   { key: 'quality' as const, label: t('schedule.view_quality', { defaultValue: 'Quality' }) },
                   { key: 'risk' as const, label: t('schedule.view_risk', { defaultValue: 'Risk' }) },
                   { key: 'compare' as const, label: t('schedule.view_compare', { defaultValue: 'Compare' }) },
+                  { key: 'progress' as const, label: t('schedule.view_progress', { defaultValue: 'Progress' }) },
                 ]).map((v) => (
                   <button
                     key={v.key}
@@ -1693,6 +1695,18 @@ function ScheduleDetail({
                 projectId={projectId}
                 currency={projectCurrency}
                 activitiesById={activitiesById}
+              />
+            ) : viewMode === 'progress' ? (
+              <ProgressRigorPanel
+                scheduleId={schedule.id}
+                activities={(ganttData?.activities ?? []).map((a) => ({
+                  id: a.id,
+                  name: a.name,
+                  progress_pct: a.progress_pct,
+                  status: a.status,
+                }))}
+                currency={projectCurrency}
+                dataDate={schedule.start_date}
               />
             ) : isLoading ? (
               <SkeletonTable rows={4} columns={4} />

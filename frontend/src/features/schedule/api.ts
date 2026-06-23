@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/shared/lib/api';
 
 export interface Schedule {
   id: string;
@@ -259,6 +259,105 @@ export interface ScheduleDiff {
   summary: DiffSummary;
 }
 
+/* ── Progress rigor (T3.2) ─────────────────────────────────────────────────
+ *
+ * Typed percent-complete (duration/units/physical), weighted steps, suspend/
+ * resume, per-activity calendar, and time-phased planned value. Mirrors the
+ * backend progress_schemas.py. Money / quantity values are Decimal-as-string.
+ */
+
+export type PercentCompleteType = 'physical' | 'duration' | 'units';
+
+/** Deterministic EVM-distortion warning keys returned by the backend. */
+export type EvmWarningKey =
+  | 'units_type_without_budgeted_units'
+  | 'duration_type_on_nonlinear_cost'
+  | 'physical_manual_pct_is_subjective'
+  | 'all_steps_zero_weight';
+
+export interface TypedActivityView {
+  id: string;
+  schedule_id: string;
+  name: string;
+  progress_pct: string | null;
+  percent_complete_type: PercentCompleteType;
+  remaining_duration: number | null;
+  budgeted_units: string | null;
+  installed_units: string | null;
+  calendar_id: string | null;
+  status: string;
+  suspended_at: string | null;
+  resumed_at: string | null;
+  suspend_reason: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  forecast_finish?: string | null;
+}
+
+export interface TypedProgressResponse {
+  activity: TypedActivityView;
+  evm_warnings: EvmWarningKey[];
+  forecast_finish: string | null;
+  remaining_duration: number | null;
+}
+
+export interface PercentTypePreviewResponse {
+  percent_complete_type: PercentCompleteType;
+  evm_warnings: EvmWarningKey[];
+}
+
+export interface SuspendResumeResponse {
+  activity: TypedActivityView;
+  forecast_finish: string | null;
+}
+
+export interface ActivityStep {
+  id: string;
+  activity_id: string;
+  name: string;
+  /** Decimal-as-string weight (>= 0). */
+  weight: string;
+  /** Decimal-as-string percent (0..100). */
+  percent_complete: string;
+  is_milestone: boolean;
+  sort_order: number;
+}
+
+export interface PlannedValuePreview {
+  as_of: string;
+  /** Decimal-as-string time-phased PV. */
+  planned_value: string;
+  /** Decimal-as-string BAC (Σ planned cost). */
+  budget_at_completion: string;
+}
+
+export interface EvmSnapshotSummary {
+  snapshot_date: string;
+  bac: string;
+  pv: string;
+  ev: string;
+  ac: string;
+  sv: string;
+  cv: string;
+  spi: string;
+  cpi: string;
+}
+
+export interface DataDateAdvanceResponse {
+  schedule_id: string;
+  data_date: string;
+  snapshot: EvmSnapshotSummary;
+}
+
+export interface TypedProgressBody {
+  type?: PercentCompleteType;
+  percent?: number;
+  installed_units?: number;
+  budgeted_units?: number;
+  remaining_duration?: number;
+  data_date?: string;
+}
+
 /** Defensive unwrap: handle both plain array and paginated {items, total} responses. */
 function unwrapList<T>(res: T[] | { items: T[] }): T[] {
   return Array.isArray(res) ? res : res.items ?? [];
@@ -352,5 +451,74 @@ export const scheduleApi = {
     apiPost<ScheduleDiff, ScheduleDiffRequestBody>(
       `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/diff`,
       body,
+    ),
+
+  /* ── Progress rigor (T3.2) ──────────────────────────────────────────── */
+
+  /** Set typed progress (duration/units/physical) on an activity. */
+  updateProgressTyped: (activityId: string, body: TypedProgressBody) =>
+    apiPatch<TypedProgressResponse, TypedProgressBody>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/progress-typed/`,
+      body,
+    ),
+  /** Preview the EVM-distortion warnings a percent-type change would raise. */
+  previewPercentType: (activityId: string, type: PercentCompleteType) =>
+    apiPost<PercentTypePreviewResponse, { type: PercentCompleteType }>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/percent-type/preview/`,
+      { type },
+    ),
+  /** Commit a percent-complete type change and recompute the activity. */
+  setPercentType: (activityId: string, type: PercentCompleteType) =>
+    apiPut<TypedProgressResponse, { type: PercentCompleteType }>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/percent-type/`,
+      { type },
+    ),
+  /** Set (calendarId) or clear (null) an activity's per-activity calendar. */
+  setActivityCalendar: (activityId: string, calendarId: string | null) =>
+    apiPut<TypedProgressResponse, { calendar_id: string | null }>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/calendar/`,
+      { calendar_id: calendarId },
+    ),
+  /** Suspend an in_progress / not_started activity (freezes remaining duration). */
+  suspendActivity: (activityId: string, reason: string, effectiveDate?: string) =>
+    apiPost<SuspendResumeResponse, { reason: string; effective_date?: string }>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/suspend/`,
+      { reason, ...(effectiveDate ? { effective_date: effectiveDate } : {}) },
+    ),
+  /** Resume a suspended activity (reschedules from the frozen remaining duration). */
+  resumeActivity: (activityId: string, effectiveDate?: string) =>
+    apiPost<SuspendResumeResponse, { effective_date?: string }>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/resume/`,
+      effectiveDate ? { effective_date: effectiveDate } : {},
+    ),
+  /** List an activity's weighted progress steps. */
+  listSteps: (activityId: string) =>
+    apiGet<ActivityStep[]>(`/v1/schedule/activities/${encodeURIComponent(activityId)}/steps/`),
+  /** Add a weighted progress step to an activity. */
+  createStep: (
+    activityId: string,
+    data: { name?: string; weight?: number; percent_complete?: number; is_milestone?: boolean; sort_order?: number },
+  ) =>
+    apiPost<ActivityStep, typeof data>(
+      `/v1/schedule/activities/${encodeURIComponent(activityId)}/steps/`,
+      data,
+    ),
+  /** Edit a weighted progress step (recomputes the parent activity). */
+  updateStep: (
+    stepId: string,
+    data: { name?: string; weight?: number; percent_complete?: number; is_milestone?: boolean; sort_order?: number },
+  ) => apiPatch<ActivityStep, typeof data>(`/v1/schedule/steps/${encodeURIComponent(stepId)}/`, data),
+  /** Delete a weighted progress step (recomputes the parent activity). */
+  deleteStep: (stepId: string) => apiDelete(`/v1/schedule/steps/${encodeURIComponent(stepId)}/`),
+  /** Time-phased planned value (PV) preview at a date (read-only, no snapshot). */
+  getPlannedValue: (scheduleId: string, asOf: string) =>
+    apiGet<PlannedValuePreview>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/planned-value/?as_of=${encodeURIComponent(asOf)}`,
+    ),
+  /** Advance the data date; refreshes the time-phased PV/EV snapshot. */
+  advanceDataDate: (scheduleId: string, dataDate: string) =>
+    apiPut<DataDateAdvanceResponse, { data_date: string }>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/data-date/`,
+      { data_date: dataDate },
     ),
 };
