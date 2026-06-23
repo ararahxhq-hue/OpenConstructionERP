@@ -45,6 +45,7 @@ import { ScheduleInterchangePanel } from './ScheduleInterchangePanel';
 import { ProgressRigorPanel } from './ProgressRigorPanel';
 import { ScheduleDelayPanel } from './ScheduleDelayPanel';
 import { ScheduleCodesPanel } from './ScheduleCodesPanel';
+import { ScheduleResourcePanel } from './ScheduleResourcePanel';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1090,7 +1091,7 @@ function ScheduleDetail({
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [viewMode, setViewMode] = useState<
-    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'delay' | 'codes' | 'interchange'
+    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'delay' | 'codes' | 'resources' | 'interchange'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
@@ -1449,6 +1450,7 @@ function ScheduleDetail({
                   { key: 'progress' as const, label: t('schedule.view_progress', { defaultValue: 'Progress' }) },
                   { key: 'delay' as const, label: t('schedule.view_delay', { defaultValue: 'Delay' }) },
                   { key: 'codes' as const, label: t('schedule.view_codes', { defaultValue: 'Codes' }) },
+                  { key: 'resources' as const, label: t('schedule.view_resources', { defaultValue: 'Resources' }) },
                   { key: 'interchange' as const, label: t('schedule.view_interchange', { defaultValue: 'Interchange' }) },
                 ]).map((v) => (
                   <button
@@ -1724,6 +1726,12 @@ function ScheduleDetail({
               />
             ) : viewMode === 'codes' ? (
               <ScheduleCodesPanel scheduleId={schedule.id} projectId={projectId} />
+            ) : viewMode === 'resources' ? (
+              <ScheduleResourcePanel
+                scheduleId={schedule.id}
+                projectId={projectId}
+                activitiesById={activitiesById}
+              />
             ) : isLoading ? (
               <SkeletonTable rows={4} columns={4} />
             ) : ganttData ? (

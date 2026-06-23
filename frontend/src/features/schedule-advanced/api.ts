@@ -1306,3 +1306,208 @@ export function raiseEotClaim(analysisId: string): Promise<RaiseEotClaimResult> 
     {},
   );
 }
+
+/* ----- T3.1 resource depth ------------------------------------------------
+ *
+ * Two distinct backends, two distinct id-spaces - kept honest in the UI:
+ *
+ *   1. Time-phased histogram lives on the Resources module, NOT
+ *      schedule-advanced. It is keyed by a *Resource entity* UUID (a row in the
+ *      resources table), and reads that resource's bookings/assignments, rates
+ *      and availability windows:
+ *        GET  /v1/resources/                         -> ResourceListItem[]
+ *               (tenant-wide; filterable by ?type / ?status only - there is no
+ *                project_id filter on the backend list endpoint)
+ *        GET  /v1/resources/{resource_id}/histogram  -> ResourceHistogram
+ *               query: start, end (ISO datetimes, required), bucket=week|month,
+ *               rate_type=cost|billing|overtime, hours_per_day (>0, <=24)
+ *      Backend: resources/resource_depth_router.py + resource_depth_schemas.py.
+ *      ``demand_cost`` is money (Decimal-as-string, v3 §10).
+ *
+ *   2. Leveling lives on schedule-advanced and is keyed by the *schedule* id.
+ *      Its resource "limits" are keyed by the resource *name string* embedded in
+ *      each activity's resources JSON (e.g. "Crew A" -> 3) - a separate id-space
+ *      from the Resource entities above:
+ *        POST /v1/schedule-advanced/{schedule_id}/level-preview -> LevelPreview
+ *        POST /v1/schedule-advanced/{schedule_id}/level-apply   -> LevelApply
+ *      Body (both): { resource_limits: {name: max}, splittable: activityId[] }.
+ *      Backend: schedule_advanced/router.py + resource_leveling_schemas.py.
+ */
+
+/** A resource row from the tenant-wide resources list (histogram picker). */
+export interface ResourceListItem {
+  id: string;
+  code: string;
+  name: string;
+  resource_type: string;
+  home_project_id?: string | null;
+  default_cost_rate: string | number;
+  currency: string;
+  capacity_percent?: number | null;
+  status: string;
+}
+
+/** One assignment's contribution to a histogram bucket. */
+export interface ResourceHistogramBooking {
+  assignment_id: string;
+  project_id?: string | null;
+  units: number;
+  unit_kind: string;
+}
+
+/** One time bucket of a resource's histogram (a calendar window, not a bin). */
+export interface ResourceHistogramCell {
+  bucket_index: number;
+  start: string;
+  end: string;
+  label: string;
+  demand_units: number;
+  /** Money: Decimal-as-string (cents-faithful), v3 §10. */
+  demand_cost: string | number;
+  /** Availability units for the bucket; null when capacity is unknown. */
+  available: number | null;
+  capacity_unknown: boolean;
+  over_allocated: boolean;
+  bookings: ResourceHistogramBooking[];
+}
+
+export interface ResourceHistogram {
+  resource_id: string;
+  bucket: string;
+  capacity_units: number | null;
+  peak_demand: number;
+  over_allocated_buckets: number;
+  cells: ResourceHistogramCell[];
+}
+
+export type HistogramBucket = 'week' | 'month';
+export type HistogramRateType = 'cost' | 'billing' | 'overtime';
+
+export interface ResourceHistogramParams {
+  start: string;
+  end: string;
+  bucket?: HistogramBucket;
+  rate_type?: HistogramRateType;
+  hours_per_day?: number;
+}
+
+/** List the tenant's resources (for the histogram resource picker). */
+export function listResources(params?: {
+  type?: string;
+  status?: string;
+  limit?: number;
+}): Promise<ResourceListItem[]> {
+  const qs = new URLSearchParams();
+  if (params?.type) qs.set('type', params.type);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiGet<ResourceListItem[]>(`/v1/resources/${suffix}`);
+}
+
+/** Time-phased demand / availability / cost histogram for one resource. */
+export function resourceHistogram(
+  resourceId: string,
+  params: ResourceHistogramParams,
+): Promise<ResourceHistogram> {
+  const qs = new URLSearchParams();
+  qs.set('start', params.start);
+  qs.set('end', params.end);
+  qs.set('bucket', params.bucket ?? 'week');
+  qs.set('rate_type', params.rate_type ?? 'cost');
+  qs.set('hours_per_day', String(params.hours_per_day ?? 8));
+  return apiGet<ResourceHistogram>(
+    `/v1/resources/${encodeURIComponent(resourceId)}/histogram?${qs.toString()}`,
+  );
+}
+
+/** One activity whose early start moved under a leveling preview. */
+export interface LevelPreviewShift {
+  activity_id: string;
+  base_es: number;
+  new_es: number;
+  delta: number;
+}
+
+/** One placed day-run of a split activity (work-day indices). */
+export interface LevelPreviewSegmentRun {
+  start: number;
+  finish: number;
+}
+
+/** A splittable activity placed across multiple day-runs. */
+export interface LevelPreviewSegment {
+  activity_id: string;
+  runs: LevelPreviewSegmentRun[];
+}
+
+/** A single-activity self-overload leveling cannot clear by shifting. */
+export interface LevelPreviewUnresolvable {
+  activity_id: string;
+  resource: string;
+  required: number;
+  limit: number;
+}
+
+export interface LevelPreviewResult {
+  schedule_id: string;
+  num_shifted: number;
+  finish_delta_days: number;
+  base_finish_workday: number;
+  leveled_finish_workday: number;
+  shifts: LevelPreviewShift[];
+  segments: LevelPreviewSegment[];
+  unresolvable: LevelPreviewUnresolvable[];
+  /** Per-resource peak concurrent demand before leveling (name -> units). */
+  peak_before: Record<string, number>;
+  /** Per-resource peak concurrent demand after leveling (name -> units). */
+  peak_after: Record<string, number>;
+}
+
+export interface LevelApplyResult {
+  schedule_id: string;
+  num_shifted: number;
+  num_applied: number;
+  num_skipped: number;
+  finish_delta_days: number;
+  base_finish_workday: number;
+  leveled_finish_workday: number;
+}
+
+/** Request body shared by level-preview and level-apply. */
+export interface LevelPreviewBody {
+  /** Resource name -> max concurrent units; resources absent are unconstrained. */
+  resource_limits: Record<string, number>;
+  /** Activity ids that may be split into multiple day-runs to fit a ceiling. */
+  splittable: string[];
+}
+
+/**
+ * Read-only resource-leveling preview. Honours all four PDM link types,
+ * splittable activities and fractional units, and returns the honest
+ * finish-date impact computed from a copy of the network. Nothing is written.
+ */
+export function levelPreview(
+  scheduleId: string,
+  body: LevelPreviewBody,
+): Promise<LevelPreviewResult> {
+  return apiPost<LevelPreviewResult, LevelPreviewBody>(
+    `/v1/schedule-advanced/${encodeURIComponent(scheduleId)}/level-preview`,
+    body,
+  );
+}
+
+/**
+ * Commit a leveling run: persist each shifted activity's start / end dates
+ * (moved by its leveling delta in calendar days, span preserved). Same pure
+ * arithmetic as the preview; this one writes.
+ */
+export function levelApply(
+  scheduleId: string,
+  body: LevelPreviewBody,
+): Promise<LevelApplyResult> {
+  return apiPost<LevelApplyResult, LevelPreviewBody>(
+    `/v1/schedule-advanced/${encodeURIComponent(scheduleId)}/level-apply`,
+    body,
+  );
+}
