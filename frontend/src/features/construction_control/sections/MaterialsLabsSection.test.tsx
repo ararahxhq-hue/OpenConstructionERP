@@ -179,7 +179,7 @@ describe('MaterialsLabsSection', () => {
     await waitFor(() => expect(mockedApi.createMaterial).toHaveBeenCalledTimes(1));
     // react-query passes a context object as the 2nd mutationFn arg, so assert
     // only on the payload (the first argument).
-    expect(mockedApi.createMaterial.mock.calls[0][0]).toMatchObject({
+    expect(mockedApi.createMaterial.mock.calls[0]?.[0]).toMatchObject({
       project_id: PROJECT_ID,
       name: 'Structural bolts M20',
     });
@@ -198,7 +198,7 @@ describe('MaterialsLabsSection', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /Create test result/i }));
 
     await waitFor(() => expect(mockedApi.createTestResult).toHaveBeenCalledTimes(1));
-    expect(mockedApi.createTestResult.mock.calls[0][0]).toMatchObject({
+    expect(mockedApi.createTestResult.mock.calls[0]?.[0]).toMatchObject({
       project_id: PROJECT_ID,
       title: 'Slump test',
     });
@@ -215,8 +215,8 @@ describe('MaterialsLabsSection', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /Save decision/i }));
 
     await waitFor(() => expect(mockedApi.reviewMaterial).toHaveBeenCalledTimes(1));
-    expect(mockedApi.reviewMaterial.mock.calls[0][0]).toBe('mat-1');
-    expect(mockedApi.reviewMaterial.mock.calls[0][1]).toMatchObject({ decision: 'fail' });
+    expect(mockedApi.reviewMaterial.mock.calls[0]?.[0]).toBe('mat-1');
+    expect(mockedApi.reviewMaterial.mock.calls[0]?.[1]).toMatchObject({ decision: 'fail' });
     await waitFor(() => expect(toastMocks.addToast).toHaveBeenCalled());
   });
 });
