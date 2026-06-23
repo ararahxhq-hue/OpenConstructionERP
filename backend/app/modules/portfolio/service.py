@@ -14,12 +14,16 @@ import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import accessible_project_ids, verify_project_access
-from app.modules.portfolio.models import PortfolioMembership, PortfolioNode
-from app.modules.portfolio.schemas import NodeCreate, NodePatch
+from app.modules.portfolio.models import (
+    PortfolioCrossLink,
+    PortfolioMembership,
+    PortfolioNode,
+)
+from app.modules.portfolio.schemas import CrossLinkCreate, NodeCreate, NodePatch
 from app.modules.portfolio.tree_logic import build_visible_tree
 
 
@@ -162,3 +166,271 @@ class PortfolioService:
             )
         )
         await self.session.flush()
+
+    # ── Cross-schedule links ───────────────────────────────────────────────────
+
+    async def _schedule_project_id(self, schedule_id: uuid.UUID) -> uuid.UUID:
+        from app.modules.schedule.models import Schedule
+
+        sched = await self.session.get(Schedule, schedule_id)
+        if sched is None:
+            raise _not_found("Schedule not found")
+        return sched.project_id
+
+    async def create_cross_link(self, data: CrossLinkCreate, user_id: str) -> PortfolioCrossLink:
+        # A cross-link needs access to BOTH projects, so it cannot be used to
+        # bridge into a tenant the caller cannot reach (404 on deny).
+        pred_project = await self._schedule_project_id(data.predecessor_schedule_id)
+        succ_project = await self._schedule_project_id(data.successor_schedule_id)
+        await verify_project_access(pred_project, user_id, self.session)
+        await verify_project_access(succ_project, user_id, self.session)
+        link = PortfolioCrossLink(
+            predecessor_schedule_id=data.predecessor_schedule_id,
+            predecessor_activity_id=data.predecessor_activity_id,
+            successor_schedule_id=data.successor_schedule_id,
+            successor_activity_id=data.successor_activity_id,
+            dep_type=data.dep_type,
+            lag_days=data.lag_days,
+        )
+        self.session.add(link)
+        await self.session.flush()
+        return link
+
+    async def list_cross_links(self, schedule_id: uuid.UUID, user_id: str) -> list[PortfolioCrossLink]:
+        await verify_project_access(await self._schedule_project_id(schedule_id), user_id, self.session)
+        rows = (
+            (
+                await self.session.execute(
+                    select(PortfolioCrossLink).where(
+                        or_(
+                            PortfolioCrossLink.predecessor_schedule_id == schedule_id,
+                            PortfolioCrossLink.successor_schedule_id == schedule_id,
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows)
+
+    async def delete_cross_link(self, link_id: uuid.UUID, user_id: str) -> None:
+        from app.modules.schedule.models import Schedule
+
+        link = await self.session.get(PortfolioCrossLink, link_id)
+        if link is None:
+            raise _not_found("Cross-link not found")
+        # Verify access against the first endpoint whose schedule still exists; an
+        # orphaned link (both schedules deleted) is freely cleaned up.
+        for sid in (link.predecessor_schedule_id, link.successor_schedule_id):
+            sched = await self.session.get(Schedule, sid)
+            if sched is not None:
+                await verify_project_access(sched.project_id, user_id, self.session)
+                break
+        await self.session.delete(link)
+        await self.session.flush()
+
+    # ── Portfolio (schedule-of-schedules) CPM ──────────────────────────────────
+
+    def _subtree_project_ids(
+        self,
+        node_id: uuid.UUID,
+        nodes: list[PortfolioNode],
+        memberships: list[PortfolioMembership],
+    ) -> set[str]:
+        """Project ids filed anywhere under ``node_id`` (the node + its subtree)."""
+        children: dict[str | None, list[str]] = {}
+        for n in nodes:
+            parent = str(n.parent_id) if n.parent_id else None
+            children.setdefault(parent, []).append(str(n.id))
+        subtree: set[str] = set()
+        stack = [str(node_id)]
+        while stack:
+            cur = stack.pop()
+            if cur in subtree:
+                continue
+            subtree.add(cur)
+            stack.extend(children.get(cur, []))
+        return {str(m.project_id) for m in memberships if str(m.node_id) in subtree}
+
+    async def compute_node_cpm(self, node_id: uuid.UUID, user_id: str) -> dict:
+        """Run one CPM pass over every accessible schedule under ``node_id``.
+
+        Gathers the node's subtree projects (intersected with the caller's
+        accessible set), merges their schedules onto a shared timeline by start
+        offset, applies in-scope cross-links as real edges, and returns the
+        per-activity result plus the cross-portfolio critical path. Cross-links
+        whose far side is out of scope are dropped and counted, never silently.
+        """
+        from datetime import date
+
+        from app.modules.portfolio.cpm_logic import (
+            ActivityInput,
+            ScheduleInput,
+            build_portfolio_inputs,
+            split_nid,
+        )
+        from app.modules.schedule.models import Activity as SchedActivity
+        from app.modules.schedule.models import Schedule, ScheduleRelationship
+        from app.modules.schedule_advanced.portfolio_cpm import (
+            CycleError,
+            compute_portfolio_cpm,
+            portfolio_critical_path,
+        )
+
+        await self.get_node(node_id)  # 404 if the node is gone
+
+        def _empty() -> dict:
+            return {
+                "node_id": node_id,
+                "schedule_count": 0,
+                "activity_count": 0,
+                "project_finish_workday": 0,
+                "cross_links_applied": 0,
+                "cross_links_omitted": 0,
+                "critical_path": [],
+                "activities": [],
+            }
+
+        nodes = (await self.session.execute(select(PortfolioNode))).scalars().all()
+        memberships = (await self.session.execute(select(PortfolioMembership))).scalars().all()
+        project_ids = self._subtree_project_ids(node_id, list(nodes), list(memberships))
+        scope = await accessible_project_ids(self.session, user_id)
+        if scope is not None:
+            project_ids &= {str(p) for p in scope}
+        if not project_ids:
+            return _empty()
+
+        proj_uuids = [uuid.UUID(p) for p in project_ids]
+        schedules = (
+            (await self.session.execute(select(Schedule).where(Schedule.project_id.in_(proj_uuids)))).scalars().all()
+        )
+        if not schedules:
+            return _empty()
+        in_scope_sched = {str(s.id) for s in schedules}
+        sched_ids = [s.id for s in schedules]
+
+        def _iso(value: object) -> date | None:
+            if not value:
+                return None
+            try:
+                return date.fromisoformat(str(value)[:10])
+            except ValueError:
+                return None
+
+        starts = {str(s.id): _iso(s.start_date) for s in schedules}
+        present = [d for d in starts.values() if d is not None]
+        earliest = min(present) if present else None
+
+        acts = (
+            (await self.session.execute(select(SchedActivity).where(SchedActivity.schedule_id.in_(sched_ids))))
+            .scalars()
+            .all()
+        )
+        rels = (
+            (
+                await self.session.execute(
+                    select(ScheduleRelationship).where(ScheduleRelationship.schedule_id.in_(sched_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        preds_by_act: dict[str, list[tuple[str, str, int]]] = {}
+        for r in rels:
+            preds_by_act.setdefault(str(r.successor_id), []).append(
+                (str(r.predecessor_id), r.relationship_type or "FS", int(r.lag_days or 0))
+            )
+        acts_by_sched: dict[str, list] = {}
+        for a in acts:
+            acts_by_sched.setdefault(str(a.schedule_id), []).append(a)
+
+        schedule_inputs = []
+        for s in schedules:
+            sid = str(s.id)
+            d = starts.get(sid)
+            offset = (d - earliest).days if (d is not None and earliest is not None) else 0
+            offset = max(0, offset)
+            activity_inputs = [
+                ActivityInput(
+                    activity_id=str(a.id),
+                    duration=int(a.duration_days or 0),
+                    predecessors=tuple(preds_by_act.get(str(a.id), [])),
+                )
+                for a in acts_by_sched.get(sid, [])
+            ]
+            schedule_inputs.append(ScheduleInput(schedule_id=sid, offset=offset, activities=tuple(activity_inputs)))
+
+        links = (
+            (
+                await self.session.execute(
+                    select(PortfolioCrossLink).where(
+                        or_(
+                            PortfolioCrossLink.predecessor_schedule_id.in_(sched_ids),
+                            PortfolioCrossLink.successor_schedule_id.in_(sched_ids),
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        link_tuples = []
+        omitted = 0
+        for link in links:
+            both = (
+                str(link.predecessor_schedule_id) in in_scope_sched
+                and str(link.successor_schedule_id) in in_scope_sched
+            )
+            if both:
+                link_tuples.append(
+                    (
+                        str(link.predecessor_schedule_id),
+                        str(link.predecessor_activity_id),
+                        str(link.successor_schedule_id),
+                        str(link.successor_activity_id),
+                        link.dep_type or "FS",
+                        int(link.lag_days or 0),
+                    )
+                )
+            else:
+                omitted += 1
+
+        activities_in, cross_edges, boundaries = build_portfolio_inputs(schedule_inputs, link_tuples)
+        try:
+            results = compute_portfolio_cpm(activities_in, cross_edges=cross_edges, boundaries=boundaries)
+            cp = portfolio_critical_path(activities_in, cross_edges=cross_edges, boundaries=boundaries)
+        except CycleError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cross-schedule cycle detected: {exc}",
+            ) from exc
+
+        def _row(namespaced: str) -> dict:
+            sid, aid = split_nid(namespaced)
+            res = results[namespaced]
+            return {
+                "schedule_id": uuid.UUID(sid),
+                "activity_id": uuid.UUID(aid),
+                "es": res.es,
+                "ef": res.ef,
+                "ls": res.ls,
+                "lf": res.lf,
+                "total_float": res.total_float,
+                "is_critical": res.is_critical,
+            }
+
+        activities_out = [_row(k) for k in results]
+        finish = max((v.ef for v in results.values()), default=0)
+        cp_rows = [_row(k) for k in cp if k in results]
+        return {
+            "node_id": node_id,
+            "schedule_count": len(schedules),
+            "activity_count": len(activities_out),
+            "project_finish_workday": finish,
+            "cross_links_applied": len(cross_edges),
+            "cross_links_omitted": omitted,
+            "critical_path": cp_rows,
+            "activities": activities_out,
+        }

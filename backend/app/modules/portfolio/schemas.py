@@ -85,3 +85,61 @@ class TreeNode(BaseModel):
 
 
 TreeNode.model_rebuild()
+
+
+DepType = Literal["FS", "SS", "FF", "SF"]
+
+
+class CrossLinkCreate(BaseModel):
+    """Create a cross-schedule dependency between two activities."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    predecessor_schedule_id: UUID
+    predecessor_activity_id: UUID
+    successor_schedule_id: UUID
+    successor_activity_id: UUID
+    dep_type: DepType = "FS"
+    lag_days: int = 0
+
+
+class CrossLinkResponse(BaseModel):
+    """A cross-schedule dependency as returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    predecessor_schedule_id: UUID
+    predecessor_activity_id: UUID
+    successor_schedule_id: UUID
+    successor_activity_id: UUID
+    dep_type: str
+    lag_days: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class PortfolioCpmActivity(BaseModel):
+    """One activity's CPM result on the shared portfolio timeline (work-days)."""
+
+    schedule_id: UUID
+    activity_id: UUID
+    es: int
+    ef: int
+    ls: int
+    lf: int
+    total_float: int
+    is_critical: bool
+
+
+class PortfolioCpmResponse(BaseModel):
+    """Portfolio (schedule-of-schedules) CPM result for a node's subtree."""
+
+    node_id: UUID
+    schedule_count: int
+    activity_count: int
+    project_finish_workday: int
+    cross_links_applied: int
+    cross_links_omitted: int
+    critical_path: list[PortfolioCpmActivity] = Field(default_factory=list)
+    activities: list[PortfolioCpmActivity] = Field(default_factory=list)

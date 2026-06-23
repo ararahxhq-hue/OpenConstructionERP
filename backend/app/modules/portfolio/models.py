@@ -24,6 +24,7 @@ import uuid
 from sqlalchemy import (
     JSON,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -89,3 +90,37 @@ class PortfolioMembership(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug only
         return f"<PortfolioMembership node={self.node_id} project={self.project_id}>"
+
+
+class PortfolioCrossLink(Base):
+    """A cross-schedule dependency between two activities in different schedules.
+
+    Drives the portfolio (schedule-of-schedules) CPM: the engine treats a link
+    whose both endpoints are in scope as a real edge. All four references are
+    plain GUIDs (no cross-module FK to the ``schedule`` module's tables, per
+    codebase precedent); a link pointing at a deleted schedule/activity is simply
+    skipped at compute time.
+    """
+
+    __tablename__ = "oe_portfolio_cross_link"
+    __table_args__ = (
+        Index("ix_portfolio_cross_link_predecessor", "predecessor_schedule_id"),
+        Index("ix_portfolio_cross_link_successor", "successor_schedule_id"),
+    )
+
+    predecessor_schedule_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False)
+    predecessor_activity_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False)
+    successor_schedule_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False)
+    successor_activity_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False)
+    dep_type: Mapped[str] = mapped_column(String(2), nullable=False, default="FS", server_default="FS")
+    lag_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug only
+        return f"<PortfolioCrossLink {self.predecessor_activity_id}->{self.successor_activity_id} {self.dep_type}>"

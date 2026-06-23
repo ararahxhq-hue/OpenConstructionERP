@@ -12,14 +12,17 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.portfolio.schemas import (
     AttachProjectRequest,
+    CrossLinkCreate,
+    CrossLinkResponse,
     NodeCreate,
     NodePatch,
     NodeResponse,
+    PortfolioCpmResponse,
     TreeNode,
 )
 from app.modules.portfolio.service import PortfolioService
@@ -122,3 +125,64 @@ async def detach_project(
 ) -> Response:
     await service.detach_project(node_id, project_id, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/cross-links/",
+    response_model=CrossLinkResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a cross-schedule dependency (needs access to both projects)",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def create_cross_link(
+    body: CrossLinkCreate,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> CrossLinkResponse:
+    link = await service.create_cross_link(body, user_id)
+    return CrossLinkResponse.model_validate(link)
+
+
+@router.get(
+    "/cross-links/",
+    response_model=list[CrossLinkResponse],
+    summary="List cross-links touching a schedule",
+    dependencies=[Depends(RequirePermission("portfolio.read"))],
+)
+async def list_cross_links(
+    user_id: CurrentUserId,
+    schedule_id: uuid.UUID = Query(...),
+    service: PortfolioService = Depends(_get_service),
+) -> list[CrossLinkResponse]:
+    rows = await service.list_cross_links(schedule_id, user_id)
+    return [CrossLinkResponse.model_validate(r) for r in rows]
+
+
+@router.delete(
+    "/cross-links/{link_id}/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a cross-link",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def delete_cross_link(
+    link_id: uuid.UUID,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> Response:
+    await service.delete_cross_link(link_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/nodes/{node_id}/cpm/",
+    response_model=PortfolioCpmResponse,
+    summary="Portfolio (schedule-of-schedules) CPM across a node subtree",
+    dependencies=[Depends(RequirePermission("portfolio.read"))],
+)
+async def node_cpm(
+    node_id: uuid.UUID,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> PortfolioCpmResponse:
+    payload = await service.compute_node_cpm(node_id, user_id)
+    return PortfolioCpmResponse.model_validate(payload)
