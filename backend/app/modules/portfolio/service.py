@@ -177,6 +177,26 @@ class PortfolioService:
             raise _not_found("Schedule not found")
         return sched.project_id
 
+    async def _assert_activity_in_schedule(
+        self,
+        activity_id: uuid.UUID,
+        schedule_id: uuid.UUID,
+        side: str,
+    ) -> None:
+        """Reject a well-formed link whose activity does not belong to its schedule.
+
+        Called only after both projects are access-checked, so this is a pure
+        consistency check for a caller who CAN reach both projects: a 422 (not a
+        404), because there is no existence-oracle leak across a tenant boundary.
+        ``schedule_id`` is already access-verified, and ``activity.schedule_id``
+        pins the activity to that schedule, so matching the two is sufficient.
+        """
+        from app.modules.schedule.models import Activity
+
+        activity = await self.session.get(Activity, activity_id)
+        if activity is None or activity.schedule_id != schedule_id:
+            raise _unprocessable(f"{side}_activity_id does not belong to {side}_schedule_id")
+
     async def create_cross_link(self, data: CrossLinkCreate, user_id: str) -> PortfolioCrossLink:
         # A cross-link needs access to BOTH projects, so it cannot be used to
         # bridge into a tenant the caller cannot reach (404 on deny).
@@ -184,6 +204,13 @@ class PortfolioService:
         succ_project = await self._schedule_project_id(data.successor_schedule_id)
         await verify_project_access(pred_project, user_id, self.session)
         await verify_project_access(succ_project, user_id, self.session)
+        # Both projects are reachable; now reject an inconsistent (well-formed)
+        # pairing where an activity does not live in the schedule it is filed
+        # under, instead of silently dropping it at CPM compute time.
+        await self._assert_activity_in_schedule(
+            data.predecessor_activity_id, data.predecessor_schedule_id, "predecessor"
+        )
+        await self._assert_activity_in_schedule(data.successor_activity_id, data.successor_schedule_id, "successor")
         link = PortfolioCrossLink(
             predecessor_schedule_id=data.predecessor_schedule_id,
             predecessor_activity_id=data.predecessor_activity_id,
