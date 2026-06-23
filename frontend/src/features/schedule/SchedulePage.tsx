@@ -43,6 +43,7 @@ import { ScheduleRiskPanel } from './ScheduleRiskPanel';
 import { ScheduleComparePanel } from './ScheduleComparePanel';
 import { ScheduleInterchangePanel } from './ScheduleInterchangePanel';
 import { ProgressRigorPanel } from './ProgressRigorPanel';
+import { ScheduleDelayPanel } from './ScheduleDelayPanel';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1088,7 +1089,7 @@ function ScheduleDetail({
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [viewMode, setViewMode] = useState<
-    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'interchange'
+    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'interchange' | 'delay'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
@@ -1445,6 +1446,7 @@ function ScheduleDetail({
                   { key: 'risk' as const, label: t('schedule.view_risk', { defaultValue: 'Risk' }) },
                   { key: 'compare' as const, label: t('schedule.view_compare', { defaultValue: 'Compare' }) },
                   { key: 'progress' as const, label: t('schedule.view_progress', { defaultValue: 'Progress' }) },
+                  { key: 'delay' as const, label: t('schedule.view_delay', { defaultValue: 'Delay' }) },
                   { key: 'interchange' as const, label: t('schedule.view_interchange', { defaultValue: 'Interchange' }) },
                 ]).map((v) => (
                   <button
@@ -1711,6 +1713,12 @@ function ScheduleDetail({
                 }))}
                 currency={projectCurrency}
                 dataDate={schedule.start_date}
+              />
+            ) : viewMode === 'delay' ? (
+              <ScheduleDelayPanel
+                scheduleId={schedule.id}
+                projectId={projectId}
+                activitiesById={activitiesById}
               />
             ) : isLoading ? (
               <SkeletonTable rows={4} columns={4} />

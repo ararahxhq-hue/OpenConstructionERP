@@ -1040,3 +1040,269 @@ export function scheduleRisk(
     body,
   );
 }
+
+/* ── Guided forensic delay analysis (T2.2) ────────────────────────────────
+ *
+ * Persisted, exhibit-producing delay-analysis flow over a base ``schedule``
+ * (its Activity + ScheduleRelationship rows). An analysis carries a method
+ * (TIA, windows, as-planned-vs-as-built, impacted-as-planned, collapsed-as-
+ * built), a set of causative delay events (with optional fragnets), and -
+ * once computed - per-window attribution + the total entitlement (excusable /
+ * compensable) days. The full contract derived from the backend
+ * (backend/app/modules/schedule_advanced/router.py + schemas.py + delay_service.py):
+ *
+ *   POST   /v1/schedule-advanced/delay-analyses?project_id=<uuid>
+ *            body DelayAnalysisCreate -> DelayAnalysisResponse (201)
+ *            (project_id is a QUERY param; the body must NOT include it)
+ *   GET    /v1/schedule-advanced/delay-analyses?project_id=<uuid>
+ *            -> DelayAnalysisListItem[]
+ *   GET    /v1/schedule-advanced/delay-analyses/{id} -> DelayAnalysisResponse
+ *   PATCH  /v1/schedule-advanced/delay-analyses/{id}  (draft only)
+ *   DELETE /v1/schedule-advanced/delay-analyses/{id}  (not issued) -> 204
+ *   POST   /v1/schedule-advanced/delay-analyses/{id}/events
+ *            body DelayEventCreate -> DelayEventResponse (201, draft only)
+ *   PATCH  /v1/schedule-advanced/delay-analyses/{id}/events/{eventId}
+ *   DELETE /v1/schedule-advanced/delay-analyses/{id}/events/{eventId} -> 204
+ *   PUT    /v1/schedule-advanced/delay-analyses/{id}/events/{eventId}/fragnet
+ *   POST   /v1/schedule-advanced/delay-analyses/{id}/auto-fragnet
+ *            body AutoFragnetRequest -> FragnetResponse
+ *   POST   /v1/schedule-advanced/delay-analyses/{id}/compute
+ *            body DelayComputeRequest (optional apportionment override)
+ *            -> DelayAnalysisResponse (status -> "computed", fills windows + totals)
+ *   POST   /v1/schedule-advanced/delay-analyses/{id}/issue
+ *            -> DelayAnalysisResponse (e-sign; computed -> "issued", immutable)
+ *   POST   /v1/schedule-advanced/delay-analyses/{id}/raise-eot-claim
+ *            -> RaiseEotClaimResponse (computed|issued only)
+ *
+ * The headline numbers (total_entitlement_days, concurrent_days, window_count,
+ * status) live as first-class fields on DelayAnalysisResponse; per-window
+ * attribution lives in ``windows`` (DelayWindowResponse). ``result_json`` is a
+ * method-dependent exhibit blob (loosely typed here as a record).
+ */
+
+export type DelayMethod =
+  | 'tia'
+  | 'windows'
+  | 'as_planned_vs_as_built'
+  | 'impacted_as_planned'
+  | 'collapsed_as_built';
+export type DelayResponsibility = 'employer' | 'contractor' | 'neutral' | 'shared';
+export type DelayApportionment = 'none' | 'dominant_cause' | 'time_but_for' | 'malmaison';
+export type DelayOosMode = 'retained_logic' | 'progress_override';
+export type DelayStatus = 'draft' | 'computed' | 'issued';
+export type FragnetInsertMode =
+  | 'lengthen_activity'
+  | 'insert_after'
+  | 'insert_parallel'
+  | 'suspend_resume';
+
+export interface DelayFragnet {
+  id: string;
+  delay_event_id: string;
+  insert_mode: string;
+  insert_at_activity_ref: string;
+  added_duration_days: number;
+  fragnet_activities: Array<Record<string, unknown>>;
+  rewires: Array<Record<string, unknown>>;
+  applies_in_window?: number | null;
+}
+
+export interface DelayEvent {
+  id: string;
+  analysis_id: string;
+  code: string;
+  title: string;
+  description: string;
+  root_cause: string;
+  responsibility: DelayResponsibility;
+  risk_event_category: string;
+  is_concurrent: boolean;
+  concurrency_group: string;
+  is_pacing: boolean;
+  source_ref_type?: string | null;
+  source_ref_id?: string | null;
+  insert_at_activity_ref: string;
+  event_start?: string | null;
+  event_end?: string | null;
+  start_workday?: number | null;
+  end_workday?: number | null;
+  fragnets: DelayFragnet[];
+}
+
+/** One analysis window: gross slip decomposed into responsibility buckets. */
+export interface DelayWindow {
+  id: string;
+  sequence_order: number;
+  window_start?: string | null;
+  window_end?: string | null;
+  finish_at_open: number;
+  finish_at_close: number;
+  gross_slip_days: number;
+  employer_days: number;
+  contractor_days: number;
+  neutral_days: number;
+  concurrent_days: number;
+  net_entitlement_days: number;
+  narrative: string;
+}
+
+/** A row in the analyses list. */
+export interface DelayAnalysisListItem {
+  id: string;
+  project_id: string;
+  schedule_id?: string | null;
+  method: DelayMethod;
+  name: string;
+  status: DelayStatus;
+  total_entitlement_days: number;
+  window_count: number;
+  issued_at?: string | null;
+}
+
+/** A full analysis with its events, windows and exhibit result. */
+export interface DelayAnalysis {
+  id: string;
+  project_id: string;
+  schedule_id?: string | null;
+  method: DelayMethod;
+  name: string;
+  description: string;
+  as_planned_baseline_id?: string | null;
+  as_built_snapshot_id?: string | null;
+  oos_mode: DelayOosMode;
+  data_date?: string | null;
+  apportionment_method: DelayApportionment;
+  status: DelayStatus;
+  window_count: number;
+  total_entitlement_days: number;
+  concurrent_days: number;
+  result_json: Record<string, unknown>;
+  issued_at?: string | null;
+  issued_by?: string | null;
+  signature_sha256?: string | null;
+  eot_claim_id?: string | null;
+  events: DelayEvent[];
+  windows: DelayWindow[];
+}
+
+export interface DelayAnalysisCreateBody {
+  name: string;
+  method?: DelayMethod;
+  schedule_id?: string | null;
+  description?: string;
+  apportionment_method?: DelayApportionment;
+  oos_mode?: DelayOosMode;
+  data_date?: string | null;
+}
+
+export interface DelayEventCreateBody {
+  title: string;
+  code?: string;
+  description?: string;
+  root_cause?: string;
+  responsibility?: DelayResponsibility;
+  risk_event_category?: string;
+  is_concurrent?: boolean;
+  is_pacing?: boolean;
+  insert_at_activity_ref?: string;
+  event_start?: string | null;
+  event_end?: string | null;
+  start_workday?: number | null;
+  end_workday?: number | null;
+}
+
+export interface AutoFragnetBody {
+  delay_event_id: string;
+  insert_mode?: FragnetInsertMode;
+  insert_at_activity_ref: string;
+  added_days: number;
+}
+
+export interface RaiseEotClaimResult {
+  eot_claim_id: string;
+  delay_analysis_id: string;
+  requested_days: number;
+}
+
+/** List the forensic delay analyses for a project. */
+export function listDelayAnalyses(
+  projectId: string,
+): Promise<DelayAnalysisListItem[]> {
+  return apiGet<DelayAnalysisListItem[]>(
+    `/v1/schedule-advanced/delay-analyses?project_id=${encodeURIComponent(projectId)}`,
+  );
+}
+
+/** Fetch one analysis with its events, windows and exhibit result. */
+export function getDelayAnalysis(analysisId: string): Promise<DelayAnalysis> {
+  return apiGet<DelayAnalysis>(
+    `/v1/schedule-advanced/delay-analyses/${encodeURIComponent(analysisId)}`,
+  );
+}
+
+/**
+ * Create a draft analysis under a project. ``project_id`` is a query param on
+ * the backend (the body schema does not carry it), so it is passed separately.
+ */
+export function createDelayAnalysis(
+  projectId: string,
+  body: DelayAnalysisCreateBody,
+): Promise<DelayAnalysis> {
+  return apiPost<DelayAnalysis, DelayAnalysisCreateBody>(
+    `/v1/schedule-advanced/delay-analyses?project_id=${encodeURIComponent(projectId)}`,
+    body,
+  );
+}
+
+/** Add a causative delay event to a draft analysis. */
+export function addDelayEvent(
+  analysisId: string,
+  body: DelayEventCreateBody,
+): Promise<DelayEvent> {
+  return apiPost<DelayEvent, DelayEventCreateBody>(
+    `/v1/schedule-advanced/delay-analyses/${encodeURIComponent(analysisId)}/events`,
+    body,
+  );
+}
+
+/** Wizard helper: synthesise + attach a default fragnet for an event. */
+export function autoDelayFragnet(
+  analysisId: string,
+  body: AutoFragnetBody,
+): Promise<DelayFragnet> {
+  return apiPost<DelayFragnet, AutoFragnetBody>(
+    `/v1/schedule-advanced/delay-analyses/${encodeURIComponent(analysisId)}/auto-fragnet`,
+    body,
+  );
+}
+
+/**
+ * Run the analysis method, persisting windows + totals + the exhibit result.
+ * The body only carries an optional apportionment override; the schedule and
+ * events are read server-side.
+ */
+export function computeDelayAnalysis(
+  analysisId: string,
+  apportionmentMethod?: DelayApportionment,
+): Promise<DelayAnalysis> {
+  return apiPost<DelayAnalysis, { apportionment_method?: DelayApportionment }>(
+    `/v1/schedule-advanced/delay-analyses/${encodeURIComponent(analysisId)}/compute`,
+    apportionmentMethod ? { apportionment_method: apportionmentMethod } : {},
+  );
+}
+
+/** Freeze + e-sign a computed analysis (issued analyses are immutable). */
+export function issueDelayAnalysis(analysisId: string): Promise<DelayAnalysis> {
+  return apiPost<DelayAnalysis>(
+    `/v1/schedule-advanced/delay-analyses/${encodeURIComponent(analysisId)}/issue`,
+    {},
+  );
+}
+
+/** Create an Extension-of-Time claim pre-filled from a computed analysis. */
+export function raiseEotClaim(analysisId: string): Promise<RaiseEotClaimResult> {
+  return apiPost<RaiseEotClaimResult>(
+    `/v1/schedule-advanced/delay-analyses/${encodeURIComponent(analysisId)}/raise-eot-claim`,
+    {},
+  );
+}
