@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.10.0] - 2026-06-24
+
+A change intelligence release. It turns the change-adjacent modules - change orders, variations, management of change, correspondence and approvals - into one place that answers what to act on first, who owes the next action and by when, and what the approved changes have committed in cost and schedule.
+
+### Added
+
+- A Change Intelligence page for each project, reached from the Procurement and Change menu, with six views. Act first ranks the open change items by urgency and names the next action. Waiting on whom ages every open change record by the party that holds it. Correspondence groups letters and emails into threads and flags who owes the reply. Impact totals the committed cost and schedule of approved changes, by kind and by currency. Cost recovery rolls up back-charges per responsible party and currency. The clarifier turns a rough change note into a structured draft with a classification, the gaps still to fill and the likely governing contract clauses.
+- The change-intelligence layer underneath the page: a unified project timeline built on the activity log, an approval breach monitor that raises one reminder per overdue step, approval delegation and one-tap reassignment, ball-in-court and response-due dates across the whole change family, change records in unified search, change cycle-time telemetry, a committed-impact projection, an AI accuracy scoreboard that scores a stated confidence against the recorded outcome, a claims and dispute evidence pack with a content digest, a cost recovery ledger, and inbound email capture with construction delay detection.
+
 ## [8.9.1] - 2026-06-23
 
 A correctness and hardening release.
