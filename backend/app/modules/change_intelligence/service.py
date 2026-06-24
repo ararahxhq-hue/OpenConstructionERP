@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.change_intelligence.clarifier import ClarifiedRequest, analyze_change_note
 from app.modules.change_intelligence.cycle_time import (
     KIND_CHANGE_ORDER,
     KIND_MOC_ENTRY,
@@ -27,6 +29,17 @@ from app.modules.change_intelligence.cycle_time import (
     CycleTimeBoard,
     build_board,
     is_open_status,
+)
+from app.modules.change_intelligence.impact_projection import (
+    KIND_CHANGE_ORDER as IMPACT_KIND_CHANGE_ORDER,
+)
+from app.modules.change_intelligence.impact_projection import (
+    KIND_VARIATION_ORDER as IMPACT_KIND_VARIATION_ORDER,
+)
+from app.modules.change_intelligence.impact_projection import (
+    ApprovedChange,
+    ImpactProjection,
+    project_impacts,
 )
 from app.modules.changeorders.models import ChangeOrder
 from app.modules.moc.models import MoCEntry
@@ -87,3 +100,81 @@ async def build_project_board(
     moment = now or datetime.now(UTC)
     items = await gather_change_items(session, project_id)
     return build_board(items, moment)
+
+
+# --- Approved-change cost / schedule impact (materialized view) ------------
+
+#: Change-order statuses whose cost and schedule impact is committed.
+_CO_APPROVED_STATUSES = frozenset({"approved", "executed"})
+#: Variation-order statuses that represent an agreed, in-force order.
+_VO_AGREED_STATUSES = frozenset({"issued", "in_progress", "completed"})
+
+
+async def gather_approved_changes(session: AsyncSession, project_id: uuid.UUID) -> list[ApprovedChange]:
+    """Read the approved change orders and agreed variation orders for a project.
+
+    Only changes whose cost is committed count toward the earned-value view: a
+    change order that has been approved or executed, and a variation order that
+    has been issued or beyond. Each is projected to an engine ApprovedChange.
+    """
+    changes: list[ApprovedChange] = []
+
+    co_stmt = select(
+        ChangeOrder.id,
+        ChangeOrder.cost_impact,
+        ChangeOrder.schedule_impact_days,
+        ChangeOrder.currency,
+        ChangeOrder.status,
+        ChangeOrder.approved_at,
+    ).where(ChangeOrder.project_id == project_id)
+    for row in (await session.execute(co_stmt)).all():
+        if (row.status or "").strip().lower() in _CO_APPROVED_STATUSES:
+            changes.append(
+                ApprovedChange(
+                    ref_id=str(row.id),
+                    kind=IMPACT_KIND_CHANGE_ORDER,
+                    cost_impact=row.cost_impact if row.cost_impact is not None else Decimal("0"),
+                    schedule_impact_days=row.schedule_impact_days or 0,
+                    currency=row.currency or "",
+                    status=row.status or "",
+                    approved_at=row.approved_at,
+                )
+            )
+
+    vo_stmt = select(
+        VariationOrder.id,
+        VariationOrder.final_cost_impact,
+        VariationOrder.final_schedule_days,
+        VariationOrder.currency,
+        VariationOrder.status,
+        VariationOrder.agreed_at,
+    ).where(VariationOrder.project_id == project_id)
+    for row in (await session.execute(vo_stmt)).all():
+        if (row.status or "").strip().lower() in _VO_AGREED_STATUSES:
+            changes.append(
+                ApprovedChange(
+                    ref_id=str(row.id),
+                    kind=IMPACT_KIND_VARIATION_ORDER,
+                    cost_impact=row.final_cost_impact if row.final_cost_impact is not None else Decimal("0"),
+                    schedule_impact_days=row.final_schedule_days or 0,
+                    currency=row.currency or "",
+                    status=row.status or "",
+                    approved_at=row.agreed_at,
+                )
+            )
+
+    return changes
+
+
+async def build_impact_projection(session: AsyncSession, project_id: uuid.UUID) -> ImpactProjection:
+    """Project the committed cost and schedule impact of a project's changes."""
+    changes = await gather_approved_changes(session, project_id)
+    return project_impacts(changes)
+
+
+# --- Change-request clarifier (co-pilot helper) ----------------------------
+
+
+def clarify_change_note(note: str, contract_standard: str = "") -> ClarifiedRequest:
+    """Turn a rough change note into a structured, well-formed request draft."""
+    return analyze_change_note(note, contract_standard=contract_standard)

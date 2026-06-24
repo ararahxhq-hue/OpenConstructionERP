@@ -16,11 +16,20 @@ from fastapi import APIRouter
 
 from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.change_intelligence.schemas import (
+    ClarifiedRequestOut,
+    ClarifyIn,
+    CurrencyImpactOut,
     CycleTimeBoardOut,
+    ImpactProjectionOut,
     ItemAgingOut,
+    KindImpactOut,
     PartyLoadOut,
 )
-from app.modules.change_intelligence.service import build_project_board
+from app.modules.change_intelligence.service import (
+    build_impact_projection,
+    build_project_board,
+    clarify_change_note,
+)
 
 router = APIRouter(tags=["Change Intelligence"])
 
@@ -44,3 +53,49 @@ async def get_cycle_time_board(
         parties=[PartyLoadOut.model_validate(p) for p in board.parties],
         items=[ItemAgingOut.model_validate(r) for r in board.items],
     )
+
+
+@router.get("/projects/{project_id}/impact", response_model=ImpactProjectionOut)
+async def get_impact_projection(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> ImpactProjectionOut:
+    """Committed cost and schedule impact of a project's approved changes."""
+    await verify_project_access(project_id, user_id or "", session)
+
+    projection = await build_impact_projection(session, project_id)
+    return ImpactProjectionOut(
+        project_id=str(project_id),
+        approved_count=projection.approved_count,
+        total_schedule_delta_days=projection.total_schedule_delta_days,
+        primary_currency=projection.primary_currency,
+        primary_currency_cost=str(projection.primary_currency_cost),
+        by_kind=[
+            KindImpactOut(
+                kind=k.kind,
+                count=k.count,
+                total_cost=str(k.total_cost),
+                total_days=k.total_days,
+            )
+            for k in projection.by_kind
+        ],
+        by_currency=[
+            CurrencyImpactOut(currency=c.currency, total_cost=str(c.total_cost), count=c.count)
+            for c in projection.by_currency
+        ],
+    )
+
+
+@router.post("/clarify", response_model=ClarifiedRequestOut)
+async def clarify_change_request(
+    payload: ClarifyIn,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> ClarifiedRequestOut:
+    """Turn a rough change note into a structured, well-formed request draft.
+
+    Stateless text analysis (no project record is read or written), so it needs
+    authentication but no project-scoped access check.
+    """
+    clarified = clarify_change_note(payload.note, payload.contract_standard)
+    return ClarifiedRequestOut.model_validate(clarified)

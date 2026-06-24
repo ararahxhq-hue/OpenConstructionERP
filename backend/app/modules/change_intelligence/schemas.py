@@ -50,3 +50,82 @@ class CycleTimeBoardOut(BaseModel):
     unassigned_open: int
     parties: list[PartyLoadOut]
     items: list[ItemAgingOut]
+
+
+# --- Approved-change impact projection -------------------------------------
+# Money is carried as a string (the Decimal rendered losslessly) per the
+# platform money-as-string convention, so these are built explicitly in the
+# router rather than validated straight off the engine dataclasses.
+
+
+class KindImpactOut(BaseModel):
+    """Committed cost and schedule carried by one kind of change."""
+
+    kind: str
+    count: int
+    total_cost: str
+    total_days: int
+
+
+class CurrencyImpactOut(BaseModel):
+    """Signed committed cost total in one currency."""
+
+    currency: str
+    total_cost: str
+    count: int
+
+
+class ImpactProjectionOut(BaseModel):
+    """Earned-value-style roll-up of a project's approved changes."""
+
+    project_id: str
+    approved_count: int
+    total_schedule_delta_days: int
+    primary_currency: str
+    primary_currency_cost: str
+    by_kind: list[KindImpactOut]
+    by_currency: list[CurrencyImpactOut]
+
+
+# --- Change-request clarifier ----------------------------------------------
+
+
+class ClarifyIn(BaseModel):
+    """Request body for the clarifier: a rough change note to structure."""
+
+    note: str
+    contract_standard: str = ""
+
+
+class ClarificationGapOut(BaseModel):
+    """One thing still missing before a change request is fit to circulate."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    field: str
+    question: str
+    severity: str
+
+
+class ClauseSuggestionOut(BaseModel):
+    """A likely governing contract provision for the change."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    standard: str
+    clause_ref: str
+    rationale: str
+
+
+class ClarifiedRequestOut(BaseModel):
+    """A structured first draft of a change request built from a rough note."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str
+    normalized_summary: str
+    detected_classification: str
+    missing: list[ClarificationGapOut]
+    clause_suggestions: list[ClauseSuggestionOut]
+    suggested_route: str
+    completeness: float
