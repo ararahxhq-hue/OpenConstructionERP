@@ -647,22 +647,26 @@ async def _sql_search_collection(
         collected: list[tuple[Any, VectorHit]] = []
 
         notices = (
-            await session.execute(
-                _scope(
-                    select(Notice)
-                    .where(
-                        or_(
-                            Notice.title.ilike(pattern),
-                            Notice.description.ilike(pattern),
-                            Notice.code.ilike(pattern),
+            (
+                await session.execute(
+                    _scope(
+                        select(Notice)
+                        .where(
+                            or_(
+                                Notice.title.ilike(pattern),
+                                Notice.description.ilike(pattern),
+                                Notice.code.ilike(pattern),
+                            )
                         )
+                        .order_by(Notice.created_at.desc())
+                        .limit(limit),
+                        Notice.project_id,
                     )
-                    .order_by(Notice.created_at.desc())
-                    .limit(limit),
-                    Notice.project_id,
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         collected += [
             (
                 n.created_at,
@@ -685,22 +689,26 @@ async def _sql_search_collection(
         ]
 
         requests = (
-            await session.execute(
-                _scope(
-                    select(VariationRequest)
-                    .where(
-                        or_(
-                            VariationRequest.title.ilike(pattern),
-                            VariationRequest.description.ilike(pattern),
-                            VariationRequest.code.ilike(pattern),
+            (
+                await session.execute(
+                    _scope(
+                        select(VariationRequest)
+                        .where(
+                            or_(
+                                VariationRequest.title.ilike(pattern),
+                                VariationRequest.description.ilike(pattern),
+                                VariationRequest.code.ilike(pattern),
+                            )
                         )
+                        .order_by(VariationRequest.created_at.desc())
+                        .limit(limit),
+                        VariationRequest.project_id,
                     )
-                    .order_by(VariationRequest.created_at.desc())
-                    .limit(limit),
-                    VariationRequest.project_id,
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         collected += [
             (
                 vr.created_at,
@@ -723,21 +731,25 @@ async def _sql_search_collection(
         ]
 
         orders = (
-            await session.execute(
-                _scope(
-                    select(VariationOrder)
-                    .where(
-                        or_(
-                            VariationOrder.title.ilike(pattern),
-                            VariationOrder.code.ilike(pattern),
+            (
+                await session.execute(
+                    _scope(
+                        select(VariationOrder)
+                        .where(
+                            or_(
+                                VariationOrder.title.ilike(pattern),
+                                VariationOrder.code.ilike(pattern),
+                            )
                         )
+                        .order_by(VariationOrder.created_at.desc())
+                        .limit(limit),
+                        VariationOrder.project_id,
                     )
-                    .order_by(VariationOrder.created_at.desc())
-                    .limit(limit),
-                    VariationOrder.project_id,
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         collected += [
             (
                 vo.created_at,

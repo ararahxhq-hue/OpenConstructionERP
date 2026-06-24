@@ -110,15 +110,8 @@ async def test_search_is_fenced_to_the_project(session: AsyncSession) -> None:
     assert await _sql_search_collection(session, COLLECTION_CHANGE_ORDERS, "isolated", project_id=str(other_pid)) == []
 
     # Cross-project with an empty accessible set -> impossible predicate.
-    assert (
-        await _sql_search_collection(
-            session, COLLECTION_CHANGE_ORDERS, "isolated", allowed_project_ids=set()
-        )
-        == []
-    )
+    assert await _sql_search_collection(session, COLLECTION_CHANGE_ORDERS, "isolated", allowed_project_ids=set()) == []
 
     # Cross-project including the owning project -> visible.
-    hits = await _sql_search_collection(
-        session, COLLECTION_CHANGE_ORDERS, "isolated", allowed_project_ids={pid}
-    )
+    hits = await _sql_search_collection(session, COLLECTION_CHANGE_ORDERS, "isolated", allowed_project_ids={pid})
     assert [h.id for h in hits] == [str(co.id)]
