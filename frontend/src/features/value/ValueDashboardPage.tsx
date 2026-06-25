@@ -28,6 +28,9 @@ import {
   Building2,
   Layers,
   Scale,
+  ListChecks,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
@@ -37,6 +40,7 @@ import {
   getValueSummary,
   getPortfolioSummary,
   getAdoptionBenchmark,
+  getAdoptionChecklist,
 } from './api';
 import type { Confidence, ValueSummary } from './types';
 
@@ -48,7 +52,17 @@ interface ProjectLite {
 }
 
 type Scope = 'project' | 'portfolio';
-type Tab = 'summary' | 'adoption';
+type Tab = 'summary' | 'adoption' | 'checklist';
+
+// The role lenses the adoption-checklist engine scopes its steps to. Labels are
+// brand-neutral generic roles the operator maps onto its real titles.
+const CHECKLIST_ROLES = ['manager', 'estimator', 'field', 'reviewer'] as const;
+const ROLE_LABELS: Record<(typeof CHECKLIST_ROLES)[number], string> = {
+  manager: 'Project lead',
+  estimator: 'Estimator',
+  field: 'Field',
+  reviewer: 'Reviewer',
+};
 
 // --- Small shared helpers ---------------------------------------------------
 
@@ -384,6 +398,106 @@ function AdoptionView() {
   );
 }
 
+// --- Adoption checklist (guided first-value) --------------------------------
+
+function ChecklistView({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const [role, setRole] = useState<(typeof CHECKLIST_ROLES)[number]>('manager');
+  const q = useQuery({
+    queryKey: ['value', 'adoption-checklist', projectId, role],
+    queryFn: () => getAdoptionChecklist(projectId, role),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const checklist = q.data;
+  const doneCount = checklist ? checklist.steps.filter((s) => s.done).length : 0;
+  const nextKeys = new Set(checklist?.next_actions.map((a) => a.key) ?? []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <ValueTile
+            label={t('value.adoption_score', { defaultValue: 'Adoption score' })}
+            icon={<ListChecks className="h-4 w-4" />}
+            value={`${checklist?.adoption_score ?? 0}%`}
+          />
+          <ValueTile
+            label={t('value.steps_done', { defaultValue: 'Steps done' })}
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            value={checklist ? `${doneCount}/${checklist.steps.length}` : '0/0'}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-content-secondary">
+          {t('value.checklist_role', { defaultValue: 'Role' })}
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as (typeof CHECKLIST_ROLES)[number])}
+            className="rounded-md border border-border-light bg-surface-primary px-2 py-1 text-sm text-content-primary"
+          >
+            {CHECKLIST_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {t(`value.role_${r}`, { defaultValue: ROLE_LABELS[r] })}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={!checklist || checklist.steps.length === 0}
+        emptyIcon={<ListChecks className="h-6 w-6" />}
+        emptyTitle={t('value.no_checklist_title', { defaultValue: 'No checklist for this role' })}
+        emptyDescription={t('value.no_checklist_desc', {
+          defaultValue: 'This role has no first-value steps on its path. Try another role.',
+        })}
+      >
+        <Card className="overflow-hidden p-0">
+          <ul className="divide-y divide-border-light">
+            {checklist?.steps.map((step) => (
+              <li key={step.key} className="flex items-center gap-3 px-4 py-3">
+                {step.done ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-semantic-success" aria-hidden="true" />
+                ) : (
+                  <Circle className="h-5 w-5 shrink-0 text-content-tertiary" aria-hidden="true" />
+                )}
+                <span
+                  className={
+                    step.done
+                      ? 'flex-1 text-sm text-content-tertiary line-through'
+                      : 'flex-1 text-sm font-medium text-content-primary'
+                  }
+                >
+                  {step.label}
+                </span>
+                {!step.done && nextKeys.has(step.key) && (
+                  <Badge variant="blue" size="sm">
+                    {t('value.do_next', { defaultValue: 'Do next' })}
+                  </Badge>
+                )}
+                {step.done && (
+                  <span className="text-xs font-medium text-semantic-success">
+                    {t('value.step_done', { defaultValue: 'Done' })}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+        <p className="text-xs text-content-tertiary">
+          {t('value.checklist_note', {
+            defaultValue:
+              'Steps are marked done from what this project actually contains - a bill of quantities, a takeoff, a routed approval, a logged change, an AI run and its recorded verdict, an assembled evidence pack. The score is weighted by how much first-value each step carries and counts only the steps this role is asked to do.',
+          })}
+        </p>
+      </PanelState>
+    </div>
+  );
+}
+
 // --- Page -------------------------------------------------------------------
 
 export function ValueDashboardPage() {
@@ -480,6 +594,7 @@ export function ValueDashboardPage() {
             onChange={(next) => setTab(next as Tab)}
             tabs={[
               { id: 'summary', label: t('value.tab_summary', { defaultValue: 'Value summary' }), icon: <Trophy className="h-4 w-4" /> },
+              { id: 'checklist', label: t('value.tab_checklist', { defaultValue: 'Getting started' }), icon: <ListChecks className="h-4 w-4" /> },
               { id: 'adoption', label: t('value.tab_adoption', { defaultValue: 'Adoption benchmark' }), icon: <Scale className="h-4 w-4" /> },
             ]}
           />
@@ -498,6 +613,7 @@ export function ValueDashboardPage() {
                 {summaryQ.data && <SummaryView summary={summaryQ.data} />}
               </PanelState>
             )}
+            {tab === 'checklist' && <ChecklistView projectId={projectId} />}
             {tab === 'adoption' && <AdoptionView />}
           </div>
         </>

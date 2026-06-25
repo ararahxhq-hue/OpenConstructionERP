@@ -9,7 +9,7 @@
 // as strings and passed straight to MoneyDisplay, never coerced here.
 
 import { apiGet } from '@/shared/lib/api';
-import type { AdoptionBenchmark, HoursSaved, ValueSummary } from './types';
+import type { AdoptionBenchmark, AdoptionChecklist, HoursSaved, ValueSummary } from './types';
 
 const BASE = '/v1/value';
 
@@ -27,4 +27,10 @@ export function getHoursSaved(projectId: string, by = 'feature'): Promise<HoursS
 
 export function getAdoptionBenchmark(): Promise<AdoptionBenchmark> {
   return apiGet<AdoptionBenchmark>(`${BASE}/adoption-benchmark`);
+}
+
+export function getAdoptionChecklist(projectId: string, role = 'manager'): Promise<AdoptionChecklist> {
+  return apiGet<AdoptionChecklist>(
+    `${BASE}/projects/${projectId}/adoption-checklist?role=${encodeURIComponent(role)}`,
+  );
 }

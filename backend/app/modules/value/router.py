@@ -29,8 +29,11 @@ from app.dependencies import (
     accessible_project_ids,
     verify_project_access,
 )
+from app.modules.value.adoption_service import build_adoption_checklist
 from app.modules.value.schemas import (
     AdoptionBenchmarkOut,
+    AdoptionChecklistOut,
+    AdoptionStepOut,
     CohortComparisonOut,
     CurrencyValueOut,
     HoursSavedBucketOut,
@@ -211,6 +214,39 @@ async def get_adoption_benchmark(
         confidence=benchmark.confidence,
         high_count=benchmark.high_count,
         low_count=benchmark.low_count,
+    )
+
+
+@router.get("/projects/{project_id}/adoption-checklist", response_model=AdoptionChecklistOut)
+async def get_adoption_checklist(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    role: str = Query("manager", description="Role lens: manager / estimator / field / reviewer"),
+) -> AdoptionChecklistOut:
+    """One project's guided adoption checklist for a role.
+
+    Shows which first-value steps the project has reached - a BOQ imported, a
+    takeoff run, an approval routed, a change logged, an AI run and its verdict,
+    an evidence pack assembled - and the next few to nudge, scored as a weighted
+    percent of the steps that apply to the role. Detection reads the project's
+    present state, so the picture reflects what was actually done rather than
+    whether an event happened to be logged. Read-only; requires access to the
+    project (404 on missing or denied, so existence never leaks).
+    """
+    await verify_project_access(project_id, user_id or "", session)
+    checklist = await build_adoption_checklist(session, project_id, role)
+    return AdoptionChecklistOut(
+        project_id=str(project_id),
+        role=checklist.role,
+        adoption_score=checklist.adoption_score,
+        steps=[
+            AdoptionStepOut(key=s.step.key, label=s.step.label, module=s.step.module, done=s.done)
+            for s in checklist.steps
+        ],
+        next_actions=[
+            AdoptionStepOut(key=a.key, label=a.label, module=a.module, done=False) for a in checklist.next_actions
+        ],
     )
 
 

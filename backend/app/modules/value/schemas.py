@@ -125,3 +125,33 @@ class AdoptionBenchmarkOut(BaseModel):
     confidence: str
     high_count: int
     low_count: int
+
+
+class AdoptionStepOut(BaseModel):
+    """One first-value step and whether the project has reached it.
+
+    ``key`` is the stable step identifier, ``label`` a short human description,
+    ``module`` the platform area it belongs to (for grouping), and ``done``
+    whether the project's present state satisfies the step.
+    """
+
+    key: str
+    label: str
+    module: str
+    done: bool
+
+
+class AdoptionChecklistOut(BaseModel):
+    """A project's guided adoption checklist for one role.
+
+    ``adoption_score`` is the weighted percent (0-100) of the role's applicable
+    steps that are done. ``steps`` is every applicable step in onboarding order
+    with its done flag; ``next_actions`` is the leading incomplete steps - the
+    concrete "do these next" nudge - so they always carry ``done = false``.
+    """
+
+    project_id: str
+    role: str
+    adoption_score: int
+    steps: list[AdoptionStepOut]
+    next_actions: list[AdoptionStepOut]

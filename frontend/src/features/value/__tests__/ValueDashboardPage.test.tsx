@@ -19,6 +19,7 @@ vi.mock('../api', async (importOriginal) => {
     getPortfolioSummary: vi.fn(),
     getHoursSaved: vi.fn(),
     getAdoptionBenchmark: vi.fn(),
+    getAdoptionChecklist: vi.fn(),
   };
 });
 
@@ -35,7 +36,12 @@ vi.mock('@/stores/usePreferencesStore', () => ({
   usePreferencesStore: (sel: (s: { numberLocale: string }) => unknown) => sel({ numberLocale: 'en-US' }),
 }));
 
-import { getValueSummary, getPortfolioSummary, getAdoptionBenchmark } from '../api';
+import {
+  getValueSummary,
+  getPortfolioSummary,
+  getAdoptionBenchmark,
+  getAdoptionChecklist,
+} from '../api';
 import { ValueDashboardPage } from '../ValueDashboardPage';
 
 function renderPage() {
@@ -129,6 +135,19 @@ beforeEach(() => {
     high_count: 1,
     low_count: 1,
   });
+  vi.mocked(getAdoptionChecklist).mockResolvedValue({
+    project_id: 'p-1',
+    role: 'manager',
+    adoption_score: 33,
+    steps: [
+      { key: 'create_project', label: 'Create a project', module: 'projects', done: true },
+      { key: 'import_boq', label: 'Import a bill of quantities', module: 'boq', done: false },
+      { key: 'run_takeoff', label: 'Run a takeoff', module: 'takeoff', done: false },
+    ],
+    next_actions: [
+      { key: 'import_boq', label: 'Import a bill of quantities', module: 'boq', done: false },
+    ],
+  });
 });
 
 describe('ValueDashboardPage', () => {
@@ -163,5 +182,19 @@ describe('ValueDashboardPage', () => {
     await waitFor(() => {
       expect(getPortfolioSummary).toHaveBeenCalled();
     });
+  });
+
+  it('shows the getting-started checklist with steps, score and a next-action nudge', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: /Getting started/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Create a project/i)).toBeInTheDocument();
+    });
+    // A done step and an open step both render.
+    expect(screen.getByText(/Import a bill of quantities/i)).toBeInTheDocument();
+    // The weighted adoption score tile shows the percent.
+    expect(screen.getByText('33%')).toBeInTheDocument();
+    // The single next action is flagged so the user knows what to do next.
+    expect(screen.getByText(/Do next/i)).toBeInTheDocument();
   });
 });

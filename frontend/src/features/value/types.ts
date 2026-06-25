@@ -77,3 +77,18 @@ export interface AdoptionBenchmark {
   high_count: number;
   low_count: number;
 }
+
+export interface AdoptionStep {
+  key: string;
+  label: string;
+  module: string;
+  done: boolean;
+}
+
+export interface AdoptionChecklist {
+  project_id: string;
+  role: string;
+  adoption_score: number;
+  steps: AdoptionStep[];
+  next_actions: AdoptionStep[];
+}
