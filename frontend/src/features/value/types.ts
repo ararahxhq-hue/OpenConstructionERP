@@ -92,3 +92,28 @@ export interface AdoptionChecklist {
   steps: AdoptionStep[];
   next_actions: AdoptionStep[];
 }
+
+// One regional-benchmark metric over the tenant's own projects (POST
+// /v1/costs/benchmark/). The five points and the positioned value are decimal
+// strings: for cost_per_m2 they are money; for overrun_pct / recovery_rate they
+// are dimensionless fractions (e.g. "0.2" = 20 percent) and currency is empty.
+export type RegionalMetric = 'cost_per_m2' | 'overrun_pct' | 'recovery_rate';
+
+export interface RegionalPortfolio {
+  project_count: number;
+  min: string;
+  p25: string;
+  median: string;
+  p75: string;
+  max: string;
+  confidence: 'high' | 'medium' | 'low';
+  note: string;
+}
+
+export interface RegionalBenchmark {
+  currency: string;
+  metric: RegionalMetric;
+  own_portfolio: RegionalPortfolio | null;
+  percentile_vs_own: number | null;
+  explanation: string;
+}

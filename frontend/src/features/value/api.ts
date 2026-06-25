@@ -9,7 +9,14 @@
 // as strings and passed straight to MoneyDisplay, never coerced here.
 
 import { apiGet, apiPost } from '@/shared/lib/api';
-import type { AdoptionBenchmark, AdoptionChecklist, HoursSaved, ValueSummary } from './types';
+import type {
+  AdoptionBenchmark,
+  AdoptionChecklist,
+  HoursSaved,
+  RegionalBenchmark,
+  RegionalMetric,
+  ValueSummary,
+} from './types';
 
 const BASE = '/v1/value';
 
@@ -40,4 +47,17 @@ export function getAdoptionChecklist(projectId: string, role = 'manager'): Promi
   return apiGet<AdoptionChecklist>(
     `${BASE}/projects/${projectId}/adoption-checklist?role=${encodeURIComponent(role)}`,
   );
+}
+
+// Benchmark a dimensionless ratio (overrun_pct / recovery_rate) or cost-per-m2
+// across the tenant's own projects, optionally narrowed to one region. This is
+// the shared cost-benchmark endpoint (not under /v1/value); the value dashboard
+// surfaces the ratio metrics as portfolio context next to the adoption view.
+export function getRegionalBenchmark(
+  metric: RegionalMetric,
+  region?: string,
+): Promise<RegionalBenchmark> {
+  const body: { metric: RegionalMetric; region?: string } = { metric };
+  if (region) body.region = region;
+  return apiPost<RegionalBenchmark, typeof body>('/v1/costs/benchmark/', body);
 }

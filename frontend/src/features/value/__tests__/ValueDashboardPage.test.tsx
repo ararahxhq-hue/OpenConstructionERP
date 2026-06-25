@@ -20,6 +20,7 @@ vi.mock('../api', async (importOriginal) => {
     getHoursSaved: vi.fn(),
     getAdoptionBenchmark: vi.fn(),
     getAdoptionChecklist: vi.fn(),
+    getRegionalBenchmark: vi.fn(),
     recordValueReport: vi.fn(),
   };
 });
@@ -42,6 +43,7 @@ import {
   getPortfolioSummary,
   getAdoptionBenchmark,
   getAdoptionChecklist,
+  getRegionalBenchmark,
   recordValueReport,
 } from '../api';
 import { ValueDashboardPage } from '../ValueDashboardPage';
@@ -150,6 +152,22 @@ beforeEach(() => {
       { key: 'import_boq', label: 'Import a bill of quantities', module: 'boq', done: false },
     ],
   });
+  vi.mocked(getRegionalBenchmark).mockResolvedValue({
+    currency: '',
+    metric: 'overrun_pct',
+    own_portfolio: {
+      project_count: 3,
+      min: '-0.2',
+      p25: '-0.1',
+      median: '0',
+      p75: '0.1',
+      max: '0.2',
+      confidence: 'low',
+      note: 'Based on 3 of your projects.',
+    },
+    percentile_vs_own: null,
+    explanation: '',
+  });
 });
 
 describe('ValueDashboardPage', () => {
@@ -176,6 +194,26 @@ describe('ValueDashboardPage', () => {
     });
     // The adopters cohort count tile shows 1 high-adoption project.
     expect(screen.getByText(/High-adoption projects/i)).toBeInTheDocument();
+  });
+
+  it('switches to the regional benchmarks tab and can change the metric', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: /Regional benchmarks/i }));
+    // The own-portfolio distribution renders once the query resolves: the basis
+    // note and the percent form of the min fraction ("-0.2" -> "-20%").
+    await waitFor(() => {
+      expect(screen.getByText(/Based on 3 of your projects/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText('-20%')).toBeInTheDocument();
+    // Defaulted to the overrun ratio, benchmarked across all regions.
+    expect(getRegionalBenchmark).toHaveBeenCalledWith('overrun_pct', undefined);
+    // Switching the metric refetches for the other ratio.
+    fireEvent.change(screen.getByRole('combobox', { name: /Metric/i }), {
+      target: { value: 'recovery_rate' },
+    });
+    await waitFor(() => {
+      expect(getRegionalBenchmark).toHaveBeenCalledWith('recovery_rate', undefined);
+    });
   });
 
   it('switches scope to the portfolio summary', async () => {

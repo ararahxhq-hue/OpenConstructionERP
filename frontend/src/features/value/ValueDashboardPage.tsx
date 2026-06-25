@@ -31,6 +31,7 @@ import {
   ListChecks,
   CheckCircle2,
   Circle,
+  MapPin,
 } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
@@ -41,6 +42,7 @@ import {
   getPortfolioSummary,
   getAdoptionBenchmark,
   getAdoptionChecklist,
+  getRegionalBenchmark,
   recordValueReport,
 } from './api';
 import type { Confidence, ValueSummary } from './types';
@@ -53,7 +55,12 @@ interface ProjectLite {
 }
 
 type Scope = 'project' | 'portfolio';
-type Tab = 'summary' | 'adoption' | 'checklist';
+type Tab = 'summary' | 'adoption' | 'checklist' | 'regional';
+
+// The dimensionless ratio metrics the regional benchmark surfaces (cost-per-m2
+// lives on the dedicated /benchmarks page). Lower overrun is better; higher
+// recovery is better - the view states this rather than colouring it.
+const REGIONAL_METRICS = ['overrun_pct', 'recovery_rate'] as const;
 
 // The role lenses the adoption-checklist engine scopes its steps to. Labels are
 // brand-neutral generic roles the operator maps onto its real titles.
@@ -399,6 +406,120 @@ function AdoptionView() {
   );
 }
 
+// --- Regional benchmarks (overrun / recovery by region, #21) ----------------
+
+function RegionalBenchmarksView() {
+  const { t } = useTranslation();
+  const [metric, setMetric] = useState<(typeof REGIONAL_METRICS)[number]>('overrun_pct');
+  const [region, setRegion] = useState('');
+  const trimmedRegion = region.trim();
+  const q = useQuery({
+    queryKey: ['value', 'regional-benchmark', metric, trimmedRegion],
+    queryFn: () => getRegionalBenchmark(metric, trimmedRegion || undefined),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const port = q.data?.own_portfolio ?? null;
+  const isOverrun = metric === 'overrun_pct';
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-sm text-content-secondary">
+          {t('value.benchmark_metric', { defaultValue: 'Metric' })}
+          <select
+            value={metric}
+            onChange={(e) => setMetric(e.target.value as (typeof REGIONAL_METRICS)[number])}
+            className="rounded-md border border-border-light bg-surface-primary px-2 py-1 text-sm text-content-primary"
+          >
+            {REGIONAL_METRICS.map((m) => (
+              <option key={m} value={m}>
+                {m === 'overrun_pct'
+                  ? t('value.metric_overrun_pct', { defaultValue: 'Cost overrun' })
+                  : t('value.metric_recovery_rate', { defaultValue: 'Recovery rate' })}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-content-secondary">
+          {t('value.benchmark_region', { defaultValue: 'Region' })}
+          <input
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            placeholder={t('value.benchmark_region_all', { defaultValue: 'All regions' })}
+            className="rounded-md border border-border-light bg-surface-primary px-2 py-1 text-sm text-content-primary"
+          />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <ValueTile
+          label={t('value.benchmark_projects', { defaultValue: 'Projects compared' })}
+          icon={<Building2 className="h-4 w-4" />}
+          value={port?.project_count ?? 0}
+        />
+        <ValueTile
+          label={t('value.benchmark_median', { defaultValue: 'Portfolio median' })}
+          icon={<Scale className="h-4 w-4" />}
+          value={ratePct(port?.median)}
+        />
+        <ValueTile
+          label={t('value.benchmark_confidence', { defaultValue: 'Benchmark confidence' })}
+          icon={<MapPin className="h-4 w-4" />}
+          value={<ConfidenceTag level={port?.confidence ?? 'none'} />}
+        />
+      </div>
+
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={!port}
+        emptyIcon={<MapPin className="h-6 w-6" />}
+        emptyTitle={t('value.no_regional_title', { defaultValue: 'No regional benchmark yet' })}
+        emptyDescription={t('value.no_regional_desc', {
+          defaultValue:
+            'Record approved budgets and back-charges across a few projects to benchmark overrun and recovery by region.',
+        })}
+      >
+        {port && (
+          <Card className="space-y-3 p-4">
+            <div className="grid grid-cols-5 gap-2 text-center">
+              {(
+                [
+                  ['value.bench_min', 'Min', port.min],
+                  ['value.bench_p25', 'P25', port.p25],
+                  ['value.bench_median', 'Median', port.median],
+                  ['value.bench_p75', 'P75', port.p75],
+                  ['value.bench_max', 'Max', port.max],
+                ] as const
+              ).map(([key, label, val]) => (
+                <div key={key} className="rounded-md bg-surface-secondary px-2 py-2">
+                  <div className="text-2xs uppercase tracking-wide text-content-tertiary">
+                    {t(key, { defaultValue: label })}
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums text-content-primary">{ratePct(val)}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-content-tertiary">{port.note}</p>
+          </Card>
+        )}
+        <p className="text-xs text-content-tertiary">
+          {isOverrun
+            ? t('value.benchmark_overrun_note', {
+                defaultValue:
+                  'Overrun compares the priced scope against the approved budget, project by project. Lower is better, and a negative figure means under budget. Benchmarked across your own projects, by region when set.',
+              })
+            : t('value.benchmark_recovery_note', {
+                defaultValue:
+                  'Recovery rate is the share of chargeable cost actually recovered, project by project. Higher is better. Benchmarked across your own projects, by region when set.',
+              })}
+        </p>
+      </PanelState>
+    </div>
+  );
+}
+
 // --- Adoption checklist (guided first-value) --------------------------------
 
 function ChecklistView({ projectId }: { projectId: string }) {
@@ -614,6 +735,7 @@ export function ValueDashboardPage() {
               { id: 'summary', label: t('value.tab_summary', { defaultValue: 'Value summary' }), icon: <Trophy className="h-4 w-4" /> },
               { id: 'checklist', label: t('value.tab_checklist', { defaultValue: 'Getting started' }), icon: <ListChecks className="h-4 w-4" /> },
               { id: 'adoption', label: t('value.tab_adoption', { defaultValue: 'Adoption benchmark' }), icon: <Scale className="h-4 w-4" /> },
+              { id: 'regional', label: t('value.tab_regional', { defaultValue: 'Regional benchmarks' }), icon: <MapPin className="h-4 w-4" /> },
             ]}
           />
           <div role="tabpanel" id={ids.panelId(tab)} aria-labelledby={ids.tabId(tab)}>
@@ -633,6 +755,7 @@ export function ValueDashboardPage() {
             )}
             {tab === 'checklist' && <ChecklistView projectId={projectId} />}
             {tab === 'adoption' && <AdoptionView />}
+            {tab === 'regional' && <RegionalBenchmarksView />}
           </div>
         </>
       )}
