@@ -11,13 +11,18 @@ dependency commits, so a failed request rolls back cleanly.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.modules.cost_recovery.apportionment import (
+    PartyShare,
+    distribute_chargeable,
+)
 from app.modules.cost_recovery.back_charge import (
     STATUS_AGREED,
     STATUS_RECOVERED,
@@ -25,8 +30,17 @@ from app.modules.cost_recovery.back_charge import (
     RecoveryLedger,
     build_ledger,
 )
-from app.modules.cost_recovery.models import BackCharge
-from app.modules.cost_recovery.schemas import BackChargeCreate, BackChargeUpdate
+from app.modules.cost_recovery.models import BackCharge, BackChargeApportionment
+from app.modules.cost_recovery.recovery_analytics import (
+    RecoveryItem,
+    RecoveryPerformance,
+    compute_recovery_performance,
+)
+from app.modules.cost_recovery.schemas import (
+    ApportionmentShareIn,
+    BackChargeCreate,
+    BackChargeUpdate,
+)
 from app.modules.projects.models import Project
 
 
@@ -144,3 +158,179 @@ async def build_recovery_ledger(session: AsyncSession, project_id: uuid.UUID) ->
     """Roll a project's back-charges into a per-party / per-currency ledger."""
     rows = await list_back_charges(session, project_id)
     return build_ledger(to_back_charge_item(row) for row in rows)
+
+
+# --- Apportionment: split one back-charge's chargeable amount across parties --
+
+
+async def list_apportionment(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    back_charge_id: uuid.UUID,
+) -> list[BackChargeApportionment]:
+    """Return the persisted apportionment rows for one back-charge, oldest first.
+
+    Scoped to the project so a row leaked under the wrong project id is never
+    returned. Empty when the back-charge has not been apportioned yet.
+    """
+    stmt = (
+        select(BackChargeApportionment)
+        .where(
+            BackChargeApportionment.project_id == project_id,
+            BackChargeApportionment.back_charge_id == back_charge_id,
+        )
+        .order_by(BackChargeApportionment.created_at)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def apportion_back_charge(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    back_charge_id: uuid.UUID,
+    shares: Sequence[ApportionmentShareIn],
+    *,
+    created_by: str | None = None,
+) -> list[BackChargeApportionment] | None:
+    """Split a back-charge's chargeable amount across *shares* and persist it.
+
+    The chargeable amount comes from the stored back-charge (gross times the
+    clamped chargeable percentage, via the pure engine), so the split always
+    reconciles to the same figure the ledger shows. The pure
+    :func:`distribute_chargeable` validates that the shares sum to 1.0 (it raises
+    :class:`ValueError`, surfaced by the router as a 422), merges duplicate
+    parties and reconciles the rounding residual into the largest share so the
+    persisted amounts sum to the chargeable amount exactly.
+
+    Re-apportioning replaces the previous split: any existing rows for the
+    back-charge are deleted first, so the stored apportionment is always the
+    latest one and never doubled up. Returns ``None`` when the back-charge does
+    not exist under this project (the router renders a 404); the underlying
+    ``ValueError`` from invalid shares propagates to the router.
+    """
+    back_charge = await get_back_charge(session, project_id, back_charge_id)
+    if back_charge is None:
+        return None
+
+    item = to_back_charge_item(back_charge)
+    currency = back_charge.currency or ""
+
+    # Pure split: validates the shares (sum to 1.0), merges duplicate parties and
+    # reconciles the cent residual into the largest share. A blank party is
+    # resolved to "unassigned" by the engine; carry the engine's resolved name.
+    party_shares = [PartyShare(party=s.party or "", share_pct=s.share_pct) for s in shares]
+    distributed = distribute_chargeable(item.chargeable_amount, party_shares)
+
+    # Keep each resolved party's basis from the request. Duplicate parties are
+    # merged by the engine; the first non-empty basis for a resolved party wins.
+    bases: dict[str, str] = {}
+    for s in shares:
+        resolved = (s.party or "").strip() or "unassigned"
+        if resolved not in bases and (s.basis or "").strip():
+            bases[resolved] = s.basis.strip()
+
+    # Replace any previous apportionment of this back-charge.
+    await session.execute(
+        delete(BackChargeApportionment).where(
+            BackChargeApportionment.project_id == project_id,
+            BackChargeApportionment.back_charge_id == back_charge_id,
+        )
+    )
+
+    share_by_party = {party: pct for party, pct in _merge_share_pcts(party_shares)}
+    rows: list[BackChargeApportionment] = []
+    for party, amount in distributed:
+        row = BackChargeApportionment(
+            back_charge_id=back_charge_id,
+            project_id=project_id,
+            party=party,
+            basis=bases.get(party, ""),
+            share_pct=share_by_party.get(party, Decimal("0")),
+            share_amount=amount,
+            currency=currency,
+            created_by=created_by,
+        )
+        session.add(row)
+        rows.append(row)
+
+    await session.flush()
+    return rows
+
+
+def _merge_share_pcts(shares: Sequence[PartyShare]) -> list[tuple[str, Decimal]]:
+    """Resolve blank parties and sum duplicate share percentages.
+
+    Mirrors the pure engine's merge so the persisted ``share_pct`` for a party
+    matches the percentage the split actually applied (two 0.3 rows for one party
+    persist a single 0.6). First-appearance order is preserved.
+    """
+    order: list[str] = []
+    summed: dict[str, Decimal] = {}
+    for s in shares:
+        party = (s.party or "").strip() or "unassigned"
+        if party not in summed:
+            order.append(party)
+            summed[party] = Decimal("0")
+        summed[party] += s.share_pct
+    return [(party, summed[party]) for party in order]
+
+
+# --- Recovery performance: recovered vs entitled, split by traceability ------
+
+
+def to_recovery_item(bc: BackCharge) -> RecoveryItem:
+    """Project a stored back-charge onto the recovery-analytics input dataclass.
+
+    ``chargeable`` is the engine-computed chargeable amount (gross times the
+    clamped chargeable percentage) so it matches the ledger; ``recovered`` is the
+    collected amount; ``status`` is the commercial state.
+
+    Traceability band: the recovery-performance engine needs a provability band
+    (``weak`` / ``moderate`` / ``strong``) per item to draw the high-vs-low
+    cohort split. A back-charge row carries no evidence of its own and this
+    module must not reach into the claims-evidence module to score one, so the
+    band is read from ``metadata_['traceability_band']`` when a caller has
+    stamped one and otherwise left blank. The pure engine normalises a blank or
+    unrecognised band to the most conservative value (``weak`` -> the LOW
+    cohort), so an un-scored back-charge can never inflate the high-traceability
+    recovery rate. This is the documented conservative default until back-charges
+    are linked to scored evidence.
+    """
+    item = to_back_charge_item(bc)
+    meta = bc.metadata_ if isinstance(bc.metadata_, dict) else {}
+    band = str(meta.get("traceability_band", "") or "")
+    return RecoveryItem(
+        chargeable=item.chargeable_amount,
+        recovered=item.recovered_amount,
+        currency=bc.currency or "",
+        traceability_band=band,
+        status=bc.status or "",
+    )
+
+
+async def build_recovery_performance(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+) -> RecoveryPerformance:
+    """Compute a project's recovery performance over its back-charge ledger."""
+    rows = await list_back_charges(session, project_id)
+    return compute_recovery_performance(to_recovery_item(row) for row in rows)
+
+
+async def build_portfolio_recovery_performance(
+    session: AsyncSession,
+    project_ids: Sequence[uuid.UUID],
+) -> RecoveryPerformance:
+    """Recovery performance across several projects, computed as one pool.
+
+    The back-charges of every supplied project (already filtered by the caller
+    to the projects they may access) are pooled and run through the pure engine,
+    which keeps currencies separate and splits by traceability cohort exactly as
+    the single-project view does. An empty id list yields an empty performance.
+    """
+    ids = list(project_ids)
+    if not ids:
+        return compute_recovery_performance([])
+    stmt = select(BackCharge).where(BackCharge.project_id.in_(ids)).order_by(BackCharge.created_at)
+    rows = list((await session.execute(stmt)).scalars().all())
+    return compute_recovery_performance(to_recovery_item(row) for row in rows)

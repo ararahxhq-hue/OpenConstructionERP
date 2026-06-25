@@ -93,3 +93,113 @@ class RecoveryLedgerOut(BaseModel):
     primary_outstanding: str
     by_party: list[PartyRecoveryOut]
     by_currency: list[CurrencyRecoveryOut]
+
+
+# --- Apportionment (splitting one back-charge across parties) ----------------
+
+
+class ApportionmentShareIn(BaseModel):
+    """One party's requested share of a back-charge.
+
+    ``share_pct`` is a FRACTION in [0, 1] (0.6 means 60%), not a whole-number
+    percentage; the shares for one back-charge must sum to 1.0 (the engine
+    validates this and 422s otherwise). ``basis`` is optional free text grounding
+    the share (a contract clause, an apportionment finding).
+    """
+
+    party: str = ""
+    share_pct: Decimal = Decimal("0")
+    basis: str = ""
+
+
+class ApportionmentRequest(BaseModel):
+    """Request to compute and persist an apportionment of a back-charge.
+
+    The back-charge's chargeable amount is split across ``shares`` (which must
+    sum to 1.0) and the resulting per-party amounts are stored, replacing any
+    previous apportionment of the same back-charge.
+    """
+
+    shares: list[ApportionmentShareIn]
+
+
+class ApportionedShareOut(BaseModel):
+    """One persisted party share of a back-charge, money as a string."""
+
+    id: str
+    back_charge_id: str
+    project_id: str
+    party: str
+    basis: str
+    share_pct: str
+    share_amount: str
+    currency: str
+
+
+class BackChargeApportionmentOut(BaseModel):
+    """A back-charge's full apportionment: the per-party shares and a total.
+
+    ``share_total`` is the sum of the persisted share amounts (a single
+    currency), which reconciles to the back-charge's chargeable amount exactly.
+    ``is_apportioned`` is false when no apportionment has been recorded yet.
+    """
+
+    back_charge_id: str
+    project_id: str
+    currency: str
+    chargeable_amount: str
+    share_total: str
+    is_apportioned: bool
+    shares: list[ApportionedShareOut]
+
+
+# --- Recovery performance (recovered vs entitled, by traceability) -----------
+
+
+class CohortRecoveryOut(BaseModel):
+    """Recovery performance for one traceability cohort or band, one currency.
+
+    ``cohort`` is a HIGH/LOW cohort label ('high' / 'low') or an individual band
+    ('strong' / 'moderate' / 'weak'), depending on which list it appears in.
+    ``rate`` is a fraction in [0, 1] rendered as a string, or null when the
+    cohort had no chargeable amount (an undefined ratio, never a misleading 0).
+    """
+
+    cohort: str
+    currency: str
+    item_count: int
+    chargeable_total: str
+    recovered_total: str
+    outstanding_total: str
+    absorbed_total: str
+    rate: str | None
+
+
+class CurrencyRecoveryPerfOut(BaseModel):
+    """Recovery performance for one currency across all traceability cohorts."""
+
+    currency: str
+    item_count: int
+    chargeable_total: str
+    recovered_total: str
+    outstanding_total: str
+    absorbed_total: str
+    rate: str | None
+    by_cohort: list[CohortRecoveryOut]
+    by_band: list[CohortRecoveryOut]
+
+
+class RecoveryPerformanceOut(BaseModel):
+    """The recovery position per currency, never blended across currency codes.
+
+    ``project_id`` is null for the portfolio variant that spans every project
+    the caller may access. ``primary_rate`` is the largest-chargeable currency's
+    overall recovery rate as a string fraction (or null), a single headline that
+    never mixes currencies.
+    """
+
+    project_id: str | None
+    item_count: int
+    primary_currency: str
+    primary_rate: str | None
+    by_currency: list[CurrencyRecoveryPerfOut]

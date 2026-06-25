@@ -34,6 +34,7 @@ import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { ProvabilityGauge, type SubjectKind } from '@/features/claims-evidence';
 import {
   getCoordinationPlan,
   getCycleTimeBoard,
@@ -41,6 +42,8 @@ import {
   getImpactProjection,
   getRecoveryLedger,
   listBackCharges,
+  getRecoveryPerformance,
+  getBackChargeApportionment,
   clarifyChangeNote,
   getDisputeRiskBoard,
   getDecisionImpact,
@@ -118,6 +121,25 @@ function humanize(token: string): string {
 function dateOnly(value: string | null | undefined): string {
   if (!value) return '-';
   return String(value).slice(0, 10);
+}
+
+/**
+ * Render a recovery rate (a fraction string in [0, 1], or null) as a percent.
+ * The rate is a pure ratio, not money, so Number() is safe here; null means the
+ * cohort had no chargeable amount (an undefined ratio) and shows as a dash.
+ */
+function ratePercent(rate: string | null | undefined): string {
+  if (rate === null || rate === undefined || rate === '') return '-';
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return '-';
+  return `${Math.round(n * 100)}%`;
+}
+
+/** Badge variant for a HIGH/LOW traceability cohort label. */
+function cohortVariant(cohort: string): BadgeVariant {
+  if (cohort === 'high' || cohort === 'strong') return 'success';
+  if (cohort === 'moderate') return 'warning';
+  return 'neutral';
 }
 
 // --- Small shared layout helpers -------------------------------------------
@@ -399,6 +421,158 @@ function ImpactTab({ projectId }: { projectId: string }) {
 
 // --- Tab: cost recovery -----------------------------------------------------
 
+/**
+ * Recovery-performance index (#11): how much of what the project was entitled to
+ * recover it actually recovered, split by how traceable the responsible owner
+ * was. The high-vs-low contrast is the point - recovery tends to concentrate in
+ * the high-traceability cohort, and absorbed cost in the low one.
+ */
+function RecoveryPerformanceCard({ projectId }: { projectId: string }) {
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'recovery-performance', projectId],
+    queryFn: () => getRecoveryPerformance(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const perf = q.data;
+  if (q.isLoading) return <SkeletonTable />;
+  // Defensive: only render once we have a well-formed, non-empty performance.
+  if (q.isError || !perf || !Array.isArray(perf.by_currency) || !perf.item_count) return null;
+  // The primary currency carries the largest chargeable total; show its cohort
+  // split so the high-vs-low rates are denominated in one currency.
+  const primary = perf.by_currency.find((c) => c.currency === perf.primary_currency);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile label="Recovery rate" value={ratePercent(perf.primary_rate)} tone="success" />
+        <StatTile
+          label="Recovered"
+          value={
+            <MoneyDisplay
+              amount={primary?.recovered_total ?? '0'}
+              currency={perf.primary_currency}
+              showCode
+            />
+          }
+        />
+        <StatTile
+          label="Absorbed"
+          value={
+            <MoneyDisplay
+              amount={primary?.absorbed_total ?? '0'}
+              currency={perf.primary_currency}
+              showCode
+            />
+          }
+          tone="error"
+        />
+      </div>
+      {primary && primary.by_cohort.length > 0 && (
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+            Recovery rate by owner traceability ({perf.primary_currency})
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+              <tr>
+                <th className="px-3 py-2">Traceability</th>
+                <th className="px-3 py-2 text-right">Rate</th>
+                <th className="px-3 py-2 text-right">Chargeable</th>
+                <th className="px-3 py-2 text-right">Recovered</th>
+                <th className="px-3 py-2 text-right">Absorbed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {primary.by_cohort.map((c) => (
+                <tr key={c.cohort} className="border-t border-border-light">
+                  <td className="px-3 py-2">
+                    <Badge variant={cohortVariant(c.cohort)}>{humanize(c.cohort)}</Badge>
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium">{ratePercent(c.rate)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <MoneyDisplay amount={c.chargeable_total} currency={c.currency} showCode />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <MoneyDisplay amount={c.recovered_total} currency={c.currency} showCode />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <MoneyDisplay amount={c.absorbed_total} currency={c.currency} showCode />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="border-t border-border-light px-3 py-2 text-xs leading-relaxed text-content-tertiary">
+            High traceability means the responsible owner is provable from the record (a timely
+            notice or complete evidence). Back-charges with no scored evidence yet count as low,
+            so this never overstates the high-traceability rate.
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Apportionment breakdown (#8): one back-charge's chargeable amount split across
+ * the parties that share responsibility. Fetched on demand when the row is
+ * expanded so the list view stays a single request.
+ */
+function ApportionmentDetail({
+  projectId,
+  backChargeId,
+}: {
+  projectId: string;
+  backChargeId: string;
+}) {
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'apportionment', projectId, backChargeId],
+    queryFn: () => getBackChargeApportionment(projectId, backChargeId),
+    enabled: !!projectId && !!backChargeId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  if (q.isLoading) {
+    return <div className="px-3 py-2 text-sm text-content-tertiary">Loading split...</div>;
+  }
+  if (q.isError) {
+    return (
+      <div className="px-3 py-2 text-sm text-semantic-error">{getErrorMessage(q.error)}</div>
+    );
+  }
+  const data = q.data;
+  if (!data || !data.is_apportioned || data.shares.length === 0) {
+    return (
+      <div className="px-3 py-2 text-sm text-content-tertiary">
+        Not apportioned. The whole chargeable amount sits with the responsible party.
+      </div>
+    );
+  }
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+        <tr>
+          <th className="px-3 py-2">Party</th>
+          <th className="px-3 py-2 text-right">Share</th>
+          <th className="px-3 py-2 text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.shares.map((s) => (
+          <tr key={s.id} className="border-t border-border-light">
+            <td className="px-3 py-2 text-content-primary">{s.party}</td>
+            <td className="px-3 py-2 text-right">{ratePercent(s.share_pct)}</td>
+            <td className="px-3 py-2 text-right font-medium">
+              <MoneyDisplay amount={s.share_amount} currency={s.currency} showCode />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function RecoveryTab({ projectId }: { projectId: string }) {
   const ledgerQ = useQuery({
     queryKey: ['change-intelligence', 'recovery-ledger', projectId],
@@ -415,6 +589,8 @@ function RecoveryTab({ projectId }: { projectId: string }) {
     staleTime: 30_000,
   });
   const ledger = ledgerQ.data;
+  const charges = chargesQ.data ?? [];
+  const [openCharge, setOpenCharge] = useState<string | null>(null);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -433,6 +609,7 @@ function RecoveryTab({ projectId }: { projectId: string }) {
         emptyTitle="No back-charges"
         emptyDescription="Record a back-charge to start tracking what the project means to recover."
       >
+        <RecoveryPerformanceCard projectId={projectId} />
         <Card className="overflow-hidden p-0">
           <table className="w-full text-sm">
             <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
@@ -463,6 +640,44 @@ function RecoveryTab({ projectId }: { projectId: string }) {
             </tbody>
           </table>
         </Card>
+        {charges.length > 0 && (
+          <Card className="overflow-hidden p-0">
+            <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+              Apportionment by back-charge
+            </div>
+            <ul>
+              {charges.map((bc) => {
+                const expanded = openCharge === bc.id;
+                return (
+                  <li key={bc.id} className="border-t border-border-light first:border-t-0">
+                    <button
+                      type="button"
+                      onClick={() => setOpenCharge(expanded ? null : bc.id)}
+                      aria-expanded={expanded}
+                      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-sm hover:bg-surface-secondary"
+                    >
+                      <ArrowRight
+                        className={`h-3.5 w-3.5 shrink-0 text-content-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
+                      />
+                      <span className="font-medium text-content-primary">
+                        {bc.responsible_party || '(unassigned)'}
+                      </span>
+                      <span className="text-content-tertiary">{bc.description || bc.basis || bc.source_ref}</span>
+                      <span className="ml-auto">
+                        <MoneyDisplay amount={bc.chargeable_amount} currency={bc.currency} showCode />
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div className="border-t border-border-light bg-surface-primary">
+                        <ApportionmentDetail projectId={projectId} backChargeId={bc.id} />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
       </PanelState>
     </div>
   );
@@ -471,6 +686,7 @@ function RecoveryTab({ projectId }: { projectId: string }) {
 // --- Tab: dispute risk (the dispute radar) ---------------------------------
 
 function DisputeRiskTab({ projectId }: { projectId: string }) {
+  const [openId, setOpenId] = useState<string | null>(null);
   const q = useQuery({
     queryKey: ['change-intelligence', 'dispute-risk', projectId],
     queryFn: () => getDisputeRiskBoard(projectId),
@@ -497,31 +713,53 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
         emptyDescription="There are no open changes to assess for dispute exposure right now."
       >
         <div className="space-y-2">
-          {board?.items.map((it) => (
-            <Card key={it.change_id} className="p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={EXPOSURE_VARIANT[it.band]}>{humanize(it.band)}</Badge>
-                <span className="text-sm font-semibold text-content-primary">{it.exposure_score}</span>
-                <span className="text-xs text-content-tertiary">{humanize(it.kind)}</span>
-                <span className="font-medium text-content-primary">
-                  {it.change_ref ? `${it.change_ref}: ` : ''}
-                  {it.title || '(untitled)'}
-                </span>
-                <span className="ml-auto inline-flex items-center gap-1 text-xs text-content-tertiary">
-                  <ShieldAlert className="h-3.5 w-3.5" />
-                  {humanize(it.dominant_driver)}
-                </span>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-secondary">
-                {it.currency ? (
-                  <span>
-                    At risk: <MoneyDisplay amount={it.money_basis} currency={it.currency} showCode />
-                  </span>
-                ) : null}
-                <span className="text-content-tertiary">{it.recommended_cure}</span>
-              </div>
-            </Card>
-          ))}
+          {board?.items.map((it) => {
+            const expanded = openId === it.change_id;
+            return (
+              <Card key={it.change_id} className="overflow-hidden p-0">
+                <button
+                  type="button"
+                  onClick={() => setOpenId(expanded ? null : it.change_id)}
+                  aria-expanded={expanded}
+                  className="w-full px-3 py-3 text-left hover:bg-surface-secondary"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ArrowRight
+                      className={`h-3.5 w-3.5 shrink-0 text-content-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
+                    />
+                    <Badge variant={EXPOSURE_VARIANT[it.band]}>{humanize(it.band)}</Badge>
+                    <span className="text-sm font-semibold text-content-primary">{it.exposure_score}</span>
+                    <span className="text-xs text-content-tertiary">{humanize(it.kind)}</span>
+                    <span className="font-medium text-content-primary">
+                      {it.change_ref ? `${it.change_ref}: ` : ''}
+                      {it.title || '(untitled)'}
+                    </span>
+                    <span className="ml-auto inline-flex items-center gap-1 text-xs text-content-tertiary">
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      {humanize(it.dominant_driver)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 pl-5 text-sm text-content-secondary">
+                    {it.currency ? (
+                      <span>
+                        At risk: <MoneyDisplay amount={it.money_basis} currency={it.currency} showCode />
+                      </span>
+                    ) : null}
+                    <span className="text-content-tertiary">{it.recommended_cure}</span>
+                  </div>
+                </button>
+                {expanded && (
+                  <div className="border-t border-border-light bg-surface-primary p-3">
+                    <ProvabilityGauge
+                      projectId={projectId}
+                      subjectKind={it.kind as SubjectKind}
+                      subjectId={it.change_id}
+                    />
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       </PanelState>
     </div>

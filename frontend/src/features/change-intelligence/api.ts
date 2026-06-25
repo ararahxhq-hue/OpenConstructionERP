@@ -233,6 +233,82 @@ export function listBackCharges(projectId: string): Promise<BackCharge[]> {
   return apiGet<BackCharge[]>(`${CR_BASE}/projects/${projectId}/back-charges`);
 }
 
+// --- Recovery performance (recovered vs entitled, by traceability) ----------
+// How much of what the project was entitled to recover it actually recovered,
+// split by how traceable the responsible owner was (high vs low). Money is a
+// string handed to MoneyDisplay untouched; the rate is a string fraction in
+// [0, 1] (or null when nothing was chargeable - an undefined ratio, not 0).
+
+export interface CohortRecovery {
+  cohort: string;
+  currency: string;
+  item_count: number;
+  chargeable_total: string;
+  recovered_total: string;
+  outstanding_total: string;
+  absorbed_total: string;
+  rate: string | null;
+}
+
+export interface CurrencyRecoveryPerf {
+  currency: string;
+  item_count: number;
+  chargeable_total: string;
+  recovered_total: string;
+  outstanding_total: string;
+  absorbed_total: string;
+  rate: string | null;
+  by_cohort: CohortRecovery[];
+  by_band: CohortRecovery[];
+}
+
+export interface RecoveryPerformance {
+  project_id: string | null;
+  item_count: number;
+  primary_currency: string;
+  primary_rate: string | null;
+  by_currency: CurrencyRecoveryPerf[];
+}
+
+export function getRecoveryPerformance(projectId: string): Promise<RecoveryPerformance> {
+  return apiGet<RecoveryPerformance>(`${CR_BASE}/projects/${projectId}/recovery-performance`);
+}
+
+// --- Apportionment (one back-charge split across responsible parties) --------
+// The chargeable amount of a single back-charge divided across the parties that
+// share responsibility. Each share amount is a string for MoneyDisplay; the
+// amounts reconcile to the chargeable amount exactly.
+
+export interface ApportionedShare {
+  id: string;
+  back_charge_id: string;
+  project_id: string;
+  party: string;
+  basis: string;
+  share_pct: string;
+  share_amount: string;
+  currency: string;
+}
+
+export interface BackChargeApportionment {
+  back_charge_id: string;
+  project_id: string;
+  currency: string;
+  chargeable_amount: string;
+  share_total: string;
+  is_apportioned: boolean;
+  shares: ApportionedShare[];
+}
+
+export function getBackChargeApportionment(
+  projectId: string,
+  backChargeId: string,
+): Promise<BackChargeApportionment> {
+  return apiGet<BackChargeApportionment>(
+    `${CR_BASE}/projects/${projectId}/back-charges/${backChargeId}/apportionment`,
+  );
+}
+
 // --- Dispute-exposure radar ("which open change goes to a dispute first") ---
 // A composition over provability, overdue age, SLA, ownership and money at
 // risk. Money is carried on the wire as a string and handed to MoneyDisplay
