@@ -29,10 +29,18 @@ from app.modules.change_intelligence.schemas import (
     CycleTimeBoardOut,
     DecisionImpactOut,
     DecisionImpactRowOut,
+    DelayRiskBoardOut,
+    DelayRiskFactorOut,
+    DelayRiskItemOut,
     DisputeExposureSummaryOut,
     DisputeRiskBoardOut,
     DisputeRiskItemOut,
     ImpactProjectionOut,
+    IntakeDraftOut,
+    IntakePreviewIn,
+    IntakePreviewOut,
+    IntakeProfileOut,
+    IntakeProfilesOut,
     ItemAgingOut,
     KindImpactOut,
     OwnershipChainOut,
@@ -48,11 +56,15 @@ from app.modules.change_intelligence.service import (
     build_comms_digest_for_project,
     build_coordination_plan,
     build_decision_impact,
+    build_delay_risk_board,
     build_dispute_risk_board,
     build_impact_projection,
     build_ownership_chain_for,
     build_project_board,
     clarify_change_note,
+    intake_canonical_fields,
+    list_intake_profiles,
+    preview_intake,
 )
 
 router = APIRouter(tags=["Change Intelligence"])
@@ -368,4 +380,122 @@ async def get_change_watch(
             )
             for r in watch.items
         ],
+    )
+
+
+@router.get("/projects/{project_id}/intake/profiles", response_model=IntakeProfilesOut)
+async def get_intake_profiles(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> IntakeProfilesOut:
+    """List the intake mapping profiles a foreign change record can be read with.
+
+    Built-in presets today (a generic tracker-spreadsheet dialect and a generic
+    email-intake-form dialect). The list is project-scoped so per-project custom
+    profiles can extend it later without changing the contract.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+    canonical = intake_canonical_fields()
+    return IntakeProfilesOut(
+        project_id=str(project_id),
+        profiles=[
+            IntakeProfileOut(
+                profile_name=p.profile_name,
+                required_fields=list(p.required_fields),
+                canonical_fields=canonical,
+                field_alias_count=len(p.field_aliases),
+                unit_synonym_count=len(p.unit_synonyms),
+                value_synonym_count=len(p.value_synonyms),
+            )
+            for p in list_intake_profiles()
+        ],
+    )
+
+
+@router.post("/projects/{project_id}/intake/preview", response_model=IntakePreviewOut)
+async def preview_intake_record(
+    project_id: uuid.UUID,
+    payload: IntakePreviewIn,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> IntakePreviewOut:
+    """Normalize one foreign change-request record and show how it maps.
+
+    Stateless preview: the foreign record is read with the selected profile and
+    the canonical draft is returned with its diagnostics (unmapped columns,
+    missing required fields, parse warnings, completeness). Nothing is persisted.
+    An unknown profile name 404s.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+    try:
+        result = preview_intake(payload.profile_name, payload.record)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown intake profile") from exc
+
+    draft = result.draft
+    return IntakePreviewOut(
+        project_id=str(project_id),
+        profile_name=payload.profile_name,
+        draft=IntakeDraftOut(
+            title=draft.title,
+            description=draft.description,
+            cost_impact=str(draft.cost_impact) if draft.cost_impact is not None else None,
+            currency=draft.currency,
+            schedule_impact_days=(str(draft.schedule_impact_days) if draft.schedule_impact_days is not None else None),
+            requested_by=draft.requested_by,
+            source_ref=draft.source_ref,
+        ),
+        unmapped_fields=list(result.unmapped_fields),
+        missing_required=list(result.missing_required),
+        warnings=list(result.warnings),
+        completeness=result.completeness,
+    )
+
+
+@router.get("/projects/{project_id}/delay-risk", response_model=DelayRiskBoardOut)
+async def get_delay_risk_board(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> DelayRiskBoardOut:
+    """Rank the project's open changes by how likely they are to overrun.
+
+    Each open change is graded into a [0, 1] risk and a low / elevated / high
+    band from its dwell against its response window, its holder's overdue rate
+    and open load, and its size against the contract, with the ranked factor
+    contributions so a row shows why it is at risk. Highest risk first.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    ranked, items_by_id = await build_delay_risk_board(session, project_id)
+    band_counts: dict[str, int] = {"low": 0, "elevated": 0, "high": 0}
+    items: list[DelayRiskItemOut] = []
+    for result in ranked:
+        band_counts[result.band] = band_counts.get(result.band, 0) + 1
+        aging = items_by_id.get(result.change_id)
+        items.append(
+            DelayRiskItemOut(
+                change_id=result.change_id,
+                change_ref=aging.code if aging is not None else "",
+                kind=aging.kind if aging is not None else "",
+                title=aging.title if aging is not None else "",
+                party=aging.party if aging is not None else "",
+                risk=result.risk,
+                band=result.band,
+                age_days=aging.age_days if aging is not None else 0.0,
+                overdue=aging.overdue if aging is not None else False,
+                days_to_due=aging.days_to_due if aging is not None else None,
+                top_factors=[
+                    DelayRiskFactorOut(name=f.name, value=f.value, contribution=f.contribution)
+                    for f in result.top_factors
+                ],
+            )
+        )
+    return DelayRiskBoardOut(
+        project_id=str(project_id),
+        generated_at=datetime.now(UTC).isoformat(),
+        item_count=len(items),
+        band_counts=band_counts,
+        items=items,
     )

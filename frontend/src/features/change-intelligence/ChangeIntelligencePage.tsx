@@ -29,6 +29,8 @@ import {
   GitCompareArrows,
   Radar,
   ShieldAlert,
+  Import,
+  Gauge,
 } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
@@ -48,11 +50,16 @@ import {
   getDisputeRiskBoard,
   getDecisionImpact,
   getChangeWatch,
+  getIntakeProfiles,
+  previewIntake,
+  getDelayRiskBoard,
   type Urgency,
   type Awaiting,
   type ClarifiedRequest,
   type ExposureBand,
   type WatchClass,
+  type DelayBand,
+  type IntakePreview,
 } from './api';
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
@@ -71,7 +78,9 @@ type Tab =
   | 'dispute'
   | 'decision'
   | 'watch'
-  | 'clarifier';
+  | 'clarifier'
+  | 'intake'
+  | 'delay';
 
 const URGENCY_VARIANT: Record<Urgency, BadgeVariant> = {
   overdue: 'error',
@@ -1039,6 +1048,239 @@ function ClarifierTab() {
   );
 }
 
+// --- Tab: multi-source intake ----------------------------------------------
+
+const INTAKE_PLACEHOLDER = `{
+  "Change Title": "Extra waterproofing to basement",
+  "Estimated Cost": "$12,500.00",
+  "Schedule Impact (days)": "5",
+  "Raised By": "Site Engineer",
+  "Change No": "CO-44"
+}`;
+
+function IntakeTab({ projectId }: { projectId: string }) {
+  const profilesQ = useQuery({
+    queryKey: ['change-intelligence', 'intake-profiles', projectId],
+    queryFn: () => getIntakeProfiles(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const profiles = profilesQ.data?.profiles ?? [];
+  const [profileName, setProfileName] = useState('');
+  const [raw, setRaw] = useState('');
+  const effectiveProfile = profileName || profiles[0]?.profile_name || '';
+
+  const m = useMutation<IntakePreview, unknown, void>({
+    mutationFn: () => {
+      let record: unknown;
+      try {
+        record = JSON.parse(raw || '{}');
+      } catch {
+        throw new Error('The record is not valid JSON.');
+      }
+      if (typeof record !== 'object' || record === null || Array.isArray(record)) {
+        throw new Error('The record must be a JSON object of field: value pairs.');
+      }
+      return previewIntake(projectId, effectiveProfile, record as Record<string, unknown>);
+    },
+  });
+  const result = m.data;
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card className="space-y-3 p-4">
+        <label className="block text-sm font-medium text-content-secondary" htmlFor="ci-intake-record">
+          Foreign change record (JSON)
+        </label>
+        <textarea
+          id="ci-intake-record"
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          rows={9}
+          placeholder={INTAKE_PLACEHOLDER}
+          className="w-full rounded-md border border-border-light bg-surface-primary p-2 font-mono text-xs focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={effectiveProfile}
+            onChange={(e) => setProfileName(e.target.value)}
+            className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm"
+            aria-label="Intake profile"
+            disabled={profiles.length === 0}
+          >
+            {profiles.map((p) => (
+              <option key={p.profile_name} value={p.profile_name}>
+                {humanize(p.profile_name)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!raw.trim() || !effectiveProfile || m.isPending}
+            onClick={() => m.mutate()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            <Import className="h-4 w-4" />
+            {m.isPending ? 'Reading...' : 'Preview'}
+          </button>
+        </div>
+        <p className="text-xs text-content-tertiary">
+          Paste a row from a tracker spreadsheet or an email intake form. The record is normalized to a canonical change
+          draft for preview only - nothing is saved.
+        </p>
+        {m.isError && (
+          <div className="flex items-center gap-2 text-sm text-semantic-error">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{getErrorMessage(m.error)}</span>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        {!result ? (
+          <EmptyState
+            icon={<Import className="h-6 w-6" />}
+            title="Canonical draft"
+            description="Preview a foreign record to see the title, cost, schedule impact and what could not be mapped."
+          />
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-lg font-semibold text-content-primary">{result.draft.title || '(no title)'}</span>
+              <Badge
+                variant={result.completeness >= 0.7 ? 'success' : result.completeness >= 0.4 ? 'warning' : 'error'}
+              >
+                {Math.round(result.completeness * 100)}% complete
+              </Badge>
+            </div>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              <dt className="text-content-tertiary">Cost impact</dt>
+              <dd className="text-content-secondary">
+                {result.draft.cost_impact !== null ? (
+                  <MoneyDisplay amount={result.draft.cost_impact} currency={result.draft.currency ?? ''} showCode />
+                ) : (
+                  '-'
+                )}
+              </dd>
+              <dt className="text-content-tertiary">Schedule impact</dt>
+              <dd className="text-content-secondary">
+                {result.draft.schedule_impact_days !== null ? `${result.draft.schedule_impact_days} d` : '-'}
+              </dd>
+              <dt className="text-content-tertiary">Requested by</dt>
+              <dd className="text-content-secondary">{result.draft.requested_by || '-'}</dd>
+              <dt className="text-content-tertiary">Reference</dt>
+              <dd className="text-content-secondary">{result.draft.source_ref || '-'}</dd>
+            </dl>
+            {result.draft.description && <p className="text-sm text-content-secondary">{result.draft.description}</p>}
+            {result.missing_required.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  Missing required
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {result.missing_required.map((f) => (
+                    <Badge key={f} variant="error">
+                      {humanize(f)}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {result.unmapped_fields.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  Unmapped columns
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {result.unmapped_fields.map((f) => (
+                    <span
+                      key={f}
+                      className="rounded border border-border-light px-1.5 py-0.5 text-xs text-content-tertiary"
+                    >
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {result.warnings.length > 0 && (
+              <ul className="space-y-1 text-xs text-content-secondary">
+                {result.warnings.map((w) => (
+                  <li key={w} className="flex items-start gap-1.5">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-semantic-error" />
+                    <span>{w}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// --- Tab: predictive delay risk --------------------------------------------
+
+const DELAY_VARIANT: Record<DelayBand, BadgeVariant> = {
+  high: 'error',
+  elevated: 'warning',
+  low: 'neutral',
+};
+
+function DelayRiskTab({ projectId }: { projectId: string }) {
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'delay-risk', projectId],
+    queryFn: () => getDelayRiskBoard(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const board = q.data;
+  const counts = board?.band_counts ?? {};
+  const items = board?.items ?? [];
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <StatTile label="High" value={counts.high ?? 0} tone="error" />
+        <StatTile label="Elevated" value={counts.elevated ?? 0} tone="warning" />
+        <StatTile label="Low" value={counts.low ?? 0} tone="success" />
+      </div>
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={items.length === 0}
+        emptyIcon={<Gauge className="h-6 w-6" />}
+        emptyTitle="No open changes"
+        emptyDescription="There are no open changes to score for delay risk right now."
+      >
+        <div className="space-y-2">
+          {items.map((it) => (
+            <Card key={it.change_id} className="p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={DELAY_VARIANT[it.band]}>{humanize(it.band)}</Badge>
+                <span className="font-medium text-content-primary">{it.change_ref || humanize(it.kind)}</span>
+                <span className="text-xs text-content-tertiary">{it.title}</span>
+                <span className="ml-auto flex flex-wrap items-center gap-x-3 text-sm text-content-secondary">
+                  <span>{`${Math.round(it.risk * 100)}% risk`}</span>
+                  {it.overdue && <span className="text-semantic-error">overdue</span>}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-content-tertiary">
+                <span>{it.party ? `Held by ${humanize(it.party)}` : 'Unassigned'}</span>
+                {it.top_factors.slice(0, 3).map((f) => (
+                  <span key={f.name}>{`${humanize(f.name)} ${Math.round(f.value * 100)}%`}</span>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+      </PanelState>
+    </div>
+  );
+}
+
 // --- Page -------------------------------------------------------------------
 
 export function ChangeIntelligencePage() {
@@ -1108,6 +1350,8 @@ export function ChangeIntelligencePage() {
               { id: 'decision', label: 'Decision impact', icon: <Scale className="h-4 w-4" /> },
               { id: 'watch', label: 'Watch', icon: <ShieldAlert className="h-4 w-4" /> },
               { id: 'clarifier', label: 'Clarifier', icon: <Sparkles className="h-4 w-4" /> },
+              { id: 'intake', label: 'Intake', icon: <Import className="h-4 w-4" /> },
+              { id: 'delay', label: 'Delay risk', icon: <Gauge className="h-4 w-4" /> },
             ]}
           />
           <div role="tabpanel" id={ids.panelId(tab)} aria-labelledby={ids.tabId(tab)}>
@@ -1120,6 +1364,8 @@ export function ChangeIntelligencePage() {
             {tab === 'decision' && <DecisionImpactTab projectId={projectId} />}
             {tab === 'watch' && <WatchTab projectId={projectId} />}
             {tab === 'clarifier' && <ClarifierTab />}
+            {tab === 'intake' && <IntakeTab projectId={projectId} />}
+            {tab === 'delay' && <DelayRiskTab projectId={projectId} />}
           </div>
         </>
       )}

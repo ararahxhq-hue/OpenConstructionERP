@@ -435,3 +435,97 @@ export interface ChangeWatch {
 export function getChangeWatch(projectId: string): Promise<ChangeWatch> {
   return apiGet<ChangeWatch>(`${CI_BASE}/projects/${projectId}/change-watch`);
 }
+
+// --- Multi-source intake normalizer ----------------------------------------
+// Read a foreign change-request record (a tracker-spreadsheet row, an email
+// intake form) with a mapping profile and preview the canonical draft it maps
+// to. Cost is money carried as a string for MoneyDisplay; the schedule day count
+// is an exact Decimal string. Nothing is persisted - this is a preview.
+
+export interface IntakeProfile {
+  profile_name: string;
+  required_fields: string[];
+  canonical_fields: string[];
+  field_alias_count: number;
+  unit_synonym_count: number;
+  value_synonym_count: number;
+}
+
+export interface IntakeProfiles {
+  project_id: string;
+  profiles: IntakeProfile[];
+}
+
+export interface IntakeDraft {
+  title: string | null;
+  description: string | null;
+  cost_impact: string | null;
+  currency: string | null;
+  schedule_impact_days: string | null;
+  requested_by: string | null;
+  source_ref: string | null;
+}
+
+export interface IntakePreview {
+  project_id: string;
+  profile_name: string;
+  draft: IntakeDraft;
+  unmapped_fields: string[];
+  missing_required: string[];
+  warnings: string[];
+  completeness: number;
+}
+
+export function getIntakeProfiles(projectId: string): Promise<IntakeProfiles> {
+  return apiGet<IntakeProfiles>(`${CI_BASE}/projects/${projectId}/intake/profiles`);
+}
+
+export function previewIntake(
+  projectId: string,
+  profileName: string,
+  record: Record<string, unknown>,
+): Promise<IntakePreview> {
+  return apiPost<IntakePreview>(`${CI_BASE}/projects/${projectId}/intake/preview`, {
+    profile_name: profileName,
+    record,
+  });
+}
+
+// --- Predictive delay / overrun risk ---------------------------------------
+// Rank a project's open changes by how likely they are to overrun their
+// response window, with the ranked factor contributions behind each score. The
+// risk and factor values are pure 0-1 ratios (no money), safe to render direct.
+
+export type DelayBand = 'low' | 'elevated' | 'high';
+
+export interface DelayRiskFactor {
+  name: string;
+  value: number;
+  contribution: number;
+}
+
+export interface DelayRiskItem {
+  change_id: string;
+  change_ref: string;
+  kind: string;
+  title: string;
+  party: string;
+  risk: number;
+  band: DelayBand;
+  age_days: number;
+  overdue: boolean;
+  days_to_due: number | null;
+  top_factors: DelayRiskFactor[];
+}
+
+export interface DelayRiskBoard {
+  project_id: string;
+  generated_at: string;
+  item_count: number;
+  band_counts: Record<string, number>;
+  items: DelayRiskItem[];
+}
+
+export function getDelayRiskBoard(projectId: string): Promise<DelayRiskBoard> {
+  return apiGet<DelayRiskBoard>(`${CI_BASE}/projects/${projectId}/delay-risk`);
+}

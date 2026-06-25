@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -358,3 +359,109 @@ class ChangeWatchOut(BaseModel):
     item_count: int
     counts: dict[str, int]
     items: list[WatchResultOut]
+
+
+# --- Multi-source intake normalizer (#14) ----------------------------------
+
+
+class IntakeProfileOut(BaseModel):
+    """One intake mapping profile a foreign change record can be read with."""
+
+    profile_name: str
+    required_fields: list[str]
+    canonical_fields: list[str]
+    field_alias_count: int
+    unit_synonym_count: int
+    value_synonym_count: int
+
+
+class IntakeProfilesOut(BaseModel):
+    """The intake profiles available for a project (built-in presets today)."""
+
+    project_id: str
+    profiles: list[IntakeProfileOut]
+
+
+class IntakePreviewIn(BaseModel):
+    """Request to normalize one foreign change-request record for preview.
+
+    ``record`` is the foreign row exactly as its source produced it - a flat map
+    of that source's own field names to values - and ``profile_name`` selects the
+    dialect to read it with. Nothing is persisted; the response shows the mapping.
+    """
+
+    profile_name: str
+    record: dict[str, Any]
+
+
+class IntakeDraftOut(BaseModel):
+    """The canonical change-request draft a foreign record normalized to.
+
+    ``cost_impact`` and ``schedule_impact_days`` are carried as strings: the cost
+    is money (Decimal-as-string, the platform's money-on-the-wire rule) and the
+    day count is an exact Decimal rendered the same way. A field the record did
+    not supply is null.
+    """
+
+    title: str | None
+    description: str | None
+    cost_impact: str | None
+    currency: str | None
+    schedule_impact_days: str | None
+    requested_by: str | None
+    source_ref: str | None
+
+
+class IntakePreviewOut(BaseModel):
+    """The outcome of normalizing one foreign record: the draft plus diagnostics.
+
+    ``unmapped_fields`` are foreign columns no alias matched, ``missing_required``
+    the required canonical fields that ended up empty, ``warnings`` every
+    non-fatal parse problem, and ``completeness`` the fraction of required fields
+    present in ``[0, 1]``.
+    """
+
+    project_id: str
+    profile_name: str
+    draft: IntakeDraftOut
+    unmapped_fields: list[str]
+    missing_required: list[str]
+    warnings: list[str]
+    completeness: float
+
+
+# --- Predictive delay / overrun risk (#19) ---------------------------------
+
+
+class DelayRiskFactorOut(BaseModel):
+    """One factor's contribution to a change's blended delay risk."""
+
+    name: str
+    value: float
+    contribution: float
+
+
+class DelayRiskItemOut(BaseModel):
+    """One open change graded for how likely it is to overrun, and why."""
+
+    change_id: str
+    change_ref: str
+    kind: str
+    title: str
+    party: str
+    risk: float
+    band: str
+    age_days: float
+    overdue: bool
+    days_to_due: float | None
+    top_factors: list[DelayRiskFactorOut]
+
+
+class DelayRiskBoardOut(BaseModel):
+    """Project-wide delay-risk ranking: which open changes will likely slip."""
+
+    project_id: str
+    generated_at: str
+    item_count: int
+    band_counts: dict[str, int]
+    items: list[DelayRiskItemOut]

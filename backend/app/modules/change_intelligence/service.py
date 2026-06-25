@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.modules.change_intelligence.cycle_time import (
     UNASSIGNED,
     ChangeItem,
     CycleTimeBoard,
+    ItemAging,
     build_board,
     is_open_status,
     parse_due,
@@ -41,6 +42,13 @@ from app.modules.change_intelligence.decision_impact import (
     ChangeImpact,
     DecisionImpact,
     project_with_pending,
+)
+from app.modules.change_intelligence.delay_risk import (
+    DelayRiskInput,
+    DelayRiskResult,
+)
+from app.modules.change_intelligence.delay_risk import (
+    rank as rank_delay_risk,
 )
 from app.modules.change_intelligence.dispute_risk import (
     DisputeExposureSummary,
@@ -59,6 +67,15 @@ from app.modules.change_intelligence.impact_projection import (
     ApprovedChange,
     ImpactProjection,
     project_impacts,
+)
+from app.modules.change_intelligence.intake_normalizer import (
+    BUILTIN_PROFILES,
+    CANONICAL_FIELDS,
+    IntakeMapping,
+    NormalizationResult,
+)
+from app.modules.change_intelligence.intake_normalizer import (
+    normalize as normalize_intake,
 )
 from app.modules.change_intelligence.ownership_chain import (
     HandoffRow,
@@ -87,6 +104,7 @@ from app.modules.correspondence.models import Correspondence
 from app.modules.cost_recovery.back_charge import BackChargeItem
 from app.modules.cost_recovery.models import BackCharge
 from app.modules.moc.models import MoCEntry
+from app.modules.projects.models import Project
 from app.modules.variations.models import Notice, VariationOrder, VariationRequest
 
 # Each change-family source table mapped to its engine kind token. Every model
@@ -711,3 +729,161 @@ async def build_change_watch(
         for item in items
     ]
     return build_watch(watch_items, now=moment)
+
+
+# --- Multi-source change-request intake (#14) ------------------------------
+
+
+def list_intake_profiles() -> list[IntakeMapping]:
+    """Return the available intake mapping profiles (built-in presets today)."""
+    return list(BUILTIN_PROFILES.values())
+
+
+def intake_canonical_fields() -> list[str]:
+    """The canonical change-request fields every intake profile targets."""
+    return list(CANONICAL_FIELDS)
+
+
+def preview_intake(profile_name: str, record: dict) -> NormalizationResult:
+    """Normalize one foreign change-request *record* with the named profile.
+
+    Pure and stateless: resolves the built-in profile by name and runs the
+    record through the intake engine. Raises :class:`LookupError` when no profile
+    of that name exists, so the router can turn it into a 404.
+    """
+    mapping = BUILTIN_PROFILES.get(profile_name)
+    if mapping is None:
+        raise LookupError(profile_name)
+    return normalize_intake(record, mapping)
+
+
+# --- Predictive delay / overrun risk (#19) ---------------------------------
+
+#: Each cost-bearing change family mapped to the cost column the size factor
+#: reads (the cost slot of :data:`_IMPACT_COLUMNS`). Variation notices carry no
+#: cost and are absent, so they simply contribute no size signal.
+_COST_COLUMNS: dict[str, str] = {kind: cols[0] for kind, cols in _IMPACT_COLUMNS.items()}
+
+#: Reverse of :data:`_SOURCES`: the change-family kind token to its ORM model.
+_KIND_TO_MODEL: dict[str, type] = {kind: model for model, kind in _SOURCES}
+
+
+def _parse_positive_money(value: object) -> Decimal | None:
+    """Parse a stored money value to a positive :class:`Decimal`, or ``None``.
+
+    Contract value is stored as a string and the per-change cost columns read
+    back as ``Decimal``; either may be blank, zero, negative or unparseable. A
+    non-positive or unusable value yields ``None`` so the size factor stays
+    unwired for that record rather than skewing the blend on bad data.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        amount = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    return amount if amount > 0 else None
+
+
+async def _project_contract_value(session: AsyncSession, project_id: uuid.UUID) -> Decimal | None:
+    """Return a project's contract value as a positive Decimal, or ``None``."""
+    raw = (await session.execute(select(Project.contract_value).where(Project.id == project_id))).scalar_one_or_none()
+    return _parse_positive_money(raw)
+
+
+async def _change_costs_by_id(session: AsyncSession, project_id: uuid.UUID) -> dict[str, Decimal]:
+    """Map each cost-bearing change record id to its own positive cost impact.
+
+    Reads only the per-kind cost column (no relationships) for the cost-bearing
+    change families; variation notices have no cost column and are skipped. A
+    record with no, zero or unparseable cost is omitted, so it contributes no
+    size signal to the delay-risk blend.
+    """
+    costs: dict[str, Decimal] = {}
+    for kind, cost_col in _COST_COLUMNS.items():
+        model = _KIND_TO_MODEL[kind]
+        column = getattr(model, cost_col, None)
+        if column is None:
+            continue
+        rows = await session.execute(select(model.id, column).where(model.project_id == project_id))
+        for change_id, amount in rows.all():
+            parsed = _parse_positive_money(amount)
+            if parsed is not None:
+                costs[str(change_id)] = parsed
+    return costs
+
+
+async def build_delay_risk_board(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> tuple[list[DelayRiskResult], dict[str, ItemAging]]:
+    """Rank a project's open changes by predicted delay / overrun risk.
+
+    Reuses the cycle-time board (one read) for each change's dwell and its
+    holder's load and overdue rate, reads each change's own cost for the size
+    factor against the project contract value, composes a :class:`DelayRiskInput`
+    per open change and feeds them to the pure engine's :func:`rank`. Returns the
+    ranked results (highest risk first) together with the aging row per change id
+    so the caller can show each change's code / title / party next to its risk.
+
+    Factor sourcing (each documented; a signal that is not cheaply available
+    stays at a neutral default rather than being guessed, mirroring the
+    dispute-risk board):
+
+    * dwell pressure - actual elapsed age against the change's own allowed
+      response window (the span between opening and its response-due date); a
+      change with no due date contributes no dwell signal.
+    * holder overdue rate - the fraction of the holder's open changes currently
+      overdue, a present-state proxy for the historical rate (a recorded
+      hand-off history is a later refinement).
+    * change size - the change's cost as a fraction of the project contract
+      value; unwired (no signal) when either is absent.
+    * holder load - how many open changes sit with the same holder.
+    """
+    moment = now or datetime.now(UTC)
+    board = await build_project_board(session, project_id, now=moment)
+    costs = await _change_costs_by_id(session, project_id)
+    contract_value = await _project_contract_value(session, project_id)
+    party_by_name = {p.party: p for p in board.parties}
+
+    inputs: list[DelayRiskInput] = []
+    for item in board.items:  # build_board already keeps only open items
+        party = party_by_name.get(item.party)
+        open_count = party.open_count if party is not None else 0
+        overdue_rate = party.overdue_count / party.open_count if party is not None and party.open_count else 0.0
+
+        if item.days_to_due is None:
+            # No due date -> no deadline-pressure signal: a zero dwell against a
+            # unit window yields a 0 sub-score, avoiding a false alarm.
+            dwell_days = 0.0
+            sla_days = 1.0
+        else:
+            # The allowed window is (due - opened) = age so far + time still to
+            # due; elapsed age is the dwell measured against it.
+            dwell_days = item.age_days
+            sla_days = item.age_days + item.days_to_due
+
+        size_ratio = 0.0
+        cost = costs.get(item.id)
+        if contract_value is not None and cost is not None:
+            size_ratio = float(cost / contract_value)
+
+        inputs.append(
+            DelayRiskInput(
+                change_id=item.id,
+                step_mean_dwell_days=dwell_days,
+                step_sla_days=sla_days,
+                holder_overdue_rate=overdue_rate,
+                change_size_ratio=size_ratio,
+                holder_open_change_count=open_count,
+            )
+        )
+
+    ranked = rank_delay_risk(inputs)
+    items_by_id = {item.id: item for item in board.items}
+    return ranked, items_by_id
