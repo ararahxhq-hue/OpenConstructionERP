@@ -16,13 +16,13 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from tests._pg import transactional_session
 
 from app.modules.connectors.models import ConnectorSource
 from app.modules.connectors.service import CONNECTOR_META_KEY, ConnectorService
 from app.modules.documents.models import Document
 from app.modules.projects.models import Project
 from app.modules.users.models import User
+from tests._pg import transactional_session
 
 
 @pytest_asyncio.fixture

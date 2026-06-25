@@ -14,7 +14,6 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from tests._pg import transactional_session
 
 from app.modules.changeorders.models import ChangeOrder
 from app.modules.correspondence.models import Correspondence
@@ -23,6 +22,7 @@ from app.modules.projects.models import Project
 from app.modules.retrieval.facet_query import FacetQuery
 from app.modules.retrieval.service import RetrievalService
 from app.modules.users.models import User
+from tests._pg import transactional_session
 
 
 @pytest_asyncio.fixture
