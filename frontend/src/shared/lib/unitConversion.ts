@@ -21,6 +21,12 @@ const METRIC_TO_IMPERIAL: Record<string, ConversionEntry> = {
   m: { factor: 3.2808399, unit: 'ft', display: 'ft' },
   m2: { factor: 10.7639, unit: 'ft2', display: 'sq ft' },
   m3: { factor: 35.3147, unit: 'ft3', display: 'cu ft' },
+  // Superscript variants of the area / volume codes used on the takeoff
+  // canvas + ledger ("m²" / "m³"). Mapped to superscript imperial
+  // labels so the converted display stays in the same visual style as the
+  // metric source rather than switching to the "sq ft" / "cu ft" spelling.
+  'm²': { factor: 10.7639, unit: 'ft2', display: 'ft²' },
+  'm³': { factor: 35.3147, unit: 'ft3', display: 'ft³' },
   kg: { factor: 2.20462, unit: 'lb', display: 'lb' },
   km: { factor: 0.621371, unit: 'mi', display: 'mi' },
   cm: { factor: 0.393701, unit: 'in', display: 'in' },
@@ -47,6 +53,10 @@ const METRIC_DISPLAY: Record<string, string> = {
   m: 'm',
   m2: 'm\u00B2',
   m3: 'm\u00B3',
+  // Already-superscript inputs map to themselves so they are recognised as
+  // metric (the takeoff layer stores units as "m\u00B2" / "m\u00B3", not "m2" / "m3").
+  'm\u00B2': 'm\u00B2',
+  'm\u00B3': 'm\u00B3',
   kg: 'kg',
   km: 'km',
   cm: 'cm',

@@ -61,6 +61,7 @@ import clsx from 'clsx';
 import { useToastStore } from '../../stores/useToastStore';
 import { useProjectContextStore } from '../../stores/useProjectContextStore';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { usePreferencesStore } from '../../stores/usePreferencesStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { boqApi, type CreatePositionData, type Position } from '../../features/boq/api';
 import { takeoffApi } from '../../features/takeoff/api';
@@ -146,6 +147,12 @@ import {
   buildTakeoffWorkbook,
   triggerDownload,
 } from '../../features/takeoff/lib/takeoff-export';
+import {
+  convertQuantity,
+  formatQuantity,
+  displayUnitFor,
+  measurementLabel,
+} from '../../features/takeoff/lib/takeoff-display-units';
 
 // Configure PDF.js worker — bundled locally (no CDN dependency)
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -562,6 +569,10 @@ export default function TakeoffViewerModule({
   const [redoCount, setRedoCount] = useState(0);
   const addToast = useToastStore((s) => s.addToast);
   const queryClient = useQueryClient();
+  // User's measurement system. Measurements are stored metric-canonical
+  // (D-TKC-016); this drives display + export conversion (m -> ft, etc.).
+  // Read with a selector so unrelated preference changes don't re-render.
+  const measurementSystem = usePreferencesStore((s) => s.measurementSystem);
 
   // Selected measurement (drives the right-side Properties panel).
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
@@ -1095,11 +1106,12 @@ export default function TakeoffViewerModule({
         ctx.moveTo(p0.x * dpr * zoom, p0.y * dpr * zoom);
         ctx.lineTo(p1.x * dpr * zoom, p1.y * dpr * zoom);
         ctx.stroke();
-        // Measurement value label
+        // Measurement value label (converted to the user's system; stored
+        // metric per D-TKC-016).
         const mx = ((p0.x + p1.x) / 2) * dpr * zoom;
         const my = ((p0.y + p1.y) / 2) * dpr * zoom - 8 * dpr;
         ctx.font = `${12 * dpr}px sans-serif`;
-        ctx.fillText(m.label, mx, my);
+        ctx.fillText(measurementLabel(m, scale, measurementSystem), mx, my);
         // Annotation near midpoint (offset above the value label)
         drawAnnotationLabel(m.annotation, mx, my - 14 * dpr, color);
       }
@@ -1123,7 +1135,7 @@ export default function TakeoffViewerModule({
           const smx = ((pa.x + pb.x) / 2) * dpr * zoom;
           const smy = ((pa.y + pb.y) / 2) * dpr * zoom - 6 * dpr;
           ctx.font = `${10 * dpr}px sans-serif`;
-          ctx.fillText(formatMeasurement(segReal, scale.unitLabel), smx, smy);
+          ctx.fillText(formatQuantity(segReal, 'm', measurementSystem), smx, smy);
         }
         // Draw points
         for (const p of m.points) {
@@ -1136,7 +1148,7 @@ export default function TakeoffViewerModule({
         const totalLx = fp.x * dpr * zoom;
         const totalLy = fp.y * dpr * zoom - 12 * dpr;
         ctx.font = `${12 * dpr}px sans-serif`;
-        ctx.fillText(m.label, totalLx, totalLy);
+        ctx.fillText(measurementLabel(m, scale, measurementSystem), totalLx, totalLy);
         drawAnnotationLabel(m.annotation, totalLx, totalLy - 14 * dpr, color);
       }
 
@@ -1169,12 +1181,14 @@ export default function TakeoffViewerModule({
           ctx.globalAlpha = 1;
           ctx.stroke();
         }
-        // Measurement value label at centroid
+        // Measurement value label at centroid (converted to the user's
+        // measurement system; stored metric per D-TKC-016).
         const cx = m.points.reduce((s, p) => s + p.x, 0) / m.points.length * dpr * zoom;
         const cy = m.points.reduce((s, p) => s + p.y, 0) / m.points.length * dpr * zoom;
         ctx.font = `${12 * dpr}px sans-serif`;
         // Prefix a minus so the on-canvas number reads as a subtraction.
-        ctx.fillText(isVoid ? `- ${m.label}` : m.label, cx, cy);
+        const areaLabel = measurementLabel(m, scale, measurementSystem);
+        ctx.fillText(isVoid ? `- ${areaLabel}` : areaLabel, cx, cy);
         // Annotation above centroid
         drawAnnotationLabel(m.annotation, cx, cy - 14 * dpr, color);
       }
@@ -1385,7 +1399,7 @@ export default function TakeoffViewerModule({
         const lastPt = activePoints[activePoints.length - 1]!;
         ctx.font = `${12 * dpr}px sans-serif`;
         ctx.fillText(
-          formatMeasurement(totalReal, scale.unitLabel),
+          formatQuantity(totalReal, 'm', measurementSystem),
           lastPt.x * dpr * zoom + 8 * dpr,
           lastPt.y * dpr * zoom - 8 * dpr,
         );
@@ -1626,7 +1640,7 @@ export default function TakeoffViewerModule({
       }
       ctx.restore();
     }
-  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx]);
+  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem]);
 
   /* ── Canvas click handler ────────────────────────────────────────── */
 
@@ -3046,6 +3060,15 @@ export default function TakeoffViewerModule({
       if (!byGroup[g]) byGroup[g] = [];
       byGroup[g]!.push(m);
     }
+    // Stored quantities are metric-canonical (D-TKC-016); convert values +
+    // units to the user's system at the export boundary. Metric is a
+    // pass-through so the file is unchanged for metric users.
+    const sumUnit = (ms: Measurement[]) =>
+      convertQuantity(
+        ms.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0),
+        ms[0]!.unit || '',
+        measurementSystem,
+      );
     for (const [groupName, groupMs] of Object.entries(byGroup)) {
       for (const m of groupMs) {
         const escapeCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
@@ -3054,14 +3077,15 @@ export default function TakeoffViewerModule({
         // exports: show the row value as negative and flag the type, so the
         // CSV rows and subtotals reconcile instead of reporting inflated gross.
         const signedValue = m.isDeduction ? -m.value : m.value;
+        const disp = convertQuantity(signedValue, m.unit || '', measurementSystem);
         const typeLabel = m.isDeduction ? `${m.type} (deduction)` : m.type;
         rows.push(
           [
             escapeCsv(groupName),
             escapeCsv(typeLabel),
             escapeCsv(m.annotation),
-            signedValue.toFixed(3),
-            escapeCsv(m.unit),
+            disp.value.toFixed(3),
+            escapeCsv(disp.unit),
             String(m.page),
           ].join(','),
         );
@@ -3075,13 +3099,16 @@ export default function TakeoffViewerModule({
       // Excel subtotal and the legend. Only area carries the flag today, but
       // the sign-flip is applied uniformly so it stays correct if that changes.
       if (distMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","distance","Total distance",${distMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(3)},"${distMs[0]!.unit}",""`);
+        const d = sumUnit(distMs);
+        rows.push(`"${groupName} - Subtotal","distance","Total distance",${d.value.toFixed(3)},"${d.unit}",""`);
       }
       if (areaMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","area","Total area",${areaMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(3)},"${areaMs[0]!.unit}",""`);
+        const d = sumUnit(areaMs);
+        rows.push(`"${groupName} - Subtotal","area","Total area",${d.value.toFixed(3)},"${d.unit}",""`);
       }
       if (volMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","volume","Total volume",${volMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(3)},"${volMs[0]!.unit}",""`);
+        const d = sumUnit(volMs);
+        rows.push(`"${groupName} - Subtotal","volume","Total volume",${d.value.toFixed(3)},"${d.unit}",""`);
       }
       if (countMs.length > 0) {
         rows.push(`"${groupName} - Subtotal","count","Total count",${countMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(0)},"pcs",""`);
@@ -3096,7 +3123,7 @@ export default function TakeoffViewerModule({
     link.click();
     URL.revokeObjectURL(url);
     addToast({ type: 'success', title: t('takeoff.csv_exported', { defaultValue: 'Measurements exported to CSV' }) });
-  }, [measurements, addToast, t]);
+  }, [measurements, addToast, t, measurementSystem]);
 
   /**
    * Resolve the human-friendly project name for export filenames.
@@ -3142,6 +3169,7 @@ export default function TakeoffViewerModule({
         scale,
         groupColorMap: GROUP_COLOR_MAP,
         projectName: exportProjectName,
+        measurementSystem,
       });
       const blob = pdf.output('blob');
       triggerDownload(blob, buildExportFilename(exportProjectName, 'pdf'));
@@ -3163,7 +3191,7 @@ export default function TakeoffViewerModule({
     } finally {
       setIsExportingPdf(false);
     }
-  }, [pdfDoc, measurements, hiddenGroups, scale, exportProjectName, addToast, t]);
+  }, [pdfDoc, measurements, hiddenGroups, scale, exportProjectName, addToast, t, measurementSystem]);
 
   /** Export measurements + summary to an .xlsx workbook. */
   const handleExportExcel = useCallback(async () => {
@@ -3189,6 +3217,7 @@ export default function TakeoffViewerModule({
         scale,
         groupColorMap: GROUP_COLOR_MAP,
         projectName: exportProjectName,
+        measurementSystem,
       });
       const buf = await wb.xlsx.writeBuffer();
       const blob = new Blob([buf], {
@@ -3213,7 +3242,7 @@ export default function TakeoffViewerModule({
     } finally {
       setIsExportingXlsx(false);
     }
-  }, [measurements, scale, exportProjectName, addToast, t]);
+  }, [measurements, scale, exportProjectName, addToast, t, measurementSystem]);
 
   const deleteMeasurement = useCallback((id: string) => {
     setMeasurements((prev) => {
@@ -5581,7 +5610,7 @@ export default function TakeoffViewerModule({
                         {t('takeoff_viewer.readout_segment', { defaultValue: 'Segment' })}
                       </span>
                       <span className="tabular-nums text-content-primary">
-                        {formatMeasurement(drawReadout.segment, drawReadout.unit)}
+                        {formatQuantity(drawReadout.segment, drawReadout.unit || 'm', measurementSystem)}
                       </span>
                     </div>
                   )}
@@ -5591,7 +5620,7 @@ export default function TakeoffViewerModule({
                         {t('takeoff_viewer.readout_total', { defaultValue: 'Total' })}
                       </span>
                       <span className="tabular-nums text-content-primary">
-                        {formatMeasurement(drawReadout.total, drawReadout.unit)}
+                        {formatQuantity(drawReadout.total, drawReadout.unit || 'm', measurementSystem)}
                       </span>
                     </div>
                   )}
@@ -5609,10 +5638,15 @@ export default function TakeoffViewerModule({
                   data-testid="measurement-hover-tooltip"
                 >
                   <div className="font-semibold text-content-primary truncate">
-                    {hoverMeasurement.annotation || hoverMeasurement.label || hoverMeasurement.type}
+                    {hoverMeasurement.annotation
+                      || (hoverMeasurement.label
+                        ? measurementLabel(hoverMeasurement, scale, measurementSystem)
+                        : hoverMeasurement.type)}
                   </div>
                   {hoverMeasurement.label && (
-                    <div className="tabular-nums text-content-secondary">{hoverMeasurement.label}</div>
+                    <div className="tabular-nums text-content-secondary">
+                      {measurementLabel(hoverMeasurement, scale, measurementSystem)}
+                    </div>
                   )}
                   <div className="mt-0.5 flex items-center gap-1 text-content-tertiary">
                     <span className="uppercase tracking-wide text-[10px]">
@@ -5829,7 +5863,10 @@ export default function TakeoffViewerModule({
                             {row.count}
                           </span>
                           <span className="text-[10px] font-mono text-content-secondary tabular-nums min-w-0">
-                            {formatGroupTotal(row.total, row.unit)}
+                            {(() => {
+                              const d = convertQuantity(row.total, row.unit, measurementSystem);
+                              return formatGroupTotal(d.value, d.unit);
+                            })()}
                           </span>
                           {row.hidden
                             ? <EyeOff size={10} className="text-content-tertiary shrink-0" />
@@ -5852,7 +5889,16 @@ export default function TakeoffViewerModule({
                 {t('takeoff_viewer.scale', { defaultValue: 'Scale' })}
               </p>
               <p className="text-sm font-semibold text-content-primary tabular-nums">
-                1px = {(1 / scale.pixelsPerUnit).toFixed(4)} {scale.unitLabel}
+                {(() => {
+                  // Stored scale is pixels-per-metre (D-TKC-016); show the
+                  // per-pixel length in the user's measurement system.
+                  const perPixel = convertQuantity(
+                    1 / scale.pixelsPerUnit,
+                    scale.unitLabel,
+                    measurementSystem,
+                  );
+                  return `1px = ${perPixel.value.toFixed(4)} ${perPixel.unit}`;
+                })()}
               </p>
               <div className="mt-2 flex gap-1 flex-wrap">
                 {COMMON_SCALES.slice(0, 4).map((s) => (
@@ -6144,7 +6190,13 @@ export default function TakeoffViewerModule({
                       className="w-full rounded border border-border/60 bg-surface-secondary/60 px-2 py-1 text-xs text-content-primary font-mono tabular-nums"
                       data-testid="prop-value"
                     >
-                      {selectedMeasurement.value ? selectedMeasurement.value.toFixed(3) : '—'}
+                      {selectedMeasurement.value
+                        ? convertQuantity(
+                            selectedMeasurement.value,
+                            selectedMeasurement.unit || '',
+                            measurementSystem,
+                          ).value.toFixed(3)
+                        : '—'}
                     </div>
                   </div>
                   <div>
@@ -6155,7 +6207,7 @@ export default function TakeoffViewerModule({
                       className="min-w-[44px] rounded border border-border/60 bg-surface-secondary/60 px-2 py-1 text-xs text-content-primary text-center"
                       data-testid="prop-unit"
                     >
-                      {selectedMeasurement.unit || '—'}
+                      {displayUnitFor(selectedMeasurement.unit || '', measurementSystem) || '—'}
                     </div>
                   </div>
                 </div>
