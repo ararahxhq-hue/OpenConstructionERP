@@ -36,7 +36,12 @@ import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
-import { ProvabilityGauge, type SubjectKind } from '@/features/claims-evidence';
+import {
+  ProvabilityGauge,
+  EvidenceThreadPanel,
+  reconstructTypeForKind,
+  type SubjectKind,
+} from '@/features/claims-evidence';
 import {
   getCoordinationPlan,
   getCycleTimeBoard,
@@ -724,6 +729,7 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
         <div className="space-y-2">
           {board?.items.map((it) => {
             const expanded = openId === it.change_id;
+            const reconstructType = reconstructTypeForKind(it.kind);
             return (
               <Card key={it.change_id} className="overflow-hidden p-0">
                 <button
@@ -758,12 +764,19 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
                   </div>
                 </button>
                 {expanded && (
-                  <div className="border-t border-border-light bg-surface-primary p-3">
+                  <div className="space-y-3 border-t border-border-light bg-surface-primary p-3">
                     <ProvabilityGauge
                       projectId={projectId}
                       subjectKind={it.kind as SubjectKind}
                       subjectId={it.change_id}
                     />
+                    {reconstructType ? (
+                      <EvidenceThreadPanel
+                        projectId={projectId}
+                        subjectType={reconstructType}
+                        subjectId={it.change_id}
+                      />
+                    ) : null}
                   </div>
                 )}
               </Card>

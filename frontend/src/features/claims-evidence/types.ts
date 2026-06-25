@@ -38,3 +38,33 @@ export interface ProvabilityScore {
   date_from: string | null;
   date_to: string | null;
 }
+
+// --- Evidence pack (reconstruct, #16) --------------------------------------
+// The deterministic, sectioned thread of records the reconciliation engine
+// links around ONE change, assembled on demand and SHA-256 digested so the
+// export is reproducible for a claim. Mirrors the backend EvidencePackOut.
+
+export interface EvidenceEntry {
+  ref_id: string;
+  source_module: string;
+  kind: string;
+  title: string;
+  occurred_at: string | null;
+  actor_id: string | null;
+  summary: string;
+}
+
+export interface EvidenceSection {
+  name: string;
+  entries: EvidenceEntry[];
+}
+
+export interface EvidencePack {
+  subject_ref: string;
+  basis: string;
+  entry_count: number;
+  date_from: string | null;
+  date_to: string | null;
+  sections: EvidenceSection[];
+  content_digest: string;
+}
