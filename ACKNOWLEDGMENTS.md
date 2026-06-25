@@ -39,3 +39,4 @@ while making sure community input is recognized.
 | [leval907](https://github.com/leval907) | [#201](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/201) |
 | [arvildev](https://github.com/arvildev) | [#227](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/227) |
 | [arvildev](https://github.com/arvildev) | [#270](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/270) |
+| [Tigercatman](https://github.com/Tigercatman) | [#271](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/271) |
