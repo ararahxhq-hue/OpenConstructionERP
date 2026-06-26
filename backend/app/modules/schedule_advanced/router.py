@@ -2475,6 +2475,14 @@ async def create_delay_analysis(
 ) -> DelayAnalysisResponse:
     """Create a draft forensic delay analysis under ``project_id``."""
     await verify_project_access(project_id, user_id, session)
+    if data.schedule_id is not None:
+        # Anti-IDOR: the targeted schedule must belong to this project. Without
+        # this check a caller could point schedule_id at another tenant's
+        # schedule and have /compute and /auto-fragnet read its activities and
+        # relationships. 404 (not 403) so it cannot be used as an existence
+        # oracle, matching verify_project_access's convention.
+        if await _project_id_for_schedule(data.schedule_id, session) != project_id:
+            raise _not_found("Schedule not found")
     svc = _get_delay_service(session)
     analysis = await svc.create_analysis(project_id, data, user_id)
     return await _delay_response(svc, analysis)
