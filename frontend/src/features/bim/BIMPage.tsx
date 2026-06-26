@@ -108,6 +108,7 @@ import {
   deleteElementGroup,
   installBIMConverter,
   retryBIMModelProcessing,
+  createBimModelFromDocument,
   isNon3DBimFormat,
   type BIMElementGroup,
 } from './api';
@@ -2064,15 +2065,52 @@ export function BIMPage() {
   useEffect(() => { if (hasModels && showUploadOverride === false) setShowUploadOverride(null); }, [hasModels, showUploadOverride]);
 
   /* ── Deep-link from Documents page ──────────────────────────────────────
-   * When navigating from /documents with ?docName= or ?docId=, try to
-   * match an existing BIM model by filename (strip extension too).  If
-   * found, auto-select it.  If not, open the upload panel so the user
-   * can upload + convert right away.  URL params are cleaned up after
-   * one shot so a refresh doesn't keep re-triggering. */
+   * When navigating from /documents with ?docId= (plus optional ?docName=):
+   *   - With a docId we convert the already-uploaded document into a BIM
+   *     model on demand and select it (issue #273). The backend is
+   *     idempotent, so a file that already has a model simply returns it
+   *     instead of asking the user to upload the same file a second time.
+   *   - A legacy docName-only link still matches an existing model by
+   *     filename, falling back to the upload panel when nothing matches.
+   * A ref guards one-shot handling so the param cleanup / model refetch this
+   * effect triggers does not re-run it. */
+  const deepLinkHandledRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!deepLinkDocName && !deepLinkDocId) return;
-    if (!models.length) return;
-    const targetName = deepLinkDocName ? decodeURIComponent(deepLinkDocName).toLowerCase() : '';
+    if (!deepLinkDocId && !deepLinkDocName) return;
+    if (modelsQuery.isLoading) return;
+    const key = deepLinkDocId || deepLinkDocName || '';
+    if (deepLinkHandledRef.current === key) return;
+    deepLinkHandledRef.current = key;
+
+    const clearParams = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('docName');
+      next.delete('docId');
+      setSearchParams(next, { replace: true });
+    };
+
+    if (deepLinkDocId) {
+      clearParams();
+      void (async () => {
+        try {
+          const created = await createBimModelFromDocument(deepLinkDocId, {
+            name: deepLinkDocName ? decodeURIComponent(deepLinkDocName) : undefined,
+          });
+          await queryClient.invalidateQueries({ queryKey: ['bim-models', projectId] });
+          setActiveModelId(created.model_id);
+          setShowUploadOverride(false);
+        } catch {
+          // Not convertible, missing, or no create permission - fall back to
+          // the upload panel so the user still has a path forward.
+          setUploadOpen(true);
+          if (deepLinkDocName) setUploadConvertedName(decodeURIComponent(deepLinkDocName));
+        }
+      })();
+      return;
+    }
+
+    // Legacy docName-only deep link: match an existing model by filename.
+    const targetName = decodeURIComponent(deepLinkDocName as string).toLowerCase();
     const nameNoExt = targetName.replace(/\.[^.]+$/, '');
     const match = models.find((m) => {
       const mLower = (m.name || '').toLowerCase();
@@ -2082,16 +2120,12 @@ export function BIMPage() {
       setActiveModelId(match.id);
       setShowUploadOverride(false);
     } else {
-      // No matching model — open the upload panel so the user can convert.
       setUploadOpen(true);
-      if (deepLinkDocName) setUploadConvertedName(decodeURIComponent(deepLinkDocName));
+      setUploadConvertedName(decodeURIComponent(deepLinkDocName as string));
     }
-    const next = new URLSearchParams(searchParams);
-    next.delete('docName');
-    next.delete('docId');
-    setSearchParams(next, { replace: true });
+    clearParams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepLinkDocName, deepLinkDocId, models.length]);
+  }, [deepLinkDocId, deepLinkDocName, modelsQuery.isLoading, models]);
 
   const activeModel = useMemo(() => models.find((m) => m.id === activeModelId) ?? null, [models, activeModelId]);
 

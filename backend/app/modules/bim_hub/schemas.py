@@ -164,6 +164,22 @@ class BIMModelCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class CreateModelFromDocumentRequest(BaseModel):
+    """Create a BIM model from a file already uploaded to Project Documents.
+
+    Files uploaded straight from the Documents hub are stored but never
+    converted, so opening them in the BIM viewer found no model (issue #273).
+    This turns such a document into a BIM model on demand, reusing the same
+    conversion pipeline as a direct CAD upload."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    document_id: UUID
+    name: str | None = Field(default=None, max_length=255)
+    discipline: str = Field(default="architecture", max_length=50)
+    conversion_depth: Literal["standard", "medium", "complete"] = "standard"
+
+
 class BIMModelUpdate(BaseModel):
     """‌⁠‍Partial update for a BIM model."""
 

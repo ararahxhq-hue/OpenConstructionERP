@@ -581,6 +581,36 @@ export async function retryBIMModelProcessing(
   );
 }
 
+/** Create (or fetch) the BIM model for a file already uploaded to Project
+ *  Documents. The Documents hub stores BIM files without converting them, so
+ *  opening one in the viewer used to find no model and ask for a second upload
+ *  (issue #273). This converts the stored document on demand, reusing the same
+ *  pipeline as a direct CAD upload. Idempotent: a document already linked to a
+ *  model returns that model instead of converting it again. */
+export async function createBimModelFromDocument(
+  documentId: string,
+  opts?: {
+    name?: string;
+    discipline?: string;
+    conversionDepth?: 'standard' | 'medium' | 'complete';
+  },
+): Promise<{
+  model_id: string;
+  name: string;
+  format: string | null;
+  status: string;
+  element_count: number;
+  error_message: string | null;
+  already_existed: boolean;
+}> {
+  return apiPost(`/v1/bim_hub/models/from-document/`, {
+    document_id: documentId,
+    ...(opts?.name ? { name: opts.name } : {}),
+    ...(opts?.discipline ? { discipline: opts.discipline } : {}),
+    ...(opts?.conversionDepth ? { conversion_depth: opts.conversionDepth } : {}),
+  });
+}
+
 /** Fetch elements for a specific BIM model.
  *
  * Two modes:
