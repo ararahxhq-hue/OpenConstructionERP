@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0] - 2026-06-26
+
+A stability and self-hosting release. It hardens the production deployment path reported by the community (environment configuration, file storage, in-app preview and external-database upgrades) and completes the desktop build, so the platform behaves the same across Docker, an external PostgreSQL, the embedded database and the desktop app.
+
+### Fixed
+
+- Environment variables documented with the OE_ prefix are now read. Each setting was bound only to its bare name before, so a value such as OE_REGISTRATION_MODE or OE_JWT_SECRET was silently ignored and the default applied. The prefixed name and the bare name both work now, with the bare name kept for back-compatibility.
+- Uploaded documents, photos and drawings now follow the configured data directory. In a container the files were written under the home directory and lost when the container was recreated, while the mounted data volume stayed empty. When a data directory is configured, uploads, photos, thumbnails and sheet previews all land there and survive a restart.
+- The in-app PDF preview renders again and self-hosted web fonts are cached by the service worker, instead of being blocked by the content security policy. The app may frame its own previews while cross-origin framing stays refused.
+- An externally managed PostgreSQL database now self-heals on startup the same way the embedded database does, adding any columns and indexes a newer release expects. An external database first created under an older release no longer returns errors for the columns it is missing, which is what produced the 500 on the AI insights endpoint after an upgrade.
+- The desktop build now includes the PDF, computer-vision and point-cloud libraries it had been missing, so PDF takeoff, raster room detection, point-cloud reads and PDF stamping work in the installed app as they do from the package, and the data libraries are pinned to their supported line.
+
+### Changed
+
+- File serving now accepts a document, photo or shared file saved under an earlier release's data directory, so existing files keep opening after the storage location is made consistent, while the path-containment and symlink protection is unchanged.
+- Field diary offline sync no longer discards a whole batch of synced work when one duplicate operation arrives twice; only the duplicate is skipped and the rest of the batch is kept.
+- The database self-heal is safe to run against a live shared database: only one worker heals at a time, it never blocks live queries while it runs, and each step is isolated so one failure cannot stop the rest.
+
 ## [8.11.0] - 2026-06-25
 
 A change intelligence and value release. It builds the layer introduced in 8.10.0 into a full set of tools that make change accountable, prove the value of acting early, and bring scattered project records into one searchable place. It also makes the AI trust signals visible everywhere the assistant speaks.
