@@ -1,4 +1,4 @@
-"""PostgreSQL auto-migrator (embedded PostgreSQL only).
+"""PostgreSQL auto-migrator (embedded and external PostgreSQL).
 
 On startup, compares the live PostgreSQL schema against the SQLAlchemy models
 and adds any missing columns via ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS``
@@ -16,8 +16,14 @@ column added to an existing table (for example ``oe_boq_position.cost_line_id``
 from the v6.4.0 cost spine) is absent from a database created under the older
 version, and every ORM read of that table fails with ``UndefinedColumnError``.
 
-This runs for the embedded server only. External PostgreSQL deployments still
-manage their schema with Alembic (that path never calls this).
+This runs for the embedded server AND for external PostgreSQL. External
+deployments are still expected to manage their schema with Alembic
+(``alembic upgrade head``), but in practice many run the image without that
+step, so an upgrade that added a column leaves the live table missing it and
+every ORM read 500s. Because every statement here is ``ADD COLUMN`` /
+``CREATE INDEX IF NOT EXISTS`` - idempotent and non-destructive - it is safe
+to run as a belt-and-braces heal regardless of who owns the schema. The call
+site wraps it non-fatally so a DB role without DDL rights simply skips it.
 """
 
 import logging

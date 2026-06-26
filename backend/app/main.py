@@ -2485,14 +2485,27 @@ def create_app() -> FastAPI:
             # ADD COLUMN IF NOT EXISTS. External PostgreSQL (a user-supplied
             # DATABASE_URL, where embedded_pg is not running) keeps managing
             # columns with Alembic and is left alone.
-            from app.core import embedded_pg as _embedded_pg
+            # Heal column/index drift on BOTH embedded and external PostgreSQL.
+            # create_all (below) only ever creates whole missing *tables*; it
+            # never adds a *column* to a table that already exists. So an
+            # external database first created under an older release is missing
+            # every column added since (for example oe_ai_agents_run.trust from
+            # v3204), and every ORM read of that table 500s with a DBAPI
+            # UndefinedColumn error (e.g. GET /ai-agents/insights). The migrator
+            # only issues ADD COLUMN / CREATE INDEX IF NOT EXISTS, which is
+            # idempotent and non-destructive, so it is safe to run regardless of
+            # who manages the schema. Wrapped non-fatally: an external DB role
+            # without DDL rights (or any other failure) just logs a warning and
+            # leaves schema management to the operator's `alembic upgrade head`,
+            # exactly as before.
+            from app.core.postgres_migrator import postgres_auto_migrate
 
-            if _embedded_pg.is_running():
-                from app.core.postgres_migrator import postgres_auto_migrate
-
+            try:
                 migrated = await postgres_auto_migrate(engine, Base)
                 if migrated:
                     logger.info("PostgreSQL auto-migration: %d schema objects (columns + indexes) added", migrated)
+            except Exception:
+                logger.warning("PostgreSQL auto-migration skipped (non-fatal)", exc_info=True)
 
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
