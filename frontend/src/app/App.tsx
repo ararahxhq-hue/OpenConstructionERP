@@ -413,6 +413,9 @@ const ValueDashboardPage = lazy(() =>
 );
 const PhoneLogPage = lazy(() => import('@/features/phonelog').then((m) => ({ default: m.PhoneLogPage })));
 const ConnectorsPage = lazy(() => import('@/features/connectors').then((m) => ({ default: m.ConnectorsPage })));
+const ReconciliationPage = lazy(() =>
+  import('@/features/reconciliation').then((m) => ({ default: m.ReconciliationPage })),
+);
 const InboundCapturePage = lazy(() =>
   import('@/features/inbound').then((m) => ({ default: m.InboundCapturePage })),
 );
@@ -1188,6 +1191,8 @@ export default function App() {
         <Route path="/projects/:projectId/phone-log" element={<P title="Phone Log"><PhoneLogPage /></P>} />
         <Route path="/connectors" element={<P title="Document Connectors"><ConnectorsPage /></P>} />
         <Route path="/projects/:projectId/connectors" element={<P title="Document Connectors"><ConnectorsPage /></P>} />
+        <Route path="/reconciliation" element={<P title="Event Reconciliation"><ReconciliationPage /></P>} />
+        <Route path="/projects/:projectId/reconciliation" element={<P title="Event Reconciliation"><ReconciliationPage /></P>} />
         {/* Inbound Capture admin view - reads captured email / chat messages and
             the configured sources. Admin-only (the read endpoint also gates with
             inbound.read; the page exposes no secrets, only what was captured). */}

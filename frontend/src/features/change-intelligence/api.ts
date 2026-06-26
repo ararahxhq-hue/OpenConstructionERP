@@ -9,7 +9,7 @@
 // carried on the wire as a string (the Decimal rendered losslessly), so it is
 // passed straight to MoneyDisplay and never coerced with toFixed here.
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiPut } from '@/shared/lib/api';
 
 const CI_BASE = '/v1/change-intelligence';
 const CR_BASE = '/v1/cost-recovery';
@@ -233,6 +233,55 @@ export function listBackCharges(projectId: string): Promise<BackCharge[]> {
   return apiGet<BackCharge[]>(`${CR_BASE}/projects/${projectId}/back-charges`);
 }
 
+// Request body to record a new back-charge. Money fields (gross_amount,
+// chargeable_pct) are carried as strings so the Decimal round-trips losslessly;
+// they are never coerced to a number here. chargeable_pct is a FRACTION in
+// [0, 1] (0.6 means 60%), and status is one of the back-charge commercial
+// states (proposed / agreed / disputed / recovered / waived).
+export interface BackChargeCreateBody {
+  source_ref?: string;
+  responsible_party?: string;
+  description?: string;
+  basis?: string;
+  gross_amount?: string;
+  chargeable_pct?: string;
+  currency?: string;
+  status?: string;
+}
+
+// Partial update of a back-charge; only the supplied fields change. Money is a
+// string for the same lossless-Decimal reason as the create body.
+export interface BackChargeUpdateBody {
+  responsible_party?: string;
+  description?: string;
+  basis?: string;
+  gross_amount?: string;
+  chargeable_pct?: string;
+  status?: string;
+  recovered_amount?: string;
+}
+
+export function createBackCharge(
+  projectId: string,
+  body: BackChargeCreateBody,
+): Promise<BackCharge> {
+  return apiPost<BackCharge, BackChargeCreateBody>(
+    `${CR_BASE}/projects/${projectId}/back-charges`,
+    body,
+  );
+}
+
+export function updateBackCharge(
+  projectId: string,
+  backChargeId: string,
+  body: BackChargeUpdateBody,
+): Promise<BackCharge> {
+  return apiPatch<BackCharge, BackChargeUpdateBody>(
+    `${CR_BASE}/projects/${projectId}/back-charges/${backChargeId}`,
+    body,
+  );
+}
+
 // --- Recovery performance (recovered vs entitled, by traceability) ----------
 // How much of what the project was entitled to recover it actually recovered,
 // split by how traceable the responsible owner was (high vs low). Money is a
@@ -274,6 +323,12 @@ export function getRecoveryPerformance(projectId: string): Promise<RecoveryPerfo
   return apiGet<RecoveryPerformance>(`${CR_BASE}/projects/${projectId}/recovery-performance`);
 }
 
+// Recovery performance across every project the caller may access (project_id is
+// null on the result). Same currency-scoped shape as the per-project variant.
+export function getPortfolioRecoveryPerformance(): Promise<RecoveryPerformance> {
+  return apiGet<RecoveryPerformance>(`${CR_BASE}/recovery-performance`);
+}
+
 // --- Apportionment (one back-charge split across responsible parties) --------
 // The chargeable amount of a single back-charge divided across the parties that
 // share responsibility. Each share amount is a string for MoneyDisplay; the
@@ -306,6 +361,27 @@ export function getBackChargeApportionment(
 ): Promise<BackChargeApportionment> {
   return apiGet<BackChargeApportionment>(
     `${CR_BASE}/projects/${projectId}/back-charges/${backChargeId}/apportionment`,
+  );
+}
+
+// One party's requested share when apportioning a back-charge. share_pct is a
+// FRACTION in [0, 1] (0.6 means 60%) carried as a string; the shares for one
+// back-charge must sum to 1.0 or the backend 422s. Re-running replaces any
+// previous apportionment.
+export interface ApportionmentShareInput {
+  party: string;
+  share_pct: string;
+  basis?: string;
+}
+
+export function apportionBackCharge(
+  projectId: string,
+  backChargeId: string,
+  shares: ApportionmentShareInput[],
+): Promise<BackChargeApportionment> {
+  return apiPut<BackChargeApportionment, { shares: ApportionmentShareInput[] }>(
+    `${CR_BASE}/projects/${projectId}/back-charges/${backChargeId}/apportionment`,
+    { shares },
   );
 }
 

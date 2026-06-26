@@ -363,6 +363,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.value', to: '/value', icon: TrendingUp, advancedOnly: true },
       { labelKey: 'nav.phone_log', to: '/phone-log', icon: Phone, advancedOnly: true },
       { labelKey: 'nav.connectors', to: '/connectors', icon: HardDrive, advancedOnly: true },
+      { labelKey: 'nav.reconciliation', to: '/reconciliation', icon: Link2, advancedOnly: true },
       {
         labelKey: 'nav.inbound_capture',
         to: '/inbound',

@@ -12,7 +12,8 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BrainCircuit,
   ListChecks,
@@ -32,11 +33,25 @@ import {
   Import,
   Gauge,
   FileSearch,
+  Plus,
+  Pencil,
 } from 'lucide-react';
-import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
+import {
+  Card,
+  Badge,
+  EmptyState,
+  SkeletonTable,
+  DismissibleInfo,
+  TabBar,
+  tabIds,
+  WideModal,
+  WideModalSection,
+  WideModalField,
+} from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { useToastStore } from '@/stores/useToastStore';
 import {
   ProvabilityGauge,
   EvidenceThreadPanel,
@@ -52,6 +67,8 @@ import {
   listBackCharges,
   getRecoveryPerformance,
   getBackChargeApportionment,
+  createBackCharge,
+  updateBackCharge,
   clarifyChangeNote,
   getDisputeRiskBoard,
   getDecisionImpact,
@@ -62,6 +79,7 @@ import {
   getScopeAmbiguity,
   type Urgency,
   type Awaiting,
+  type BackCharge,
   type ClarifiedRequest,
   type ExposureBand,
   type WatchClass,
@@ -214,6 +232,7 @@ function PanelState({
 // --- Tab: coordination ("what to act on first") ----------------------------
 
 function CoordinationTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'coordination', projectId],
     queryFn: () => getCoordinationPlan(projectId),
@@ -225,17 +244,30 @@ function CoordinationTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Open items" value={plan?.total ?? 0} />
-        <StatTile label="Overdue" value={plan?.overdue_count ?? 0} tone="error" />
-        <StatTile label="Due soon" value={plan?.due_soon_count ?? 0} tone="warning" />
+        <StatTile
+          label={t('change_intelligence.coordination.tile.open_items', { defaultValue: 'Open items' })}
+          value={plan?.total ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.coordination.tile.overdue', { defaultValue: 'Overdue' })}
+          value={plan?.overdue_count ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.coordination.tile.due_soon', { defaultValue: 'Due soon' })}
+          value={plan?.due_soon_count ?? 0}
+          tone="warning"
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={!plan || plan.steps.length === 0}
         emptyIcon={<ListChecks className="h-6 w-6" />}
-        emptyTitle="Nothing waiting"
-        emptyDescription="No open change items need an action right now."
+        emptyTitle={t('change_intelligence.coordination.empty_title', { defaultValue: 'Nothing waiting' })}
+        emptyDescription={t('change_intelligence.coordination.empty_desc', {
+          defaultValue: 'No open change items need an action right now.',
+        })}
       >
         <div className="space-y-2">
           {plan?.steps.map((s) => (
@@ -243,19 +275,30 @@ function CoordinationTab({ projectId }: { projectId: string }) {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={URGENCY_VARIANT[s.urgency]}>{humanize(s.urgency)}</Badge>
                 <span className="text-xs text-content-tertiary">{humanize(s.kind)}</span>
-                <span className="font-medium text-content-primary">{s.title || '(untitled)'}</span>
+                <span className="font-medium text-content-primary">
+                  {s.title || t('change_intelligence.common.untitled', { defaultValue: '(untitled)' })}
+                </span>
                 <span className="ml-auto inline-flex items-center gap-1 text-sm font-medium text-oe-blue">
                   {humanize(s.recommended_action)}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-secondary">
-                <span>Ball in court: <span className="font-medium">{s.ball_in_court}</span></span>
+                <span>
+                  {t('change_intelligence.coordination.ball_in_court', { defaultValue: 'Ball in court:' })}{' '}
+                  <span className="font-medium">{s.ball_in_court}</span>
+                </span>
                 {s.days_to_due != null && (
                   <span>
                     {s.days_to_due < 0
-                      ? `${Math.abs(s.days_to_due)}d overdue`
-                      : `${s.days_to_due}d to due`}
+                      ? t('change_intelligence.coordination.days_overdue', {
+                          defaultValue: '{{days}}d overdue',
+                          days: Math.abs(s.days_to_due),
+                        })
+                      : t('change_intelligence.coordination.days_to_due', {
+                          defaultValue: '{{days}}d to due',
+                          days: s.days_to_due,
+                        })}
                   </span>
                 )}
                 <span className="text-content-tertiary">{s.reason}</span>
@@ -271,6 +314,7 @@ function CoordinationTab({ projectId }: { projectId: string }) {
 // --- Tab: cycle time ("waiting on whom") -----------------------------------
 
 function CycleTimeTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'cycle-time', projectId],
     queryFn: () => getCycleTimeBoard(projectId),
@@ -282,27 +326,50 @@ function CycleTimeTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Open" value={board?.total_open ?? 0} />
-        <StatTile label="Overdue" value={board?.total_overdue ?? 0} tone="error" />
-        <StatTile label="Unassigned" value={board?.unassigned_open ?? 0} tone="warning" />
+        <StatTile
+          label={t('change_intelligence.cycle.tile.open', { defaultValue: 'Open' })}
+          value={board?.total_open ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.cycle.tile.overdue', { defaultValue: 'Overdue' })}
+          value={board?.total_overdue ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.cycle.tile.unassigned', { defaultValue: 'Unassigned' })}
+          value={board?.unassigned_open ?? 0}
+          tone="warning"
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={!board || board.parties.length === 0}
         emptyIcon={<Users className="h-6 w-6" />}
-        emptyTitle="No open changes"
-        emptyDescription="There are no open change records to age right now."
+        emptyTitle={t('change_intelligence.cycle.empty_title', { defaultValue: 'No open changes' })}
+        emptyDescription={t('change_intelligence.cycle.empty_desc', {
+          defaultValue: 'There are no open change records to age right now.',
+        })}
       >
         <Card className="overflow-hidden p-0">
           <table className="w-full text-sm">
             <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
               <tr>
-                <th className="px-3 py-2">Party (ball in court)</th>
-                <th className="px-3 py-2 text-right">Open</th>
-                <th className="px-3 py-2 text-right">Overdue</th>
-                <th className="px-3 py-2 text-right">Avg age (d)</th>
-                <th className="px-3 py-2 text-right">Oldest (d)</th>
+                <th className="px-3 py-2">
+                  {t('change_intelligence.cycle.col.party', { defaultValue: 'Party (ball in court)' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.cycle.col.open', { defaultValue: 'Open' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.cycle.col.overdue', { defaultValue: 'Overdue' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.cycle.col.avg_age', { defaultValue: 'Avg age (d)' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.cycle.col.oldest', { defaultValue: 'Oldest (d)' })}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -326,6 +393,7 @@ function CycleTimeTab({ projectId }: { projectId: string }) {
 // --- Tab: correspondence digest --------------------------------------------
 
 function CommsTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'comms-digest', projectId],
     queryFn: () => getCommsDigest(projectId),
@@ -337,33 +405,70 @@ function CommsTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Threads" value={digest?.thread_count ?? 0} />
-        <StatTile label="Open" value={digest?.open_count ?? 0} />
-        <StatTile label="Awaiting us" value={digest?.awaiting_us_count ?? 0} tone="warning" />
+        <StatTile
+          label={t('change_intelligence.comms.tile.threads', { defaultValue: 'Threads' })}
+          value={digest?.thread_count ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.comms.tile.open', { defaultValue: 'Open' })}
+          value={digest?.open_count ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.comms.tile.awaiting_us', { defaultValue: 'Awaiting us' })}
+          value={digest?.awaiting_us_count ?? 0}
+          tone="warning"
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={!digest || digest.threads.length === 0}
         emptyIcon={<Mail className="h-6 w-6" />}
-        emptyTitle="No correspondence"
-        emptyDescription="No letters or emails have been recorded for this project yet."
+        emptyTitle={t('change_intelligence.comms.empty_title', { defaultValue: 'No correspondence' })}
+        emptyDescription={t('change_intelligence.comms.empty_desc', {
+          defaultValue: 'No letters or emails have been recorded for this project yet.',
+        })}
       >
         <div className="space-y-2">
           {digest?.threads.map((th) => (
             <Card key={th.thread_key || th.subject} className="p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={AWAITING_VARIANT[th.awaiting]}>
-                  {th.awaiting === 'none' ? 'Closed' : `Awaiting ${th.awaiting}`}
+                  {th.awaiting === 'none'
+                    ? t('change_intelligence.comms.closed', { defaultValue: 'Closed' })
+                    : t('change_intelligence.comms.awaiting', {
+                        defaultValue: 'Awaiting {{party}}',
+                        party: th.awaiting,
+                      })}
                 </Badge>
-                <span className="font-medium text-content-primary">{th.subject || '(no subject)'}</span>
-                <span className="ml-auto text-xs text-content-tertiary">{th.message_count} msg</span>
+                <span className="font-medium text-content-primary">
+                  {th.subject || t('change_intelligence.comms.no_subject', { defaultValue: '(no subject)' })}
+                </span>
+                <span className="ml-auto text-xs text-content-tertiary">
+                  {t('change_intelligence.comms.msg_count', {
+                    defaultValue: '{{count}} msg',
+                    count: th.message_count,
+                  })}
+                </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm text-content-secondary">
-                <span>Last: {dateOnly(th.last_at)}</span>
-                <span>{humanize(th.last_direction)} from {th.last_sender || 'unknown'}</span>
+                <span>
+                  {t('change_intelligence.comms.last', { defaultValue: 'Last:' })} {dateOnly(th.last_at)}
+                </span>
+                <span>
+                  {t('change_intelligence.comms.direction_from', {
+                    defaultValue: '{{direction}} from {{sender}}',
+                    direction: humanize(th.last_direction),
+                    sender: th.last_sender || t('change_intelligence.comms.unknown', { defaultValue: 'unknown' }),
+                  })}
+                </span>
                 {th.participants.length > 0 && (
-                  <span className="text-content-tertiary">{th.participants.length} participant(s)</span>
+                  <span className="text-content-tertiary">
+                    {t('change_intelligence.comms.participants', {
+                      defaultValue: '{{count}} participant(s)',
+                      count: th.participants.length,
+                    })}
+                  </span>
                 )}
               </div>
             </Card>
@@ -377,6 +482,7 @@ function CommsTab({ projectId }: { projectId: string }) {
 // --- Tab: impact (committed cost and schedule) -----------------------------
 
 function ImpactTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'impact', projectId],
     queryFn: () => getImpactProjection(projectId),
@@ -388,29 +494,45 @@ function ImpactTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Approved changes" value={imp?.approved_count ?? 0} />
         <StatTile
-          label="Committed cost"
+          label={t('change_intelligence.impact.tile.approved_changes', { defaultValue: 'Approved changes' })}
+          value={imp?.approved_count ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.impact.tile.committed_cost', { defaultValue: 'Committed cost' })}
           value={<MoneyDisplay amount={imp?.primary_currency_cost ?? '0'} currency={imp?.primary_currency} showCode colorize />}
         />
-        <StatTile label="Schedule delta (d)" value={imp?.total_schedule_delta_days ?? 0} />
+        <StatTile
+          label={t('change_intelligence.impact.tile.schedule_delta', { defaultValue: 'Schedule delta (d)' })}
+          value={imp?.total_schedule_delta_days ?? 0}
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={!imp || imp.by_kind.length === 0}
         emptyIcon={<TrendingUp className="h-6 w-6" />}
-        emptyTitle="No committed impact"
-        emptyDescription="No approved change orders or agreed variation orders carry cost or schedule yet."
+        emptyTitle={t('change_intelligence.impact.empty_title', { defaultValue: 'No committed impact' })}
+        emptyDescription={t('change_intelligence.impact.empty_desc', {
+          defaultValue: 'No approved change orders or agreed variation orders carry cost or schedule yet.',
+        })}
       >
         <Card className="overflow-hidden p-0">
           <table className="w-full text-sm">
             <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
               <tr>
-                <th className="px-3 py-2">By kind</th>
-                <th className="px-3 py-2 text-right">Count</th>
-                <th className="px-3 py-2 text-right">Cost</th>
-                <th className="px-3 py-2 text-right">Days</th>
+                <th className="px-3 py-2">
+                  {t('change_intelligence.impact.col.by_kind', { defaultValue: 'By kind' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.impact.col.count', { defaultValue: 'Count' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.impact.col.cost', { defaultValue: 'Cost' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.impact.col.days', { defaultValue: 'Days' })}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -429,7 +551,15 @@ function ImpactTab({ projectId }: { projectId: string }) {
         </Card>
         {imp && imp.by_currency.length > 1 && (
           <p className="text-xs text-content-tertiary">
-            Costs span {imp.by_currency.length} currencies; the headline uses {imp.primary_currency || 'the primary currency'}.
+            {t('change_intelligence.impact.multi_currency', {
+              defaultValue: 'Costs span {{count}} currencies; the headline uses {{currency}}.',
+              count: imp.by_currency.length,
+              currency:
+                imp.primary_currency ||
+                t('change_intelligence.impact.primary_currency_fallback', {
+                  defaultValue: 'the primary currency',
+                }),
+            })}
           </p>
         )}
       </PanelState>
@@ -439,6 +569,407 @@ function ImpactTab({ projectId }: { projectId: string }) {
 
 // --- Tab: cost recovery -----------------------------------------------------
 
+// The commercial states a back-charge can hold (mirrors the backend
+// STATUS_* set in back_charge.py). The first three are open; the last two close
+// the item. The visible labels are translated at the call site.
+const BACK_CHARGE_STATUSES = ['proposed', 'agreed', 'disputed', 'recovered', 'waived'] as const;
+
+// Shared input styling so every field in the back-charge form matches the rest
+// of the page's inputs (the decision-impact / clarifier inputs use the same).
+const FORM_INPUT_CLASS =
+  'w-full rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30';
+
+// A money string is valid when blank (treated as 0) or a finite, non-negative
+// number. The value is kept and sent as a string (the lossless-Decimal
+// convention); Number() is used only to validate, never to round-trip the
+// amount.
+function isValidMoney(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (trimmed === '') return true;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0;
+}
+
+// A chargeable percent is a whole number in [0, 100] in the UI; it is converted
+// to a [0, 1] fraction string before being sent. A percent is a ratio, not
+// money, so Number() is safe here.
+function isValidPercent(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (trimmed === '') return true;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 && n <= 100;
+}
+
+// Convert a whole-number percent string (UI) to a [0, 1] fraction string (wire).
+// Blank means "all of it" (1). The ratio is divided, not money, so Number is
+// safe; the result is a plain decimal string for the Decimal field.
+function percentToFraction(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return '1';
+  return String(Number(trimmed) / 100);
+}
+
+// Convert a [0, 1] fraction string (wire) back to a whole-number percent string
+// (UI) for seeding the edit form. Falls back to 100 on a non-finite input.
+function fractionToPercent(raw: string): string {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return '100';
+  return String(Math.round(n * 100));
+}
+
+/**
+ * Create / edit a back-charge. The Recovery tab is otherwise read-only; this is
+ * the one write surface for the cost-recovery ledger. Money fields are kept and
+ * sent as strings (the lossless-Decimal convention) - never coerced to a number.
+ * In edit mode the currency and source reference are fixed (the backend update
+ * does not change them) and a recovered-amount field appears so progress can be
+ * recorded.
+ */
+function BackChargeFormModal({
+  open,
+  onClose,
+  projectId,
+  editing,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+  editing: BackCharge | null;
+}) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const isEdit = editing !== null;
+
+  const [responsibleParty, setResponsibleParty] = useState('');
+  const [description, setDescription] = useState('');
+  const [grossAmount, setGrossAmount] = useState('');
+  const [chargeablePct, setChargeablePct] = useState('');
+  const [recoveredAmount, setRecoveredAmount] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [basis, setBasis] = useState('');
+  const [sourceRef, setSourceRef] = useState('');
+  const [status, setStatus] = useState<string>('proposed');
+
+  // Seed the fields from the row being edited (or reset to blanks for a create)
+  // each time the modal opens. Keyed on the open flag and the edited id so a
+  // re-open always starts from the current server values.
+  const editingId = editing?.id ?? '';
+  const [seededFor, setSeededFor] = useState<string | null>(null);
+  const seedKey = open ? `${isEdit ? editingId : 'new'}` : null;
+  if (seedKey !== seededFor) {
+    setSeededFor(seedKey);
+    if (open) {
+      setResponsibleParty(editing?.responsible_party ?? '');
+      setDescription(editing?.description ?? '');
+      setGrossAmount(editing?.gross_amount ?? '');
+      setChargeablePct(editing ? fractionToPercent(editing.chargeable_pct) : '');
+      setRecoveredAmount(editing?.recovered_amount ?? '');
+      setCurrency(editing?.currency ?? '');
+      setBasis(editing?.basis ?? '');
+      setSourceRef(editing?.source_ref ?? '');
+      setStatus(editing?.status || 'proposed');
+    }
+  }
+
+  const grossValid = isValidMoney(grossAmount);
+  const pctValid = isValidPercent(chargeablePct);
+  const recoveredValid = isValidMoney(recoveredAmount);
+  const canSubmit = grossValid && pctValid && recoveredValid;
+
+  const statusLabel = (s: string): string =>
+    t(`change_intelligence.recovery.status.${s}`, { defaultValue: humanize(s) });
+
+  const mutation = useMutation<BackCharge, unknown, void>({
+    mutationFn: () => {
+      if (isEdit && editing) {
+        return updateBackCharge(projectId, editing.id, {
+          responsible_party: responsibleParty.trim(),
+          description: description.trim(),
+          basis: basis.trim(),
+          gross_amount: grossAmount.trim() || '0',
+          chargeable_pct: percentToFraction(chargeablePct),
+          status,
+          recovered_amount: recoveredAmount.trim() || '0',
+        });
+      }
+      return createBackCharge(projectId, {
+        source_ref: sourceRef.trim(),
+        responsible_party: responsibleParty.trim(),
+        description: description.trim(),
+        basis: basis.trim(),
+        gross_amount: grossAmount.trim() || '0',
+        chargeable_pct: percentToFraction(chargeablePct),
+        currency: currency.trim(),
+        status,
+      });
+    },
+    onSuccess: () => {
+      // The ledger rollup, the flat back-charge list and the recovery-rate index
+      // all derive from these rows; refresh every recovery query for the project.
+      void queryClient.invalidateQueries({
+        queryKey: ['change-intelligence', 'recovery-ledger', projectId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['change-intelligence', 'back-charges', projectId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['change-intelligence', 'recovery-performance', projectId],
+      });
+      addToast({
+        type: 'success',
+        title: isEdit
+          ? t('change_intelligence.recovery.form.updated', { defaultValue: 'Back-charge updated' })
+          : t('change_intelligence.recovery.form.created', { defaultValue: 'Back-charge recorded' }),
+      });
+      onClose();
+    },
+    onError: (err) => {
+      addToast({
+        type: 'error',
+        title: isEdit
+          ? t('change_intelligence.recovery.form.update_failed', {
+              defaultValue: 'Could not update the back-charge',
+            })
+          : t('change_intelligence.recovery.form.create_failed', {
+              defaultValue: 'Could not record the back-charge',
+            }),
+        message: getErrorMessage(err),
+      });
+    },
+  });
+
+  return (
+    <WideModal
+      open={open}
+      onClose={onClose}
+      busy={mutation.isPending}
+      size="md"
+      title={
+        isEdit
+          ? t('change_intelligence.recovery.form.edit_title', { defaultValue: 'Edit back-charge' })
+          : t('change_intelligence.recovery.form.create_title', { defaultValue: 'Record a back-charge' })
+      }
+      subtitle={t('change_intelligence.recovery.form.subtitle', {
+        defaultValue: 'A cost the project means to recover from the party held responsible.',
+      })}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={mutation.isPending}
+            className="rounded-md border border-border-light bg-surface-primary px-3 py-1.5 text-sm font-medium text-content-secondary hover:bg-surface-secondary disabled:opacity-40"
+          >
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </button>
+          <button
+            type="button"
+            disabled={!canSubmit || mutation.isPending}
+            onClick={() => mutation.mutate()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-oe-blue/90 disabled:opacity-40"
+          >
+            {mutation.isPending
+              ? t('common.saving', { defaultValue: 'Saving...' })
+              : isEdit
+                ? t('change_intelligence.recovery.form.save', { defaultValue: 'Save changes' })
+                : t('change_intelligence.recovery.form.submit', { defaultValue: 'Record back-charge' })}
+          </button>
+        </>
+      }
+    >
+      <WideModalSection columns={2}>
+        <WideModalField
+          label={t('change_intelligence.recovery.form.responsible_party', {
+            defaultValue: 'Responsible party',
+          })}
+          htmlFor="bc-party"
+          span={2}
+        >
+          <input
+            id="bc-party"
+            value={responsibleParty}
+            onChange={(e) => setResponsibleParty(e.target.value)}
+            placeholder={t('change_intelligence.recovery.form.responsible_party_ph', {
+              defaultValue: 'The subcontractor, supplier or party at fault',
+            })}
+            className={FORM_INPUT_CLASS}
+          />
+        </WideModalField>
+        <WideModalField
+          label={t('change_intelligence.recovery.form.description', { defaultValue: 'Description' })}
+          htmlFor="bc-description"
+          span={2}
+        >
+          <input
+            id="bc-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={t('change_intelligence.recovery.form.description_ph', {
+              defaultValue: 'What the cost is for (e.g. rework after a defect)',
+            })}
+            className={FORM_INPUT_CLASS}
+          />
+        </WideModalField>
+        <WideModalField
+          label={t('change_intelligence.recovery.form.gross_amount', { defaultValue: 'Gross amount' })}
+          htmlFor="bc-gross"
+          error={
+            grossValid
+              ? undefined
+              : t('change_intelligence.recovery.form.amount_invalid', {
+                  defaultValue: 'Enter a non-negative amount.',
+                })
+          }
+          hint={t('change_intelligence.recovery.form.gross_hint', {
+            defaultValue: 'The full cost incurred, before the chargeable share.',
+          })}
+        >
+          <input
+            id="bc-gross"
+            inputMode="decimal"
+            value={grossAmount}
+            onChange={(e) => setGrossAmount(e.target.value)}
+            placeholder="0.00"
+            className={FORM_INPUT_CLASS}
+          />
+        </WideModalField>
+        <WideModalField
+          label={t('change_intelligence.recovery.form.chargeable_pct', {
+            defaultValue: 'Chargeable %',
+          })}
+          htmlFor="bc-pct"
+          error={
+            pctValid
+              ? undefined
+              : t('change_intelligence.recovery.form.pct_invalid', {
+                  defaultValue: 'Enter a percent between 0 and 100.',
+                })
+          }
+          hint={t('change_intelligence.recovery.form.pct_hint', {
+            defaultValue: 'Share of the gross cost judged recoverable (defaults to 100%).',
+          })}
+        >
+          <input
+            id="bc-pct"
+            inputMode="decimal"
+            value={chargeablePct}
+            onChange={(e) => setChargeablePct(e.target.value)}
+            placeholder="100"
+            className={FORM_INPUT_CLASS}
+          />
+        </WideModalField>
+        {isEdit ? (
+          <WideModalField
+            label={t('change_intelligence.recovery.form.recovered_amount', {
+              defaultValue: 'Recovered amount',
+            })}
+            htmlFor="bc-recovered"
+            error={
+              recoveredValid
+                ? undefined
+                : t('change_intelligence.recovery.form.amount_invalid', {
+                    defaultValue: 'Enter a non-negative amount.',
+                  })
+            }
+            hint={t('change_intelligence.recovery.form.recovered_hint', {
+              defaultValue: 'How much has actually been collected so far.',
+            })}
+          >
+            <input
+              id="bc-recovered"
+              inputMode="decimal"
+              value={recoveredAmount}
+              onChange={(e) => setRecoveredAmount(e.target.value)}
+              placeholder="0.00"
+              className={FORM_INPUT_CLASS}
+            />
+          </WideModalField>
+        ) : (
+          <WideModalField
+            label={t('change_intelligence.recovery.form.currency', { defaultValue: 'Currency' })}
+            htmlFor="bc-currency"
+            hint={t('change_intelligence.recovery.form.currency_hint', {
+              defaultValue: 'ISO code, e.g. USD or EUR.',
+            })}
+          >
+            <input
+              id="bc-currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              placeholder="USD"
+              className={FORM_INPUT_CLASS}
+            />
+          </WideModalField>
+        )}
+        <WideModalField
+          label={t('change_intelligence.recovery.form.status', { defaultValue: 'Status' })}
+          htmlFor="bc-status"
+        >
+          <select
+            id="bc-status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className={FORM_INPUT_CLASS}
+          >
+            {BACK_CHARGE_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {statusLabel(s)}
+              </option>
+            ))}
+          </select>
+        </WideModalField>
+        <WideModalField
+          label={t('change_intelligence.recovery.form.basis', { defaultValue: 'Basis' })}
+          htmlFor="bc-basis"
+          span={2}
+          hint={t('change_intelligence.recovery.form.basis_hint', {
+            defaultValue: 'What grounds the charge (a contract clause, an NCR reference).',
+          })}
+        >
+          <input
+            id="bc-basis"
+            value={basis}
+            onChange={(e) => setBasis(e.target.value)}
+            placeholder={t('change_intelligence.recovery.form.basis_ph', {
+              defaultValue: 'e.g. NCR-12 or contract clause 8.2',
+            })}
+            className={FORM_INPUT_CLASS}
+          />
+        </WideModalField>
+        {!isEdit && (
+          <WideModalField
+            label={t('change_intelligence.recovery.form.source_ref', {
+              defaultValue: 'Source reference',
+            })}
+            htmlFor="bc-source"
+            span={2}
+            hint={t('change_intelligence.recovery.form.source_ref_hint', {
+              defaultValue: 'An optional external reference for this back-charge.',
+            })}
+          >
+            <input
+              id="bc-source"
+              value={sourceRef}
+              onChange={(e) => setSourceRef(e.target.value)}
+              placeholder={t('change_intelligence.recovery.form.source_ref_ph', {
+                defaultValue: 'e.g. a tracker row or document id',
+              })}
+              className={FORM_INPUT_CLASS}
+            />
+          </WideModalField>
+        )}
+      </WideModalSection>
+      {mutation.isError && (
+        <div className="flex items-center gap-2 text-sm text-semantic-error">
+          <AlertTriangle className="h-4 w-4" />
+          <span>{getErrorMessage(mutation.error)}</span>
+        </div>
+      )}
+    </WideModal>
+  );
+}
+
 /**
  * Recovery-performance index (#11): how much of what the project was entitled to
  * recover it actually recovered, split by how traceable the responsible owner
@@ -446,6 +977,7 @@ function ImpactTab({ projectId }: { projectId: string }) {
  * the high-traceability cohort, and absorbed cost in the low one.
  */
 function RecoveryPerformanceCard({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'recovery-performance', projectId],
     queryFn: () => getRecoveryPerformance(projectId),
@@ -463,9 +995,13 @@ function RecoveryPerformanceCard({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Recovery rate" value={ratePercent(perf.primary_rate)} tone="success" />
         <StatTile
-          label="Recovered"
+          label={t('change_intelligence.recovery.perf.tile.rate', { defaultValue: 'Recovery rate' })}
+          value={ratePercent(perf.primary_rate)}
+          tone="success"
+        />
+        <StatTile
+          label={t('change_intelligence.recovery.perf.tile.recovered', { defaultValue: 'Recovered' })}
           value={
             <MoneyDisplay
               amount={primary?.recovered_total ?? '0'}
@@ -475,7 +1011,7 @@ function RecoveryPerformanceCard({ projectId }: { projectId: string }) {
           }
         />
         <StatTile
-          label="Absorbed"
+          label={t('change_intelligence.recovery.perf.tile.absorbed', { defaultValue: 'Absorbed' })}
           value={
             <MoneyDisplay
               amount={primary?.absorbed_total ?? '0'}
@@ -489,16 +1025,29 @@ function RecoveryPerformanceCard({ projectId }: { projectId: string }) {
       {primary && primary.by_cohort.length > 0 && (
         <Card className="overflow-hidden p-0">
           <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
-            Recovery rate by owner traceability ({perf.primary_currency})
+            {t('change_intelligence.recovery.perf.heading', {
+              defaultValue: 'Recovery rate by owner traceability ({{currency}})',
+              currency: perf.primary_currency,
+            })}
           </div>
           <table className="w-full text-sm">
             <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
               <tr>
-                <th className="px-3 py-2">Traceability</th>
-                <th className="px-3 py-2 text-right">Rate</th>
-                <th className="px-3 py-2 text-right">Chargeable</th>
-                <th className="px-3 py-2 text-right">Recovered</th>
-                <th className="px-3 py-2 text-right">Absorbed</th>
+                <th className="px-3 py-2">
+                  {t('change_intelligence.recovery.perf.col.traceability', { defaultValue: 'Traceability' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.recovery.perf.col.rate', { defaultValue: 'Rate' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.recovery.perf.col.chargeable', { defaultValue: 'Chargeable' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.recovery.perf.col.recovered', { defaultValue: 'Recovered' })}
+                </th>
+                <th className="px-3 py-2 text-right">
+                  {t('change_intelligence.recovery.perf.col.absorbed', { defaultValue: 'Absorbed' })}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -522,9 +1071,10 @@ function RecoveryPerformanceCard({ projectId }: { projectId: string }) {
             </tbody>
           </table>
           <p className="border-t border-border-light px-3 py-2 text-xs leading-relaxed text-content-tertiary">
-            High traceability means the responsible owner is provable from the record (a timely
-            notice or complete evidence). Back-charges with no scored evidence yet count as low,
-            so this never overstates the high-traceability rate.
+            {t('change_intelligence.recovery.perf.note', {
+              defaultValue:
+                'High traceability means the responsible owner is provable from the record (a timely notice or complete evidence). Back-charges with no scored evidence yet count as low, so this never overstates the high-traceability rate.',
+            })}
           </p>
         </Card>
       )}
@@ -544,6 +1094,7 @@ function ApportionmentDetail({
   projectId: string;
   backChargeId: string;
 }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'apportionment', projectId, backChargeId],
     queryFn: () => getBackChargeApportionment(projectId, backChargeId),
@@ -552,7 +1103,11 @@ function ApportionmentDetail({
     staleTime: 30_000,
   });
   if (q.isLoading) {
-    return <div className="px-3 py-2 text-sm text-content-tertiary">Loading split...</div>;
+    return (
+      <div className="px-3 py-2 text-sm text-content-tertiary">
+        {t('change_intelligence.recovery.apportionment.loading', { defaultValue: 'Loading split...' })}
+      </div>
+    );
   }
   if (q.isError) {
     return (
@@ -563,7 +1118,9 @@ function ApportionmentDetail({
   if (!data || !data.is_apportioned || data.shares.length === 0) {
     return (
       <div className="px-3 py-2 text-sm text-content-tertiary">
-        Not apportioned. The whole chargeable amount sits with the responsible party.
+        {t('change_intelligence.recovery.apportionment.none', {
+          defaultValue: 'Not apportioned. The whole chargeable amount sits with the responsible party.',
+        })}
       </div>
     );
   }
@@ -571,9 +1128,15 @@ function ApportionmentDetail({
     <table className="w-full text-sm">
       <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
         <tr>
-          <th className="px-3 py-2">Party</th>
-          <th className="px-3 py-2 text-right">Share</th>
-          <th className="px-3 py-2 text-right">Amount</th>
+          <th className="px-3 py-2">
+            {t('change_intelligence.recovery.apportionment.col.party', { defaultValue: 'Party' })}
+          </th>
+          <th className="px-3 py-2 text-right">
+            {t('change_intelligence.recovery.apportionment.col.share', { defaultValue: 'Share' })}
+          </th>
+          <th className="px-3 py-2 text-right">
+            {t('change_intelligence.recovery.apportionment.col.amount', { defaultValue: 'Amount' })}
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -592,6 +1155,7 @@ function ApportionmentDetail({
 }
 
 function RecoveryTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const ledgerQ = useQuery({
     queryKey: ['change-intelligence', 'recovery-ledger', projectId],
     queryFn: () => getRecoveryLedger(projectId),
@@ -609,94 +1173,187 @@ function RecoveryTab({ projectId }: { projectId: string }) {
   const ledger = ledgerQ.data;
   const charges = chargesQ.data ?? [];
   const [openCharge, setOpenCharge] = useState<string | null>(null);
+  // The write surface: a single modal that both creates a back-charge (editing
+  // null) and edits an existing one (editing set to the row).
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<BackCharge | null>(null);
+
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+  const openEdit = (bc: BackCharge) => {
+    setEditing(bc);
+    setFormOpen(true);
+  };
+
+  const loading = ledgerQ.isLoading || chargesQ.isLoading;
+  const error = ledgerQ.isError ? ledgerQ.error : chargesQ.isError ? chargesQ.error : null;
+  const isEmpty = !ledger || ledger.item_count === 0;
+
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={openCreate}
+          className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-oe-blue/90"
+        >
+          <Plus className="h-4 w-4" />
+          {t('change_intelligence.recovery.record', { defaultValue: 'Record back-charge' })}
+        </button>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Back-charges" value={ledger?.item_count ?? 0} />
-        <StatTile label="Open" value={ledger?.open_count ?? 0} tone="warning" />
         <StatTile
-          label="Outstanding"
+          label={t('change_intelligence.recovery.tile.back_charges', { defaultValue: 'Back-charges' })}
+          value={ledger?.item_count ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.recovery.tile.open', { defaultValue: 'Open' })}
+          value={ledger?.open_count ?? 0}
+          tone="warning"
+        />
+        <StatTile
+          label={t('change_intelligence.recovery.tile.outstanding', { defaultValue: 'Outstanding' })}
           value={<MoneyDisplay amount={ledger?.primary_outstanding ?? '0'} currency={ledger?.primary_currency} showCode />}
         />
       </div>
-      <PanelState
-        loading={ledgerQ.isLoading || chargesQ.isLoading}
-        error={ledgerQ.isError ? ledgerQ.error : chargesQ.isError ? chargesQ.error : null}
-        empty={!ledger || ledger.item_count === 0}
-        emptyIcon={<Wallet className="h-6 w-6" />}
-        emptyTitle="No back-charges"
-        emptyDescription="Record a back-charge to start tracking what the project means to recover."
-      >
-        <RecoveryPerformanceCard projectId={projectId} />
-        <Card className="overflow-hidden p-0">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
-              <tr>
-                <th className="px-3 py-2">Responsible party</th>
-                <th className="px-3 py-2 text-right">Open</th>
-                <th className="px-3 py-2 text-right">Chargeable</th>
-                <th className="px-3 py-2 text-right">Recovered</th>
-                <th className="px-3 py-2 text-right">Outstanding</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ledger?.by_party.map((p) => (
-                <tr key={`${p.party}-${p.currency}`} className="border-t border-border-light">
-                  <td className="px-3 py-2 font-medium text-content-primary">{p.party}</td>
-                  <td className="px-3 py-2 text-right">{p.open_count}</td>
-                  <td className="px-3 py-2 text-right">
-                    <MoneyDisplay amount={p.chargeable_total} currency={p.currency} showCode />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <MoneyDisplay amount={p.recovered_total} currency={p.currency} showCode />
-                  </td>
-                  <td className="px-3 py-2 text-right font-medium">
-                    <MoneyDisplay amount={p.outstanding_total} currency={p.currency} showCode />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {loading ? (
+        <SkeletonTable />
+      ) : error ? (
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-sm text-semantic-error">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{getErrorMessage(error)}</span>
+          </div>
         </Card>
-        {charges.length > 0 && (
+      ) : isEmpty ? (
+        <div className="space-y-3">
+          <EmptyState
+            icon={<Wallet className="h-6 w-6" />}
+            title={t('change_intelligence.recovery.empty_title', { defaultValue: 'No back-charges' })}
+            description={t('change_intelligence.recovery.empty_desc', {
+              defaultValue: 'Record a back-charge to start tracking what the project means to recover.',
+            })}
+          />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-oe-blue/90"
+            >
+              <Plus className="h-4 w-4" />
+              {t('change_intelligence.recovery.record', { defaultValue: 'Record back-charge' })}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <RecoveryPerformanceCard projectId={projectId} />
           <Card className="overflow-hidden p-0">
-            <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
-              Apportionment by back-charge
-            </div>
-            <ul>
-              {charges.map((bc) => {
-                const expanded = openCharge === bc.id;
-                return (
-                  <li key={bc.id} className="border-t border-border-light first:border-t-0">
-                    <button
-                      type="button"
-                      onClick={() => setOpenCharge(expanded ? null : bc.id)}
-                      aria-expanded={expanded}
-                      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-sm hover:bg-surface-secondary"
-                    >
-                      <ArrowRight
-                        className={`h-3.5 w-3.5 shrink-0 text-content-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
-                      />
-                      <span className="font-medium text-content-primary">
-                        {bc.responsible_party || '(unassigned)'}
-                      </span>
-                      <span className="text-content-tertiary">{bc.description || bc.basis || bc.source_ref}</span>
-                      <span className="ml-auto">
-                        <MoneyDisplay amount={bc.chargeable_amount} currency={bc.currency} showCode />
-                      </span>
-                    </button>
-                    {expanded && (
-                      <div className="border-t border-border-light bg-surface-primary">
-                        <ApportionmentDetail projectId={projectId} backChargeId={bc.id} />
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+            <table className="w-full text-sm">
+              <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+                <tr>
+                  <th className="px-3 py-2">
+                    {t('change_intelligence.recovery.col.responsible_party', {
+                      defaultValue: 'Responsible party',
+                    })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.recovery.col.open', { defaultValue: 'Open' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.recovery.col.chargeable', { defaultValue: 'Chargeable' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.recovery.col.recovered', { defaultValue: 'Recovered' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.recovery.col.outstanding', { defaultValue: 'Outstanding' })}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger?.by_party.map((p) => (
+                  <tr key={`${p.party}-${p.currency}`} className="border-t border-border-light">
+                    <td className="px-3 py-2 font-medium text-content-primary">{p.party}</td>
+                    <td className="px-3 py-2 text-right">{p.open_count}</td>
+                    <td className="px-3 py-2 text-right">
+                      <MoneyDisplay amount={p.chargeable_total} currency={p.currency} showCode />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <MoneyDisplay amount={p.recovered_total} currency={p.currency} showCode />
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium">
+                      <MoneyDisplay amount={p.outstanding_total} currency={p.currency} showCode />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </Card>
-        )}
-      </PanelState>
+          {charges.length > 0 && (
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                {t('change_intelligence.recovery.apportionment_heading', {
+                  defaultValue: 'Apportionment by back-charge',
+                })}
+              </div>
+              <ul>
+                {charges.map((bc) => {
+                  const expanded = openCharge === bc.id;
+                  return (
+                    <li key={bc.id} className="border-t border-border-light first:border-t-0">
+                      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm hover:bg-surface-secondary">
+                        <button
+                          type="button"
+                          onClick={() => setOpenCharge(expanded ? null : bc.id)}
+                          aria-expanded={expanded}
+                          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left"
+                        >
+                          <ArrowRight
+                            className={`h-3.5 w-3.5 shrink-0 text-content-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
+                          />
+                          <span className="font-medium text-content-primary">
+                            {bc.responsible_party ||
+                              t('change_intelligence.recovery.unassigned', { defaultValue: '(unassigned)' })}
+                          </span>
+                          <span className="text-content-tertiary">{bc.description || bc.basis || bc.source_ref}</span>
+                          <span className="ml-auto">
+                            <MoneyDisplay amount={bc.chargeable_amount} currency={bc.currency} showCode />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(bc)}
+                          aria-label={t('change_intelligence.recovery.edit', {
+                            defaultValue: 'Edit back-charge',
+                          })}
+                          title={t('change_intelligence.recovery.edit', { defaultValue: 'Edit back-charge' })}
+                          className="shrink-0 rounded-md p-1 text-content-tertiary hover:bg-surface-primary hover:text-content-primary"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {expanded && (
+                        <div className="border-t border-border-light bg-surface-primary">
+                          <ApportionmentDetail projectId={projectId} backChargeId={bc.id} />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
+        </>
+      )}
+      <BackChargeFormModal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        projectId={projectId}
+        editing={editing}
+      />
     </div>
   );
 }
@@ -704,6 +1361,7 @@ function RecoveryTab({ projectId }: { projectId: string }) {
 // --- Tab: dispute risk (the dispute radar) ---------------------------------
 
 function DisputeRiskTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
   const q = useQuery({
     queryKey: ['change-intelligence', 'dispute-risk', projectId],
@@ -717,18 +1375,34 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Open changes" value={board?.summary.item_count ?? 0} />
-        <StatTile label="High" value={bands.high ?? 0} tone="error" />
-        <StatTile label="Elevated" value={bands.elevated ?? 0} tone="warning" />
-        <StatTile label="Low" value={bands.low ?? 0} />
+        <StatTile
+          label={t('change_intelligence.dispute.tile.open_changes', { defaultValue: 'Open changes' })}
+          value={board?.summary.item_count ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.dispute.tile.high', { defaultValue: 'High' })}
+          value={bands.high ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.dispute.tile.elevated', { defaultValue: 'Elevated' })}
+          value={bands.elevated ?? 0}
+          tone="warning"
+        />
+        <StatTile
+          label={t('change_intelligence.dispute.tile.low', { defaultValue: 'Low' })}
+          value={bands.low ?? 0}
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={!board || board.items.length === 0}
         emptyIcon={<Radar className="h-6 w-6" />}
-        emptyTitle="No open changes"
-        emptyDescription="There are no open changes to assess for dispute exposure right now."
+        emptyTitle={t('change_intelligence.dispute.empty_title', { defaultValue: 'No open changes' })}
+        emptyDescription={t('change_intelligence.dispute.empty_desc', {
+          defaultValue: 'There are no open changes to assess for dispute exposure right now.',
+        })}
       >
         <div className="space-y-2">
           {board?.items.map((it) => {
@@ -751,7 +1425,7 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
                     <span className="text-xs text-content-tertiary">{humanize(it.kind)}</span>
                     <span className="font-medium text-content-primary">
                       {it.change_ref ? `${it.change_ref}: ` : ''}
-                      {it.title || '(untitled)'}
+                      {it.title || t('change_intelligence.common.untitled', { defaultValue: '(untitled)' })}
                     </span>
                     <span className="ml-auto inline-flex items-center gap-1 text-xs text-content-tertiary">
                       <ShieldAlert className="h-3.5 w-3.5" />
@@ -761,7 +1435,8 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
                   <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 pl-5 text-sm text-content-secondary">
                     {it.currency ? (
                       <span>
-                        At risk: <MoneyDisplay amount={it.money_basis} currency={it.currency} showCode />
+                        {t('change_intelligence.dispute.at_risk', { defaultValue: 'At risk:' })}{' '}
+                        <MoneyDisplay amount={it.money_basis} currency={it.currency} showCode />
                       </span>
                     ) : null}
                     <span className="text-content-tertiary">{it.recommended_cure}</span>
@@ -795,6 +1470,7 @@ function DisputeRiskTab({ projectId }: { projectId: string }) {
 // --- Tab: decision impact ("what does approving this add?") ----------------
 
 function DecisionImpactTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const [candidateId, setCandidateId] = useState('');
   const [submitted, setSubmitted] = useState('');
   const q = useQuery({
@@ -809,14 +1485,16 @@ function DecisionImpactTab({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <Card className="space-y-3 p-4">
         <label className="block text-sm font-medium text-content-secondary" htmlFor="ci-candidate">
-          Candidate change id
+          {t('change_intelligence.decision.candidate_label', { defaultValue: 'Candidate change id' })}
         </label>
         <div className="flex flex-wrap items-center gap-3">
           <input
             id="ci-candidate"
             value={candidateId}
             onChange={(e) => setCandidateId(e.target.value)}
-            placeholder="Paste the id of the change order, variation or MoC under decision"
+            placeholder={t('change_intelligence.decision.candidate_ph', {
+              defaultValue: 'Paste the id of the change order, variation or MoC under decision',
+            })}
             className="min-w-0 flex-1 rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
           />
           <button
@@ -826,11 +1504,14 @@ function DecisionImpactTab({ projectId }: { projectId: string }) {
             className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             <GitCompareArrows className="h-4 w-4" />
-            Preview impact
+            {t('change_intelligence.decision.preview', { defaultValue: 'Preview impact' })}
           </button>
         </div>
         <p className="text-xs text-content-tertiary">
-          Previews what approving this change adds on top of everything already committed, per currency. Nothing is changed.
+          {t('change_intelligence.decision.helper', {
+            defaultValue:
+              'Previews what approving this change adds on top of everything already committed, per currency. Nothing is changed.',
+          })}
         </p>
       </Card>
       {submitted ? (
@@ -839,18 +1520,30 @@ function DecisionImpactTab({ projectId }: { projectId: string }) {
           error={q.isError ? q.error : null}
           empty={!impact || impact.totals_by_currency.length === 0}
           emptyIcon={<GitCompareArrows className="h-6 w-6" />}
-          emptyTitle="No impact to show"
-          emptyDescription="This candidate carries no cost or schedule against the committed baseline."
+          emptyTitle={t('change_intelligence.decision.empty_title', { defaultValue: 'No impact to show' })}
+          emptyDescription={t('change_intelligence.decision.empty_desc', {
+            defaultValue: 'This candidate carries no cost or schedule against the committed baseline.',
+          })}
         >
           <Card className="overflow-hidden p-0">
             <table className="w-full text-sm">
               <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
                 <tr>
-                  <th className="px-3 py-2">By kind</th>
-                  <th className="px-3 py-2 text-right">Committed</th>
-                  <th className="px-3 py-2 text-right">This change</th>
-                  <th className="px-3 py-2 text-right">Resulting</th>
-                  <th className="px-3 py-2 text-right">Days</th>
+                  <th className="px-3 py-2">
+                    {t('change_intelligence.decision.col.by_kind', { defaultValue: 'By kind' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.decision.col.committed', { defaultValue: 'Committed' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.decision.col.this_change', { defaultValue: 'This change' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.decision.col.resulting', { defaultValue: 'Resulting' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('change_intelligence.decision.col.days', { defaultValue: 'Days' })}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -878,15 +1571,22 @@ function DecisionImpactTab({ projectId }: { projectId: string }) {
           </Card>
           {impact && impact.totals_by_currency.length > 1 && (
             <p className="text-xs text-content-tertiary">
-              This decision spans {impact.totals_by_currency.length} currencies; totals are kept separate and never blended.
+              {t('change_intelligence.decision.multi_currency', {
+                defaultValue:
+                  'This decision spans {{count}} currencies; totals are kept separate and never blended.',
+                count: impact.totals_by_currency.length,
+              })}
             </p>
           )}
         </PanelState>
       ) : (
         <EmptyState
           icon={<GitCompareArrows className="h-6 w-6" />}
-          title="Preview a decision"
-          description="Enter the id of a change under decision to see what approving it adds to the committed position."
+          title={t('change_intelligence.decision.prompt_title', { defaultValue: 'Preview a decision' })}
+          description={t('change_intelligence.decision.prompt_desc', {
+            defaultValue:
+              'Enter the id of a change under decision to see what approving it adds to the committed position.',
+          })}
         />
       )}
     </div>
@@ -896,6 +1596,7 @@ function DecisionImpactTab({ projectId }: { projectId: string }) {
 // --- Tab: watch ("which open changes are quietly going wrong") -------------
 
 function WatchTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'change-watch', projectId],
     queryFn: () => getChangeWatch(projectId),
@@ -907,21 +1608,45 @@ function WatchTab({ projectId }: { projectId: string }) {
   const counts = watch?.counts ?? {};
   // Only the flagged items are worth listing; an "ok" change is not drifting.
   const flagged = (watch?.items ?? []).filter((r) => r.classification !== 'ok');
+  // The "Incomplete" count is always 0 today: the backend hardcodes a
+  // completeness_score of 1.0, so a change can never be classified incomplete.
+  // Hide the tile until backend completeness scoring is wired so it never shows
+  // a permanent, misleading zero.
+  const showIncomplete = (counts.incomplete ?? 0) > 0;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Lost" value={counts.lost ?? 0} tone="error" />
-        <StatTile label="Stalled" value={counts.stalled ?? 0} tone="warning" />
-        <StatTile label="Incomplete" value={counts.incomplete ?? 0} />
-        <StatTile label="On track" value={counts.ok ?? 0} tone="success" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label={t('change_intelligence.watch.tile.lost', { defaultValue: 'Lost' })}
+          value={counts.lost ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.watch.tile.stalled', { defaultValue: 'Stalled' })}
+          value={counts.stalled ?? 0}
+          tone="warning"
+        />
+        {showIncomplete && (
+          <StatTile
+            label={t('change_intelligence.watch.tile.incomplete', { defaultValue: 'Incomplete' })}
+            value={counts.incomplete ?? 0}
+          />
+        )}
+        <StatTile
+          label={t('change_intelligence.watch.tile.on_track', { defaultValue: 'On track' })}
+          value={counts.ok ?? 0}
+          tone="success"
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={flagged.length === 0}
         emptyIcon={<ShieldAlert className="h-6 w-6" />}
-        emptyTitle="Nothing drifting"
-        emptyDescription="No open change is stalled, lost or incomplete right now."
+        emptyTitle={t('change_intelligence.watch.empty_title', { defaultValue: 'Nothing drifting' })}
+        emptyDescription={t('change_intelligence.watch.empty_desc', {
+          defaultValue: 'No open change is stalled, lost or incomplete right now.',
+        })}
       >
         <div className="space-y-2">
           {flagged.map((r) => (
@@ -930,9 +1655,19 @@ function WatchTab({ projectId }: { projectId: string }) {
                 <Badge variant={WATCH_VARIANT[r.classification]}>{humanize(r.classification)}</Badge>
                 <span className="text-xs text-content-tertiary">{humanize(r.kind)}</span>
                 <span className="ml-auto flex flex-wrap items-center gap-x-3 text-sm text-content-secondary">
-                  <span>{`${r.idle_days.toFixed(0)}d idle`}</span>
+                  <span>
+                    {t('change_intelligence.watch.idle_days', {
+                      defaultValue: '{{days}}d idle',
+                      days: r.idle_days.toFixed(0),
+                    })}
+                  </span>
                   {r.overdue_days > 0 && (
-                    <span className="text-semantic-error">{`${r.overdue_days.toFixed(0)}d overdue`}</span>
+                    <span className="text-semantic-error">
+                      {t('change_intelligence.watch.overdue_days', {
+                        defaultValue: '{{days}}d overdue',
+                        days: r.overdue_days.toFixed(0),
+                      })}
+                    </span>
                   )}
                 </span>
               </div>
@@ -958,6 +1693,7 @@ function WatchTab({ projectId }: { projectId: string }) {
 const CONTRACT_STANDARDS = ['', 'FIDIC', 'NEC4', 'JCT'];
 
 function ClarifierTab() {
+  const { t } = useTranslation();
   const [note, setNote] = useState('');
   const [standard, setStandard] = useState('');
   const m = useMutation<ClarifiedRequest, unknown, void>({
@@ -968,14 +1704,16 @@ function ClarifierTab() {
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="space-y-3 p-4">
         <label className="block text-sm font-medium text-content-secondary" htmlFor="ci-note">
-          Rough change note
+          {t('change_intelligence.clarifier.note_label', { defaultValue: 'Rough change note' })}
         </label>
         <textarea
           id="ci-note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={7}
-          placeholder="Paste a quick description of the change as you would jot it down..."
+          placeholder={t('change_intelligence.clarifier.note_ph', {
+            defaultValue: 'Paste a quick description of the change as you would jot it down...',
+          })}
           className="w-full rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
         />
         <div className="flex items-center gap-3">
@@ -983,11 +1721,11 @@ function ClarifierTab() {
             value={standard}
             onChange={(e) => setStandard(e.target.value)}
             className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm"
-            aria-label="Contract standard"
+            aria-label={t('change_intelligence.clarifier.standard_label', { defaultValue: 'Contract standard' })}
           >
             {CONTRACT_STANDARDS.map((s) => (
               <option key={s || 'none'} value={s}>
-                {s || 'No standard'}
+                {s || t('change_intelligence.clarifier.no_standard', { defaultValue: 'No standard' })}
               </option>
             ))}
           </select>
@@ -998,7 +1736,9 @@ function ClarifierTab() {
             className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             <Sparkles className="h-4 w-4" />
-            {m.isPending ? 'Analyzing...' : 'Analyze'}
+            {m.isPending
+              ? t('change_intelligence.clarifier.analyzing', { defaultValue: 'Analyzing...' })
+              : t('change_intelligence.clarifier.analyze', { defaultValue: 'Analyze' })}
           </button>
         </div>
         {m.isError && (
@@ -1013,20 +1753,33 @@ function ClarifierTab() {
         {!result ? (
           <EmptyState
             icon={<Sparkles className="h-6 w-6" />}
-            title="Structured draft"
-            description="Analyze a note to see a suggested title, classification, gaps to fill and likely contract clauses."
+            title={t('change_intelligence.clarifier.empty_title', { defaultValue: 'Structured draft' })}
+            description={t('change_intelligence.clarifier.empty_desc', {
+              defaultValue:
+                'Analyze a note to see a suggested title, classification, gaps to fill and likely contract clauses.',
+            })}
           />
         ) : (
           <div className="space-y-3">
             <div>
-              <div className="text-lg font-semibold text-content-primary">{result.title || '(untitled)'}</div>
+              <div className="text-lg font-semibold text-content-primary">
+                {result.title || t('change_intelligence.common.untitled', { defaultValue: '(untitled)' })}
+              </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <Badge variant="blue">{humanize(result.detected_classification)}</Badge>
                 <Badge variant={result.completeness >= 0.7 ? 'success' : result.completeness >= 0.4 ? 'warning' : 'error'}>
-                  {Math.round(result.completeness * 100)}% complete
+                  {t('change_intelligence.common.pct_complete', {
+                    defaultValue: '{{pct}}% complete',
+                    pct: Math.round(result.completeness * 100),
+                  })}
                 </Badge>
                 {result.suggested_route && (
-                  <span className="text-xs text-content-tertiary">Route: {humanize(result.suggested_route)}</span>
+                  <span className="text-xs text-content-tertiary">
+                    {t('change_intelligence.clarifier.route', {
+                      defaultValue: 'Route: {{route}}',
+                      route: humanize(result.suggested_route),
+                    })}
+                  </span>
                 )}
               </div>
             </div>
@@ -1035,7 +1788,9 @@ function ClarifierTab() {
             )}
             {result.missing.length > 0 && (
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">Still missing</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t('change_intelligence.clarifier.still_missing', { defaultValue: 'Still missing' })}
+                </div>
                 <ul className="mt-1 space-y-1 text-sm">
                   {result.missing.map((g) => (
                     <li key={g.field} className="flex items-start gap-2">
@@ -1048,7 +1803,9 @@ function ClarifierTab() {
             )}
             {result.clause_suggestions.length > 0 && (
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">Likely clauses</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t('change_intelligence.clarifier.likely_clauses', { defaultValue: 'Likely clauses' })}
+                </div>
                 <ul className="mt-1 space-y-1 text-sm">
                   {result.clause_suggestions.map((c) => (
                     <li key={`${c.standard}-${c.clause_ref}`} className="text-content-secondary">
@@ -1076,6 +1833,7 @@ const INTAKE_PLACEHOLDER = `{
 }`;
 
 function IntakeTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const profilesQ = useQuery({
     queryKey: ['change-intelligence', 'intake-profiles', projectId],
     queryFn: () => getIntakeProfiles(projectId),
@@ -1094,10 +1852,16 @@ function IntakeTab({ projectId }: { projectId: string }) {
       try {
         record = JSON.parse(raw || '{}');
       } catch {
-        throw new Error('The record is not valid JSON.');
+        throw new Error(
+          t('change_intelligence.intake.error_not_json', { defaultValue: 'The record is not valid JSON.' }),
+        );
       }
       if (typeof record !== 'object' || record === null || Array.isArray(record)) {
-        throw new Error('The record must be a JSON object of field: value pairs.');
+        throw new Error(
+          t('change_intelligence.intake.error_not_object', {
+            defaultValue: 'The record must be a JSON object of field: value pairs.',
+          }),
+        );
       }
       return previewIntake(projectId, effectiveProfile, record as Record<string, unknown>);
     },
@@ -1108,7 +1872,7 @@ function IntakeTab({ projectId }: { projectId: string }) {
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="space-y-3 p-4">
         <label className="block text-sm font-medium text-content-secondary" htmlFor="ci-intake-record">
-          Foreign change record (JSON)
+          {t('change_intelligence.intake.record_label', { defaultValue: 'Foreign change record (JSON)' })}
         </label>
         <textarea
           id="ci-intake-record"
@@ -1123,7 +1887,7 @@ function IntakeTab({ projectId }: { projectId: string }) {
             value={effectiveProfile}
             onChange={(e) => setProfileName(e.target.value)}
             className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm"
-            aria-label="Intake profile"
+            aria-label={t('change_intelligence.intake.profile_label', { defaultValue: 'Intake profile' })}
             disabled={profiles.length === 0}
           >
             {profiles.map((p) => (
@@ -1139,12 +1903,16 @@ function IntakeTab({ projectId }: { projectId: string }) {
             className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             <Import className="h-4 w-4" />
-            {m.isPending ? 'Reading...' : 'Preview'}
+            {m.isPending
+              ? t('change_intelligence.intake.reading', { defaultValue: 'Reading...' })
+              : t('change_intelligence.intake.preview', { defaultValue: 'Preview' })}
           </button>
         </div>
         <p className="text-xs text-content-tertiary">
-          Paste a row from a tracker spreadsheet or an email intake form. The record is normalized to a canonical change
-          draft for preview only - nothing is saved.
+          {t('change_intelligence.intake.helper', {
+            defaultValue:
+              'Paste a row from a tracker spreadsheet or an email intake form. The record is normalized to a canonical change draft for preview only - nothing is saved.',
+          })}
         </p>
         {m.isError && (
           <div className="flex items-center gap-2 text-sm text-semantic-error">
@@ -1158,21 +1926,31 @@ function IntakeTab({ projectId }: { projectId: string }) {
         {!result ? (
           <EmptyState
             icon={<Import className="h-6 w-6" />}
-            title="Canonical draft"
-            description="Preview a foreign record to see the title, cost, schedule impact and what could not be mapped."
+            title={t('change_intelligence.intake.empty_title', { defaultValue: 'Canonical draft' })}
+            description={t('change_intelligence.intake.empty_desc', {
+              defaultValue:
+                'Preview a foreign record to see the title, cost, schedule impact and what could not be mapped.',
+            })}
           />
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-lg font-semibold text-content-primary">{result.draft.title || '(no title)'}</span>
+              <span className="text-lg font-semibold text-content-primary">
+                {result.draft.title || t('change_intelligence.intake.no_title', { defaultValue: '(no title)' })}
+              </span>
               <Badge
                 variant={result.completeness >= 0.7 ? 'success' : result.completeness >= 0.4 ? 'warning' : 'error'}
               >
-                {Math.round(result.completeness * 100)}% complete
+                {t('change_intelligence.common.pct_complete', {
+                  defaultValue: '{{pct}}% complete',
+                  pct: Math.round(result.completeness * 100),
+                })}
               </Badge>
             </div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-              <dt className="text-content-tertiary">Cost impact</dt>
+              <dt className="text-content-tertiary">
+                {t('change_intelligence.intake.cost_impact', { defaultValue: 'Cost impact' })}
+              </dt>
               <dd className="text-content-secondary">
                 {result.draft.cost_impact !== null ? (
                   <MoneyDisplay amount={result.draft.cost_impact} currency={result.draft.currency ?? ''} showCode />
@@ -1180,20 +1958,31 @@ function IntakeTab({ projectId }: { projectId: string }) {
                   '-'
                 )}
               </dd>
-              <dt className="text-content-tertiary">Schedule impact</dt>
+              <dt className="text-content-tertiary">
+                {t('change_intelligence.intake.schedule_impact', { defaultValue: 'Schedule impact' })}
+              </dt>
               <dd className="text-content-secondary">
-                {result.draft.schedule_impact_days !== null ? `${result.draft.schedule_impact_days} d` : '-'}
+                {result.draft.schedule_impact_days !== null
+                  ? t('change_intelligence.intake.days_value', {
+                      defaultValue: '{{days}} d',
+                      days: result.draft.schedule_impact_days,
+                    })
+                  : '-'}
               </dd>
-              <dt className="text-content-tertiary">Requested by</dt>
+              <dt className="text-content-tertiary">
+                {t('change_intelligence.intake.requested_by', { defaultValue: 'Requested by' })}
+              </dt>
               <dd className="text-content-secondary">{result.draft.requested_by || '-'}</dd>
-              <dt className="text-content-tertiary">Reference</dt>
+              <dt className="text-content-tertiary">
+                {t('change_intelligence.intake.reference', { defaultValue: 'Reference' })}
+              </dt>
               <dd className="text-content-secondary">{result.draft.source_ref || '-'}</dd>
             </dl>
             {result.draft.description && <p className="text-sm text-content-secondary">{result.draft.description}</p>}
             {result.missing_required.length > 0 && (
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  Missing required
+                  {t('change_intelligence.intake.missing_required', { defaultValue: 'Missing required' })}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {result.missing_required.map((f) => (
@@ -1207,7 +1996,7 @@ function IntakeTab({ projectId }: { projectId: string }) {
             {result.unmapped_fields.length > 0 && (
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  Unmapped columns
+                  {t('change_intelligence.intake.unmapped_columns', { defaultValue: 'Unmapped columns' })}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {result.unmapped_fields.map((f) => (
@@ -1247,6 +2036,7 @@ const DELAY_VARIANT: Record<DelayBand, BadgeVariant> = {
 };
 
 function DelayRiskTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'delay-risk', projectId],
     queryFn: () => getDelayRiskBoard(projectId),
@@ -1260,17 +2050,31 @@ function DelayRiskTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
-        <StatTile label="High" value={counts.high ?? 0} tone="error" />
-        <StatTile label="Elevated" value={counts.elevated ?? 0} tone="warning" />
-        <StatTile label="Low" value={counts.low ?? 0} tone="success" />
+        <StatTile
+          label={t('change_intelligence.delay.tile.high', { defaultValue: 'High' })}
+          value={counts.high ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.delay.tile.elevated', { defaultValue: 'Elevated' })}
+          value={counts.elevated ?? 0}
+          tone="warning"
+        />
+        <StatTile
+          label={t('change_intelligence.delay.tile.low', { defaultValue: 'Low' })}
+          value={counts.low ?? 0}
+          tone="success"
+        />
       </div>
       <PanelState
         loading={q.isLoading}
         error={q.isError ? q.error : null}
         empty={items.length === 0}
         emptyIcon={<Gauge className="h-6 w-6" />}
-        emptyTitle="No open changes"
-        emptyDescription="There are no open changes to score for delay risk right now."
+        emptyTitle={t('change_intelligence.delay.empty_title', { defaultValue: 'No open changes' })}
+        emptyDescription={t('change_intelligence.delay.empty_desc', {
+          defaultValue: 'There are no open changes to score for delay risk right now.',
+        })}
       >
         <div className="space-y-2">
           {items.map((it) => (
@@ -1280,12 +2084,28 @@ function DelayRiskTab({ projectId }: { projectId: string }) {
                 <span className="font-medium text-content-primary">{it.change_ref || humanize(it.kind)}</span>
                 <span className="text-xs text-content-tertiary">{it.title}</span>
                 <span className="ml-auto flex flex-wrap items-center gap-x-3 text-sm text-content-secondary">
-                  <span>{`${Math.round(it.risk * 100)}% risk`}</span>
-                  {it.overdue && <span className="text-semantic-error">overdue</span>}
+                  <span>
+                    {t('change_intelligence.delay.risk_pct', {
+                      defaultValue: '{{pct}}% risk',
+                      pct: Math.round(it.risk * 100),
+                    })}
+                  </span>
+                  {it.overdue && (
+                    <span className="text-semantic-error">
+                      {t('change_intelligence.delay.overdue', { defaultValue: 'overdue' })}
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-content-tertiary">
-                <span>{it.party ? `Held by ${humanize(it.party)}` : 'Unassigned'}</span>
+                <span>
+                  {it.party
+                    ? t('change_intelligence.delay.held_by', {
+                        defaultValue: 'Held by {{party}}',
+                        party: humanize(it.party),
+                      })
+                    : t('change_intelligence.delay.unassigned', { defaultValue: 'Unassigned' })}
+                </span>
                 {it.top_factors.slice(0, 3).map((f) => (
                   <span key={f.name}>{`${humanize(f.name)} ${Math.round(f.value * 100)}%`}</span>
                 ))}
@@ -1307,7 +2127,8 @@ const SCOPE_VARIANT: Record<ScopeBand, BadgeVariant> = {
 };
 
 // Mirrors backend REASON_LABELS in scope_ambiguity.py - report-level
-// top_reasons arrive as stable reason keys; map them to human wording here.
+// top_reasons arrive as stable reason keys; map them to human wording here. The
+// English fallbacks double as the i18n default values, keyed per reason.
 const SCOPE_REASON_LABELS: Record<string, string> = {
   vague_language: 'Vague or placeholder wording',
   provisional_sum: 'Provisional sum or allowance',
@@ -1316,11 +2137,16 @@ const SCOPE_REASON_LABELS: Record<string, string> = {
   underspecified_description: 'Under-specified description',
 };
 
-function scopeReasonLabel(reason: string): string {
-  return SCOPE_REASON_LABELS[reason] ?? humanize(reason);
+function scopeReasonLabel(reason: string, t: TFunction): string {
+  const fallback = SCOPE_REASON_LABELS[reason];
+  if (fallback) {
+    return t(`change_intelligence.scope.reason.${reason}`, { defaultValue: fallback });
+  }
+  return humanize(reason);
 }
 
 function ScopeRiskTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['change-intelligence', 'scope-ambiguity', projectId],
     queryFn: () => getScopeAmbiguity(projectId),
@@ -1336,20 +2162,34 @@ function ScopeRiskTab({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile
-          label="Ambiguity index"
+          label={t('change_intelligence.scope.tile.ambiguity_index', { defaultValue: 'Ambiguity index' })}
           value={report ? index : '-'}
           tone={index >= 50 ? 'error' : index >= 25 ? 'warning' : 'success'}
         />
-        <StatTile label="High" value={counts.high ?? 0} tone="error" />
-        <StatTile label="Elevated" value={counts.elevated ?? 0} tone="warning" />
-        <StatTile label="Low" value={counts.low ?? 0} tone="success" />
+        <StatTile
+          label={t('change_intelligence.scope.tile.high', { defaultValue: 'High' })}
+          value={counts.high ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.scope.tile.elevated', { defaultValue: 'Elevated' })}
+          value={counts.elevated ?? 0}
+          tone="warning"
+        />
+        <StatTile
+          label={t('change_intelligence.scope.tile.low', { defaultValue: 'Low' })}
+          value={counts.low ?? 0}
+          tone="success"
+        />
       </div>
       {report && report.top_reasons.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-content-tertiary">Top drivers</span>
+          <span className="text-xs font-medium text-content-tertiary">
+            {t('change_intelligence.scope.top_drivers', { defaultValue: 'Top drivers' })}
+          </span>
           {report.top_reasons.map((r) => (
             <Badge key={r} variant="neutral">
-              {scopeReasonLabel(r)}
+              {scopeReasonLabel(r, t)}
             </Badge>
           ))}
         </div>
@@ -1359,8 +2199,11 @@ function ScopeRiskTab({ projectId }: { projectId: string }) {
         error={q.isError ? q.error : null}
         empty={lines.length === 0}
         emptyIcon={<FileSearch className="h-6 w-6" />}
-        emptyTitle="No bill lines to grade"
-        emptyDescription="Once this project carries a bill of quantities, its lines are graded here for the vague scope that breeds a change order later."
+        emptyTitle={t('change_intelligence.scope.empty_title', { defaultValue: 'No bill lines to grade' })}
+        emptyDescription={t('change_intelligence.scope.empty_desc', {
+          defaultValue:
+            'Once this project carries a bill of quantities, its lines are graded here for the vague scope that breeds a change order later.',
+        })}
       >
         <div className="space-y-2">
           {lines.map((ln) => (
@@ -1450,18 +2293,66 @@ export function ChangeIntelligencePage() {
             activeId={tab}
             onChange={(next) => setTab(next as Tab)}
             tabs={[
-              { id: 'coordination', label: 'Act first', icon: <ListChecks className="h-4 w-4" /> },
-              { id: 'cycle', label: 'Waiting on whom', icon: <Clock className="h-4 w-4" /> },
-              { id: 'comms', label: 'Correspondence', icon: <Mail className="h-4 w-4" /> },
-              { id: 'impact', label: 'Impact', icon: <TrendingUp className="h-4 w-4" /> },
-              { id: 'recovery', label: 'Cost recovery', icon: <Wallet className="h-4 w-4" /> },
-              { id: 'dispute', label: 'Dispute risk', icon: <Radar className="h-4 w-4" /> },
-              { id: 'decision', label: 'Decision impact', icon: <Scale className="h-4 w-4" /> },
-              { id: 'watch', label: 'Watch', icon: <ShieldAlert className="h-4 w-4" /> },
-              { id: 'clarifier', label: 'Clarifier', icon: <Sparkles className="h-4 w-4" /> },
-              { id: 'intake', label: 'Intake', icon: <Import className="h-4 w-4" /> },
-              { id: 'delay', label: 'Delay risk', icon: <Gauge className="h-4 w-4" /> },
-              { id: 'scope', label: 'Scope risk', icon: <FileSearch className="h-4 w-4" /> },
+              {
+                id: 'coordination',
+                label: t('change_intelligence.tab.coordination', { defaultValue: 'Act first' }),
+                icon: <ListChecks className="h-4 w-4" />,
+              },
+              {
+                id: 'cycle',
+                label: t('change_intelligence.tab.cycle', { defaultValue: 'Waiting on whom' }),
+                icon: <Clock className="h-4 w-4" />,
+              },
+              {
+                id: 'comms',
+                label: t('change_intelligence.tab.comms', { defaultValue: 'Correspondence' }),
+                icon: <Mail className="h-4 w-4" />,
+              },
+              {
+                id: 'impact',
+                label: t('change_intelligence.tab.impact', { defaultValue: 'Impact' }),
+                icon: <TrendingUp className="h-4 w-4" />,
+              },
+              {
+                id: 'recovery',
+                label: t('change_intelligence.tab.recovery', { defaultValue: 'Cost recovery' }),
+                icon: <Wallet className="h-4 w-4" />,
+              },
+              {
+                id: 'dispute',
+                label: t('change_intelligence.tab.dispute', { defaultValue: 'Dispute risk' }),
+                icon: <Radar className="h-4 w-4" />,
+              },
+              {
+                id: 'decision',
+                label: t('change_intelligence.tab.decision', { defaultValue: 'Decision impact' }),
+                icon: <Scale className="h-4 w-4" />,
+              },
+              {
+                id: 'watch',
+                label: t('change_intelligence.tab.watch', { defaultValue: 'Watch' }),
+                icon: <ShieldAlert className="h-4 w-4" />,
+              },
+              {
+                id: 'clarifier',
+                label: t('change_intelligence.tab.clarifier', { defaultValue: 'Clarifier' }),
+                icon: <Sparkles className="h-4 w-4" />,
+              },
+              {
+                id: 'intake',
+                label: t('change_intelligence.tab.intake', { defaultValue: 'Intake' }),
+                icon: <Import className="h-4 w-4" />,
+              },
+              {
+                id: 'delay',
+                label: t('change_intelligence.tab.delay', { defaultValue: 'Delay risk' }),
+                icon: <Gauge className="h-4 w-4" />,
+              },
+              {
+                id: 'scope',
+                label: t('change_intelligence.tab.scope', { defaultValue: 'Scope risk' }),
+                icon: <FileSearch className="h-4 w-4" />,
+              },
             ]}
           />
           <div role="tabpanel" id={ids.panelId(tab)} aria-labelledby={ids.tabId(tab)}>
