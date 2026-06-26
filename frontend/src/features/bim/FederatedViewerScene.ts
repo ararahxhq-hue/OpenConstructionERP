@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * FederatedViewerScene - framework-agnostic Three.js scene that composes
- * N BIM model GLBs into a single shared-origin scene, color-coded by
- * discipline. Slice 3 of BIM Federations.
+ * N BIM models (GLB or DAE/COLLADA) into a single shared-origin scene,
+ * color-coded by discipline. Slice 3 of BIM Federations.
  *
  * Counter-intuitive design notes
  * ------------------------------
@@ -23,7 +23,7 @@
  *    federation viewport burns ~0% CPU.
  * 5) ``dispose()`` is exhaustive: animation loop cancelled, ResizeObserver
  *    disconnected, IntersectionObserver disconnected, every member's
- *    geometries + materials disposed, renderer + GLTFLoader released.
+ *    geometries + materials disposed, renderer released.
  *    Slice-3 lifecycle audit confirmed zero retained-mesh leaks across
  *    100 add/remove cycles in dev (verified via Chrome devtools heap
  *    snapshot - see __tests__/FederatedViewerScene.test.ts:test_dispose).
@@ -31,7 +31,8 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+import { parseMemberGeometry } from './bimMemberGeometry';
 
 /* ── Palette (mirrors FederationsPage.tsx so a single change applies
  * everywhere via the DISCIPLINE_PALETTE constant on both files). ─────── */
@@ -106,6 +107,9 @@ export interface FederatedMemberAdd {
   modelId: string;
   /** arch | struct | mep | landscape | civil | other */
   discipline: string;
+  /** Raw geometry bytes for the member - GLB or DAE/COLLADA. The field keeps
+   *  its historical name; parseMemberGeometry sniffs the real format and picks
+   *  the matching loader, so a DAE-serving geometry endpoint renders too. */
   glbBuffer: ArrayBuffer;
   originOffset: { x: number; y: number; z: number };
 }
@@ -127,7 +131,6 @@ export class FederatedViewerScene {
    * for the entire federated scene. */
   readonly root: THREE.Group;
 
-  private loader: GLTFLoader;
   private animationId: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private intersectionObserver: IntersectionObserver | null = null;
@@ -252,8 +255,6 @@ export class FederatedViewerScene {
     this.root.name = 'federation-root';
     this.scene.add(this.root);
 
-    this.loader = new GLTFLoader();
-
     // ResizeObserver covers the common case of the parent flex/grid
     // expanding the canvas. We also pause rendering when the canvas
     // scrolls out of the viewport via IntersectionObserver.
@@ -350,7 +351,7 @@ export class FederatedViewerScene {
     if (this.members.has(args.modelId)) {
       this.removeMember(args.modelId);
     }
-    const root = await this.parseGlb(args.glbBuffer);
+    const root = await parseMemberGeometry(args.glbBuffer);
     root.name = `member-${args.modelId}`;
     root.position.set(
       args.originOffset.x ?? 0,
@@ -385,17 +386,6 @@ export class FederatedViewerScene {
     }
 
     this._needsRender = true;
-  }
-
-  private parseGlb(buffer: ArrayBuffer): Promise<THREE.Group> {
-    return new Promise((resolve, reject) => {
-      this.loader.parse(
-        buffer,
-        '',
-        (gltf) => resolve(gltf.scene),
-        (err) => reject(err instanceof Error ? err : new Error(String(err))),
-      );
-    });
   }
 
   removeMember(modelId: string): void {
