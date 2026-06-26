@@ -35,6 +35,8 @@ import {
   FileSearch,
   Plus,
   Pencil,
+  Trash2,
+  SplitSquareHorizontal,
 } from 'lucide-react';
 import {
   Card,
@@ -67,6 +69,7 @@ import {
   listBackCharges,
   getRecoveryPerformance,
   getBackChargeApportionment,
+  apportionBackCharge,
   createBackCharge,
   updateBackCharge,
   clarifyChangeNote,
@@ -1154,6 +1157,254 @@ function ApportionmentDetail({
   );
 }
 
+// Stable per-row key so adding / removing share rows never re-keys a sibling
+// (which would move input focus). Not security-sensitive, just a render key.
+let _apRowSeq = 0;
+const nextRowKey = (): string => `apr-${(_apRowSeq += 1)}`;
+
+interface ApportionShareRow {
+  key: string;
+  party: string;
+  pct: string; // whole-number percent in the UI; sent as a [0,1] fraction
+}
+
+/**
+ * Apportionment editor (#8, write side): split one back-charge's chargeable
+ * amount across the parties that share responsibility. Percentages are entered
+ * here and must total 100; they are sent as [0,1] fractions. Re-saving replaces
+ * any previous split. The authoritative per-party amounts are computed
+ * server-side (Decimal, rounded half-up); the figures shown here are a preview.
+ */
+function ApportionmentFormModal({
+  open,
+  onClose,
+  projectId,
+  backCharge,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+  backCharge: BackCharge | null;
+}) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+
+  // Pre-seed from any existing split once the modal opens; if none is recorded
+  // the responsible party starts at 100%.
+  const existingQ = useQuery({
+    queryKey: ['change-intelligence', 'apportionment', projectId, backCharge?.id ?? ''],
+    queryFn: () => getBackChargeApportionment(projectId, backCharge!.id),
+    enabled: open && !!backCharge,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  const [rows, setRows] = useState<ApportionShareRow[]>([]);
+  const [seededFor, setSeededFor] = useState<string | null>(null);
+  const ready = open && !!backCharge && !existingQ.isLoading;
+  const seedKey = ready && backCharge ? backCharge.id : null;
+  if (seedKey !== seededFor) {
+    setSeededFor(seedKey);
+    if (ready && backCharge) {
+      const data = existingQ.data;
+      if (data && data.is_apportioned && data.shares.length > 0) {
+        setRows(data.shares.map((s) => ({ key: s.id, party: s.party, pct: fractionToPercent(s.share_pct) })));
+      } else {
+        setRows([{ key: nextRowKey(), party: backCharge.responsible_party || '', pct: '100' }]);
+      }
+    }
+  }
+
+  const updateRow = (key: string, patch: Partial<ApportionShareRow>) =>
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { key: nextRowKey(), party: '', pct: '' }]);
+  const removeRow = (key: string) => setRows((rs) => (rs.length <= 1 ? rs : rs.filter((r) => r.key !== key)));
+
+  const chargeable = backCharge ? Number(backCharge.chargeable_amount) : 0;
+  const currency = backCharge?.currency;
+  const sumPct = rows.reduce((acc, r) => acc + (Number.isFinite(Number(r.pct)) ? Number(r.pct) : 0), 0);
+  const sumValid = Math.abs(sumPct - 100) < 0.01;
+  const allPctValid = rows.every((r) => r.pct.trim() !== '' && isValidPercent(r.pct));
+  const allPartiesValid = rows.every((r) => r.party.trim() !== '');
+  const canSubmit = rows.length > 0 && allPctValid && allPartiesValid && sumValid;
+
+  const mutation = useMutation<BackChargeApportionment, unknown, void>({
+    mutationFn: () =>
+      apportionBackCharge(
+        projectId,
+        backCharge!.id,
+        rows.map((r) => ({ party: r.party.trim(), share_pct: percentToFraction(r.pct) })),
+      ),
+    onSuccess: () => {
+      // The split feeds the per-party ledger and the recovery-rate rollups, so
+      // refresh the apportionment detail and every recovery query for the project.
+      void queryClient.invalidateQueries({
+        queryKey: ['change-intelligence', 'apportionment', projectId, backCharge!.id],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['change-intelligence', 'recovery-ledger', projectId] });
+      void queryClient.invalidateQueries({ queryKey: ['change-intelligence', 'back-charges', projectId] });
+      void queryClient.invalidateQueries({ queryKey: ['change-intelligence', 'recovery-performance', projectId] });
+      addToast({
+        type: 'success',
+        title: t('change_intelligence.recovery.apportionment.saved', { defaultValue: 'Apportionment saved' }),
+      });
+      onClose();
+    },
+    onError: (err) => {
+      addToast({
+        type: 'error',
+        title: t('change_intelligence.recovery.apportionment.save_failed', {
+          defaultValue: 'Could not save the apportionment',
+        }),
+        message: getErrorMessage(err),
+      });
+    },
+  });
+
+  return (
+    <WideModal
+      open={open}
+      onClose={onClose}
+      busy={mutation.isPending}
+      size="md"
+      title={t('change_intelligence.recovery.apportionment.form_title', { defaultValue: 'Apportion back-charge' })}
+      subtitle={t('change_intelligence.recovery.apportionment.form_subtitle', {
+        defaultValue:
+          'Split the chargeable amount across the parties that share responsibility. Shares must total 100%.',
+      })}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={mutation.isPending}
+            className="rounded-md border border-border-light bg-surface-primary px-3 py-1.5 text-sm font-medium text-content-secondary hover:bg-surface-secondary disabled:opacity-40"
+          >
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </button>
+          <button
+            type="button"
+            disabled={!canSubmit || mutation.isPending}
+            onClick={() => mutation.mutate()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-oe-blue/90 disabled:opacity-40"
+          >
+            {mutation.isPending
+              ? t('common.saving', { defaultValue: 'Saving...' })
+              : t('change_intelligence.recovery.apportionment.save', { defaultValue: 'Save apportionment' })}
+          </button>
+        </>
+      }
+    >
+      {existingQ.isLoading ? (
+        <div className="py-6 text-center text-sm text-content-tertiary">
+          {t('change_intelligence.recovery.apportionment.loading', { defaultValue: 'Loading split...' })}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs text-content-tertiary">
+            <span>
+              {t('change_intelligence.recovery.apportionment.chargeable', { defaultValue: 'Chargeable amount' })}
+            </span>
+            <span className="font-medium text-content-secondary">
+              <MoneyDisplay amount={backCharge?.chargeable_amount ?? '0'} currency={currency} showCode />
+            </span>
+          </div>
+
+          <ul className="space-y-2">
+            {rows.map((r, i) => {
+              const rowPct = Number(r.pct);
+              const preview =
+                chargeable > 0 && Number.isFinite(rowPct) ? ((chargeable * rowPct) / 100).toFixed(2) : '0';
+              return (
+                <li key={r.key} className="flex items-end gap-2">
+                  <WideModalField
+                    label={
+                      i === 0
+                        ? t('change_intelligence.recovery.apportionment.col.party', { defaultValue: 'Party' })
+                        : ''
+                    }
+                    htmlFor={`ap-party-${r.key}`}
+                    className="flex-1"
+                  >
+                    <input
+                      id={`ap-party-${r.key}`}
+                      value={r.party}
+                      onChange={(e) => updateRow(r.key, { party: e.target.value })}
+                      placeholder={t('change_intelligence.recovery.apportionment.party_ph', {
+                        defaultValue: 'Party name',
+                      })}
+                      className={FORM_INPUT_CLASS}
+                    />
+                  </WideModalField>
+                  <WideModalField
+                    label={
+                      i === 0
+                        ? t('change_intelligence.recovery.apportionment.col.share', { defaultValue: 'Share' })
+                        : ''
+                    }
+                    htmlFor={`ap-pct-${r.key}`}
+                    className="w-20"
+                  >
+                    <input
+                      id={`ap-pct-${r.key}`}
+                      inputMode="decimal"
+                      value={r.pct}
+                      onChange={(e) => updateRow(r.key, { pct: e.target.value })}
+                      placeholder="0"
+                      className={FORM_INPUT_CLASS}
+                    />
+                  </WideModalField>
+                  <div className="w-28 pb-2 text-right text-xs text-content-tertiary">
+                    <MoneyDisplay amount={preview} currency={currency} />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(r.key)}
+                    disabled={rows.length <= 1}
+                    aria-label={t('change_intelligence.recovery.apportionment.remove', {
+                      defaultValue: 'Remove party',
+                    })}
+                    className="mb-1 shrink-0 rounded-md p-1.5 text-content-tertiary hover:bg-surface-secondary hover:text-semantic-error disabled:opacity-30"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={addRow}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1 text-xs font-medium text-content-secondary hover:bg-surface-secondary"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t('change_intelligence.recovery.apportionment.add_party', { defaultValue: 'Add party' })}
+            </button>
+            <span
+              className={`text-xs font-medium tabular-nums ${sumValid ? 'text-semantic-success' : 'text-semantic-error'}`}
+            >
+              {t('change_intelligence.recovery.apportionment.total', {
+                defaultValue: 'Total {{pct}}%',
+                pct: Number.isFinite(sumPct) ? Math.round(sumPct * 100) / 100 : 0,
+              })}
+            </span>
+          </div>
+          {!sumValid && (
+            <p className="text-xs text-semantic-error">
+              {t('change_intelligence.recovery.apportionment.total_invalid', {
+                defaultValue: 'Shares must total exactly 100%.',
+              })}
+            </p>
+          )}
+        </div>
+      )}
+    </WideModal>
+  );
+}
+
 function RecoveryTab({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const ledgerQ = useQuery({
@@ -1177,6 +1428,8 @@ function RecoveryTab({ projectId }: { projectId: string }) {
   // null) and edits an existing one (editing set to the row).
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<BackCharge | null>(null);
+  // The back-charge whose apportionment is being edited (null = modal closed).
+  const [apportionFor, setApportionFor] = useState<BackCharge | null>(null);
 
   const openCreate = () => {
     setEditing(null);
@@ -1338,6 +1591,18 @@ function RecoveryTab({ projectId }: { projectId: string }) {
                       {expanded && (
                         <div className="border-t border-border-light bg-surface-primary">
                           <ApportionmentDetail projectId={projectId} backChargeId={bc.id} />
+                          <div className="flex justify-end px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => setApportionFor(bc)}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1 text-xs font-medium text-content-secondary hover:bg-surface-secondary"
+                            >
+                              <SplitSquareHorizontal className="h-3.5 w-3.5" />
+                              {t('change_intelligence.recovery.apportionment.edit_split', {
+                                defaultValue: 'Edit split',
+                              })}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </li>
@@ -1353,6 +1618,12 @@ function RecoveryTab({ projectId }: { projectId: string }) {
         onClose={() => setFormOpen(false)}
         projectId={projectId}
         editing={editing}
+      />
+      <ApportionmentFormModal
+        open={apportionFor !== null}
+        onClose={() => setApportionFor(null)}
+        projectId={projectId}
+        backCharge={apportionFor}
       />
     </div>
   );

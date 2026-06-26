@@ -291,6 +291,28 @@ export interface AccuracyScoreboard {
   scores: AccuracyScore[];
 }
 
+/** Verdict rollup for one AI surface; correct_rate is null when no verdicts yet. */
+export interface SurfaceFeedback {
+  surface: string;
+  total: number;
+  correct: number;
+  incorrect: number;
+  correct_rate: number | null;
+}
+
+/**
+ * The read side of the generic trust loop: the caller's thumbs up / down
+ * verdicts on non-run AI surfaces (the AI Estimator result, a match suggestion,
+ * an advisor answer) rolled up overall and per surface.
+ */
+export interface AIFeedbackSummary {
+  total: number;
+  correct: number;
+  incorrect: number;
+  correct_rate: number | null;
+  by_surface: SurfaceFeedback[];
+}
+
 /** Result of seeding the demo sandbox with sample scored runs (idempotent). */
 export interface SandboxSeedResult {
   // How many runs this call created (0 when they already existed).
@@ -363,6 +385,16 @@ export const aiAgentsApi = {
     if (params?.agentName) q.set('agent_name', params.agentName);
     const qs = q.toString();
     return apiGet<AccuracyScoreboard>(`/v1/ai-agents/accuracy/${qs ? `?${qs}` : ''}`);
+  },
+  // Read side of the generic trust loop: the caller's thumbs up / down verdicts
+  // on the non-run AI surfaces, rolled up overall and per surface. Scoped to the
+  // active project when one is set.
+  getFeedbackSummary: (params?: { projectId?: string; surface?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.projectId) q.set('project_id', params.projectId);
+    if (params?.surface) q.set('surface', params.surface);
+    const qs = q.toString();
+    return apiGet<AIFeedbackSummary>(`/v1/ai-agents/feedback/summary${qs ? `?${qs}` : ''}`);
   },
   // Seed a few clearly-labeled sample runs so the trust + accuracy surfaces
   // have something to show on the hosted demo (403 off-demo). Idempotent -

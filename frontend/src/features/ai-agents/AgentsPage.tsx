@@ -40,6 +40,7 @@ import { RunTimeline } from './components/RunTimeline';
 import { RecentRunsList } from './components/RecentRunsList';
 import { AutomatedRunsPanel } from './components/AutomatedRunsPanel';
 import { AccuracyScoreboard } from './components/AccuracyScoreboard';
+import { FeedbackSummaryPanel } from './components/FeedbackSummaryPanel';
 import { aiAgentsGuide } from './aiAgentsGuide';
 import {
   agentDisplayName,
@@ -209,6 +210,15 @@ export function AgentsPage(): JSX.Element {
   const scoreboardQuery = useQuery({
     queryKey: ['ai-agents', 'accuracy', projectId ?? null],
     queryFn: () => aiAgentsApi.getAccuracyScoreboard({ projectId: projectId ?? undefined }),
+    staleTime: 30_000,
+  });
+
+  // AI feedback summary: the read side of the generic trust loop - the user's
+  // thumbs up / down verdicts on non-run AI surfaces, rolled up per surface.
+  // Scoped to the active project when one is set.
+  const feedbackSummaryQuery = useQuery({
+    queryKey: ['ai-agents', 'feedback-summary', projectId ?? null],
+    queryFn: () => aiAgentsApi.getFeedbackSummary({ projectId: projectId ?? undefined }),
     staleTime: 30_000,
   });
 
@@ -729,6 +739,13 @@ export function AgentsPage(): JSX.Element {
             canSeedSample={demoMode}
             seeding={seedSampleMutation.isPending}
             onSeedSample={() => seedSampleMutation.mutate()}
+          />
+
+          {/* AI feedback summary — the read side of the trust loop: the user's
+              thumbs up / down on the AI surfaces that have no run row. */}
+          <FeedbackSummaryPanel
+            summary={feedbackSummaryQuery.data ?? null}
+            loading={feedbackSummaryQuery.isLoading}
           />
         </aside>
       </div>

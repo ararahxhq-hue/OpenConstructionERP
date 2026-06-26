@@ -27,6 +27,7 @@ vi.mock('../api', async (importOriginal) => {
     listBackCharges: vi.fn(),
     getRecoveryPerformance: vi.fn(),
     getBackChargeApportionment: vi.fn(),
+    apportionBackCharge: vi.fn(),
     clarifyChangeNote: vi.fn(),
     getDisputeRiskBoard: vi.fn(),
     getDecisionImpact: vi.fn(),
@@ -45,6 +46,7 @@ import {
   listBackCharges,
   getRecoveryPerformance,
   getBackChargeApportionment,
+  apportionBackCharge,
 } from '../api';
 import { ChangeIntelligencePage } from '../ChangeIntelligencePage';
 
@@ -173,6 +175,15 @@ beforeEach(() => {
       },
     ],
   });
+  vi.mocked(apportionBackCharge).mockResolvedValue({
+    back_charge_id: 'bc-1',
+    project_id: 'p-1',
+    currency: 'USD',
+    chargeable_amount: '1000.00',
+    share_total: '1000.00',
+    is_apportioned: true,
+    shares: [],
+  });
 });
 
 describe('RecoveryTab wiring (#8 + #11)', () => {
@@ -203,5 +214,28 @@ describe('RecoveryTab wiring (#8 + #11)', () => {
     expect(await screen.findByText('designer')).toBeInTheDocument();
     expect(screen.getByText('60%')).toBeInTheDocument();
     expect(screen.getByText('40%')).toBeInTheDocument();
+  });
+
+  it('edits a back-charge apportionment and saves the new split', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: /Cost recovery/i }));
+    fireEvent.click(await screen.findByText('Rework after defect'));
+
+    // Open the apportionment editor; it seeds from the existing 60/40 split.
+    fireEvent.click(await screen.findByRole('button', { name: /Edit split/i }));
+    expect(await screen.findByText('Apportion back-charge')).toBeInTheDocument();
+
+    // The seeded percentages are present and total 100, so save is enabled.
+    expect(await screen.findByDisplayValue('60')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('40')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save apportionment/i }));
+
+    await waitFor(() => {
+      expect(apportionBackCharge).toHaveBeenCalledWith('p-1', 'bc-1', [
+        { party: 'subcontractor a', share_pct: '0.6' },
+        { party: 'designer', share_pct: '0.4' },
+      ]);
+    });
   });
 });
