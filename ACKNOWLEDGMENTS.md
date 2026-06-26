@@ -40,3 +40,5 @@ while making sure community input is recognized.
 | [arvildev](https://github.com/arvildev) | [#227](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/227) |
 | [arvildev](https://github.com/arvildev) | [#270](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/270) |
 | [Tigercatman](https://github.com/Tigercatman) | [#271](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/271) |
+| [Tigercatman](https://github.com/Tigercatman) | [#272](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/272) |
+| [Tigercatman](https://github.com/Tigercatman) | [#273](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/273) |
