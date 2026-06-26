@@ -27,11 +27,17 @@ from app.dependencies import CurrentUserId, CurrentUserPayload, RequirePermissio
 from app.modules.ai_agents.accuracy_schemas import (
     AccuracyScoreboardOut,
     AccuracyScoreOut,
+    AIFeedbackIn,
+    AIFeedbackOut,
     OutcomeRecordedOut,
     RecordOutcomeIn,
     SandboxSeedOut,
 )
-from app.modules.ai_agents.accuracy_service import build_scoreboard, record_run_outcome
+from app.modules.ai_agents.accuracy_service import (
+    build_scoreboard,
+    record_ai_feedback,
+    record_run_outcome,
+)
 from app.modules.ai_agents.sandbox import seed_sandbox_runs
 from app.modules.ai_agents.schemas import (
     CUSTOM_AGENT_CATEGORIES,
@@ -613,6 +619,42 @@ async def record_agent_run_outcome(
         agent_name=run.agent_name,
         actual_outcome=bool(payload.correct),
     )
+
+
+@router.post(
+    "/feedback",
+    response_model=AIFeedbackOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RequirePermission("ai_agents.run"))],
+)
+async def submit_ai_feedback(
+    payload: AIFeedbackIn,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> AIFeedbackOut:
+    """Record a correct / incorrect verdict on any AI output in the app.
+
+    The generic trust-loop sink for AI surfaces that have no agent-run row to
+    score - the AI Estimator result, a match-elements suggestion, an advisor
+    answer. Always attributed to the caller; when a ``project_id`` is supplied
+    it is verified against the caller's access first (owner or team member), so
+    a verdict can never be attributed to a project the caller cannot see.
+    Money-free: just a thumbs up / down plus an optional note.
+    """
+    if payload.project_id is not None:
+        await verify_project_access(payload.project_id, user_id, session)
+
+    row = await record_ai_feedback(
+        session,
+        user_id=uuid.UUID(user_id),
+        surface=payload.surface,
+        correct=payload.correct,
+        project_id=payload.project_id,
+        ref=payload.ref,
+        note=payload.note,
+    )
+    await session.commit()
+    return AIFeedbackOut(id=str(row.id), surface=row.surface, correct=row.correct)
 
 
 @router.get(

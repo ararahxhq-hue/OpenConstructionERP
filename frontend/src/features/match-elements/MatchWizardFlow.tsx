@@ -1961,6 +1961,7 @@ export function MatchWizardFlow() {
         <MatchDetailPanel
           sessionId={sessionId}
           group={detailGroup}
+          projectId={projectId}
           onClose={() => {
             setDetailGroup(null);
             qc.invalidateQueries({ queryKey: ['match-groups'] });

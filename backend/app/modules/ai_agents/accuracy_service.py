@@ -28,7 +28,7 @@ from app.modules.ai_agents.accuracy import (
     clamp01,
     score_by_agent,
 )
-from app.modules.ai_agents.models import AgentRun
+from app.modules.ai_agents.models import AgentRun, AIFeedback
 
 #: Keys written into the run's trust JSON when an outcome is recorded.
 OUTCOME_KEY = "actual_outcome"
@@ -87,6 +87,36 @@ async def record_run_outcome(
     run.trust = trust  # reassign so the JSON column change is flushed
     await session.flush()
     return run
+
+
+async def record_ai_feedback(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    surface: str,
+    correct: bool,
+    project_id: uuid.UUID | None = None,
+    ref: str | None = None,
+    note: str | None = None,
+) -> AIFeedback:
+    """Persist a correct / incorrect verdict on a non-run AI surface.
+
+    The generic trust-loop sink for AI outputs that have no agent-run row (the
+    AI Estimator result, a match suggestion, an advisor answer). Always scoped
+    to *user_id*; ``project_id`` is verified by the caller before this runs. The
+    row is flushed (not committed) so the route owns the transaction boundary.
+    """
+    row = AIFeedback(
+        user_id=user_id,
+        project_id=project_id,
+        surface=surface.strip()[:40],
+        ref=(ref.strip()[:200] if ref and ref.strip() else None),
+        correct=bool(correct),
+        note=(note.strip()[:2000] if note and note.strip() else None),
+    )
+    session.add(row)
+    await session.flush()
+    return row
 
 
 async def build_scoreboard(

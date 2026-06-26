@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle2, ChevronRight, Loader2, AlertCircle, XCircle } from 'lucide-react';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
+import { AITrustNote } from '@/shared/ui';
 import {
   matchElementsApi,
   type ConfidenceBand,
@@ -24,6 +25,9 @@ const DETAIL_TAB_IDS: readonly DetailTabKey[] = ['methods', 'elements', 'apply']
 interface Props {
   sessionId: string;
   group: GroupSummary | null;
+  // Project the session belongs to - threaded so a match-quality verdict can
+  // be attributed to the right project (verified server-side).
+  projectId?: string | null;
   onClose: () => void;
 }
 
@@ -43,7 +47,7 @@ function ConfidencePill({ band, score }: { band: ConfidenceBand; score: number }
   );
 }
 
-export function MatchDetailPanel({ sessionId, group, onClose }: Props) {
+export function MatchDetailPanel({ sessionId, group, projectId, onClose }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [tab, setTab] = useState<DetailTabKey>('methods');
@@ -95,6 +99,21 @@ export function MatchDetailPanel({ sessionId, group, onClose }: Props) {
     () => Object.keys(methods).filter((k) => (methods[k] ?? []).length > 0),
     [methods],
   );
+
+  // The honest confidence to surface is the best candidate score across the
+  // methods that ran (scores are already 0..1). null when nothing has matched
+  // yet, so the trust note simply omits a confidence rather than implying one.
+  const topScore = useMemo(() => {
+    let best: number | null = null;
+    for (const name of methodNames) {
+      for (const cand of methods[name] ?? []) {
+        if (typeof cand.score === 'number' && (best === null || cand.score > best)) {
+          best = cand.score;
+        }
+      }
+    }
+    return best;
+  }, [methodNames, methods]);
 
   // Escape closes the slide-over (parent listens for Escape too — this
   // ensures the inner panel handles it first when the user is focused
@@ -337,6 +356,22 @@ export function MatchDetailPanel({ sessionId, group, onClose }: Props) {
                   </table>
                 </div>
               ))}
+
+              {/* Trust signal + feedback on the match result: candidates are
+                  ranked from your loaded catalogue, the best score is the honest
+                  confidence, and the user can tell us whether the suggestion was
+                  right - feeding the same trust loop the agents use. */}
+              {methodNames.length > 0 && (
+                <AITrustNote
+                  surface="match_elements"
+                  refId={`${sessionId}:${group.group_key}`}
+                  projectId={projectId}
+                  confidence={topScore}
+                  producedBy={t('match_elements.detail.trust_produced', {
+                    defaultValue: 'Candidates ranked from your loaded cost catalogue - confirm before you apply.',
+                  })}
+                />
+              )}
             </div>
           )}
 

@@ -4,7 +4,37 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+import uuid
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class AIFeedbackIn(BaseModel):
+    """A correct / incorrect verdict on any AI output in the app.
+
+    Generic counterpart to :class:`RecordOutcomeIn`: where that one scores a
+    persisted agent *run*, this records a verdict on an AI surface that has no
+    run row (the AI Estimator result, a match suggestion, an advisor answer).
+    """
+
+    # Which AI surface the verdict is about (short slug, e.g. "ai_estimator").
+    surface: str = Field(min_length=1, max_length=40)
+    # The verdict: did this AI output turn out correct?
+    correct: bool
+    # Optional project scope - verified against the caller's access on write.
+    project_id: uuid.UUID | None = None
+    # Opaque pointer to the specific output (run / session / message id, ...).
+    ref: str | None = Field(default=None, max_length=200)
+    # Optional short correction / context note.
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AIFeedbackOut(BaseModel):
+    """Acknowledgement that a piece of AI feedback was recorded."""
+
+    id: str
+    surface: str
+    correct: bool
 
 
 class RecordOutcomeIn(BaseModel):
