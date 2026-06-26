@@ -73,6 +73,63 @@ def to_back_charge_item(bc: BackCharge) -> BackChargeItem:
     )
 
 
+class InvalidSubjectLink(Exception):
+    """A back-charge referenced a change subject that could not be scored.
+
+    ``not_found`` distinguishes an unknown subject_kind (a client mistake, 400)
+    from a kind that is valid but whose id does not resolve to a record in this
+    project (404). The router maps it to the right status.
+    """
+
+    def __init__(self, *, not_found: bool, detail: str) -> None:
+        self.not_found = not_found
+        self.detail = detail
+        super().__init__(detail)
+
+
+async def _stamp_traceability_band(
+    session: AsyncSession,
+    back_charge: BackCharge,
+    *,
+    subject_kind: str,
+    subject_id: uuid.UUID,
+    project_id: uuid.UUID,
+) -> None:
+    """Score the linked change subject and stamp its provability band.
+
+    This is what lets the recovery-performance engine place a back-charge in the
+    real high/low traceability cohort instead of the conservative default. The
+    claims-evidence provability service is imported lazily so cost_recovery keeps
+    no static dependency on it, and it already fences the subject to the project
+    (an out-of-project or missing id raises ``SubjectNotFound``), so this adds no
+    IDOR surface.
+    """
+    from app.modules.claims_evidence.provability_service import (
+        SubjectNotFound,
+        UnknownSubjectKind,
+        score_subject_provability,
+    )
+
+    try:
+        result = await score_subject_provability(
+            session,
+            project_id=project_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+        )
+    except UnknownSubjectKind as exc:
+        raise InvalidSubjectLink(not_found=False, detail=f"Unknown subject_kind: {subject_kind}") from exc
+    except SubjectNotFound as exc:
+        raise InvalidSubjectLink(not_found=True, detail="Linked subject not found in this project") from exc
+
+    meta = dict(back_charge.metadata_) if isinstance(back_charge.metadata_, dict) else {}
+    meta["traceability_band"] = result.score.band
+    meta["traceability_score"] = result.score.score
+    meta["traceability_subject"] = f"{subject_kind}:{subject_id}"
+    back_charge.metadata_ = meta
+    await session.flush()
+
+
 async def create_back_charge(
     session: AsyncSession,
     project_id: uuid.UUID,
@@ -96,6 +153,19 @@ async def create_back_charge(
     )
     session.add(back_charge)
     await session.flush()
+
+    # When the caller links the back-charge to a scored change subject, stamp the
+    # subject's provability band so the recovery-by-traceability split is real.
+    # A bad link raises InvalidSubjectLink (mapped to 400/404) and the request
+    # rolls back, so a back-charge is never half-created with a dangling link.
+    if payload.subject_kind and payload.subject_id is not None:
+        await _stamp_traceability_band(
+            session,
+            back_charge,
+            subject_kind=payload.subject_kind,
+            subject_id=payload.subject_id,
+            project_id=project_id,
+        )
 
     # The "cost." prefix is on the timeline allowlist and the payload carries a
     # project id, so this lands on the project timeline. publish_detached defers

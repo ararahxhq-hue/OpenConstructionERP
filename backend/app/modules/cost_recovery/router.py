@@ -42,6 +42,7 @@ from app.modules.cost_recovery.schemas import (
     RecoveryPerformanceOut,
 )
 from app.modules.cost_recovery.service import (
+    InvalidSubjectLink,
     apportion_back_charge,
     build_portfolio_recovery_performance,
     build_recovery_ledger,
@@ -60,6 +61,7 @@ router = APIRouter(tags=["Cost Recovery"])
 def _serialize(back_charge: BackCharge) -> BackChargeOut:
     """Render a stored back-charge with its derived amounts as money strings."""
     item = to_back_charge_item(back_charge)
+    meta = back_charge.metadata_ if isinstance(back_charge.metadata_, dict) else {}
     return BackChargeOut(
         id=str(back_charge.id),
         project_id=str(back_charge.project_id),
@@ -77,6 +79,7 @@ def _serialize(back_charge: BackCharge) -> BackChargeOut:
         is_open=item.is_open,
         agreed_at=back_charge.agreed_at,
         recovered_at=back_charge.recovered_at,
+        traceability_band=str(meta.get("traceability_band", "") or ""),
     )
 
 
@@ -109,7 +112,10 @@ async def create_project_back_charge(
 ) -> BackChargeOut:
     """Record a new back-charge for a project."""
     await verify_project_access(project_id, user_id or "", session)
-    back_charge = await create_back_charge(session, project_id, payload, created_by=user_id)
+    try:
+        back_charge = await create_back_charge(session, project_id, payload, created_by=user_id)
+    except InvalidSubjectLink as exc:
+        raise HTTPException(status_code=404 if exc.not_found else 400, detail=exc.detail) from exc
     return _serialize(back_charge)
 
 

@@ -160,3 +160,82 @@ async def test_ledger_scoped_to_project(session: AsyncSession) -> None:
     ledger = await build_recovery_ledger(session, pid)
     assert ledger.item_count == 1
     assert {row.party for row in ledger.by_party} == {"mine"}
+
+
+# --- Traceability band stamped from a linked change subject (A4) --------------
+
+
+@pytest.mark.asyncio
+async def test_create_stamps_traceability_band_from_subject(session: AsyncSession) -> None:
+    """Linking a back-charge to a real change subject stamps a provability band."""
+    from app.modules.changeorders.models import ChangeOrder
+
+    pid = await _project(session)
+    change_order = ChangeOrder(project_id=pid, code=f"CO-{uuid.uuid4().hex[:6]}", title="Variation A")
+    session.add(change_order)
+    await session.flush()
+
+    bc = await create_back_charge(
+        session,
+        pid,
+        BackChargeCreate(
+            responsible_party="sub-a",
+            gross_amount=Decimal("1000"),
+            chargeable_pct=Decimal("1"),
+            currency="USD",
+            subject_kind="change_order",
+            subject_id=change_order.id,
+        ),
+    )
+
+    meta = bc.metadata_ if isinstance(bc.metadata_, dict) else {}
+    assert meta.get("traceability_band") in {"weak", "moderate", "strong"}
+    assert meta.get("traceability_subject") == f"change_order:{change_order.id}"
+
+
+@pytest.mark.asyncio
+async def test_create_without_subject_leaves_band_unstamped(session: AsyncSession) -> None:
+    pid = await _project(session)
+    bc = await create_back_charge(
+        session, pid, BackChargeCreate(responsible_party="x", gross_amount=Decimal("1"), currency="USD")
+    )
+    meta = bc.metadata_ if isinstance(bc.metadata_, dict) else {}
+    assert "traceability_band" not in meta
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_unknown_subject_kind(session: AsyncSession) -> None:
+    from app.modules.cost_recovery.service import InvalidSubjectLink
+
+    pid = await _project(session)
+    with pytest.raises(InvalidSubjectLink) as excinfo:
+        await create_back_charge(
+            session,
+            pid,
+            BackChargeCreate(
+                responsible_party="x",
+                gross_amount=Decimal("1"),
+                subject_kind="not_a_kind",
+                subject_id=uuid.uuid4(),
+            ),
+        )
+    assert excinfo.value.not_found is False
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_missing_subject(session: AsyncSession) -> None:
+    from app.modules.cost_recovery.service import InvalidSubjectLink
+
+    pid = await _project(session)
+    with pytest.raises(InvalidSubjectLink) as excinfo:
+        await create_back_charge(
+            session,
+            pid,
+            BackChargeCreate(
+                responsible_party="x",
+                gross_amount=Decimal("1"),
+                subject_kind="change_order",
+                subject_id=uuid.uuid4(),
+            ),
+        )
+    assert excinfo.value.not_found is True

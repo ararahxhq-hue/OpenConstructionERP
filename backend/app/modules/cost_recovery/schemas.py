@@ -9,6 +9,7 @@ explicitly in the router rather than validated straight off the ORM rows.
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -25,6 +26,14 @@ class BackChargeCreate(BaseModel):
     chargeable_pct: Decimal = Decimal("1")
     currency: str = ""
     status: str = "proposed"
+    # Optional link to a scored change subject. When both are set, create scores
+    # the subject's provability and stamps its band onto the back-charge, so the
+    # recovery-by-traceability cohort split is populated from real evidence
+    # instead of every row defaulting to the conservative low cohort.
+    # subject_kind is a change-family token: change_order, variation_notice,
+    # variation_request, variation_order, moc_entry.
+    subject_kind: str | None = None
+    subject_id: uuid.UUID | None = None
 
 
 class BackChargeUpdate(BaseModel):
@@ -58,6 +67,10 @@ class BackChargeOut(BaseModel):
     is_open: bool
     agreed_at: str | None
     recovered_at: str | None
+    # Provability band stamped from a linked change subject at create time
+    # (weak / moderate / strong); blank when the back-charge was not linked to a
+    # scored subject, which the recovery engine treats as the low cohort.
+    traceability_band: str = ""
 
 
 class PartyRecoveryOut(BaseModel):
