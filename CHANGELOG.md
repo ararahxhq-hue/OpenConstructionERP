@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.1] - 2026-06-27
+
+A fix release for opening BIM files that were uploaded through Project Files.
+
+### Fixed
+
+- Opening a BIM file (IFC or RVT) uploaded through Project Files now builds the 3D model on the fly instead of reporting "model not found". The File Manager was opening such a file by treating its document id as a model id, so the viewer looked for a model that did not exist yet and never started the conversion. It now hands the document to the same on-demand converter the rest of the app uses, so the model is created and shown the first time the file is opened, and a model reached by a stale link is recovered the same way.
+
 ## [9.0.0] - 2026-06-26
 
 A stability and self-hosting release. It hardens the production deployment path reported by the community (environment configuration, file storage, in-app preview and external-database upgrades) and completes the desktop build, so the platform behaves the same across Docker, an external PostgreSQL, the embedded database and the desktop app.
