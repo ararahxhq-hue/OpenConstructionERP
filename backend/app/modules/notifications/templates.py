@@ -105,6 +105,9 @@ _TEMPLATES: dict[str, str] = {
     # ── File comments (Epic B / B1) ──────────────────────────────────
     "notifications.file_comments.mention.title": "You were mentioned in a comment",
     "notifications.file_comments.mention.body": '"{excerpt}"',
+    # ── Project discussions (collaboration comments, issue #279) ──────
+    "notifications.collaboration.comment_added.title": "New comment in a discussion",
+    "notifications.collaboration.comment_added.body": 'On {entity_type}: "{excerpt}"',
     # ── Clash coordination ───────────────────────────────────────────
     "notifications.clash.high_severity.title": "High-severity clash detected",
     "notifications.clash.high_severity.body": "{severity} clash: {a_name} vs {b_name}",
@@ -161,6 +164,8 @@ _TYPE_TO_ICON: dict[str, str] = {
     "transmittal_responded": "info",
     # File comment mention (Epic B / B1)
     "file_comment_mention": "info",
+    # Project discussion comment (issue #279) - neutral inbound activity
+    "comment_added": "info",
     # Clash coordination - a serious interference needs attention
     "clash_high_severity": "warning",
     # Validation reports - errors are blocking, warnings are advisory
