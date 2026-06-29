@@ -541,6 +541,8 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
               field_report: '/field-reports',
               submittal: '/submittals',
               meeting: '/meetings',
+              inspection: '/inspections',
+              ncr: '/ncr',
             };
             const base = targetRoute[ref.target_type] ?? `/${ref.target_type}`;
             navigate(`${base}/${ref.target_id}`);
