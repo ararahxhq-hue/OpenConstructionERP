@@ -46,3 +46,5 @@ while making sure community input is recognized.
 | [MeCode4](https://github.com/MeCode4) | [#278](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/278) |
 | [arvildev](https://github.com/arvildev) | [#276](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/276) |
 | [arvildev](https://github.com/arvildev) | [#277](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/277) |
+| [Tigercatman](https://github.com/Tigercatman) | [#274](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/274) |
+| [Tigercatman](https://github.com/Tigercatman) | [#279](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/279) |
