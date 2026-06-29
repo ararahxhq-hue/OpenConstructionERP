@@ -1,5 +1,5 @@
 /**
- * BIMPage — Premium BIM Hub with immersive 3D viewport and polished light UI.
+ * BIMPage - Premium BIM Hub with immersive 3D viewport and polished light UI.
  *
  * Layout:
  *  - Clean light header with stats + actions
@@ -60,6 +60,7 @@ import {
 import { Badge, EmptyState, Breadcrumb, ConfirmDialog, ModuleHelpButton, ModuleGuideButton, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { bimGuide } from './bimGuide';
 import { useConfirm } from '@/shared/hooks/useConfirm';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 import { BIMViewer } from '@/shared/ui/BIMViewer';
 import type { BIMElementData, BIMModelData } from '@/shared/ui/BIMViewer';
 import {
@@ -117,7 +118,7 @@ import {
 
 const CAD_EXTENSIONS = new Set(['.rvt', '.ifc']);
 const DATA_EXTENSIONS = new Set(['.csv', '.xlsx', '.xls']);
-/** Extensions handled by the DWG Takeoff module — not accepted in BIM Hub. */
+/** Extensions handled by the DWG Takeoff module - not accepted in BIM Hub. */
 const DWG_EXTENSIONS = new Set(['.dwg', '.dxf']);
 
 function getFileExtension(filename: string): string {
@@ -151,7 +152,7 @@ function StatPill({ label, value, icon: Icon }: { label: string; value: string |
 
 /* ── Model Card ──────────────────────────────────────────────────────── */
 
-/** Collapsible model filmstrip — shows for 5s on mount, then slides away.
+/** Collapsible model filmstrip - shows for 5s on mount, then slides away.
  *  Click the tab handle to re-expand. */
 function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDeleteModel, onUpload }: {
   models: BIMModelData[];
@@ -204,7 +205,7 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
 
   return (
     <div className="shrink-0 bg-surface-primary border-t border-border-light">
-      {/* Header — always visible with drag handle, title, and count */}
+      {/* Header - always visible with drag handle, title, and count */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -229,7 +230,7 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
         </span>
         <span className="text-[11px] text-content-tertiary ml-1.5">({models.length})</span>
 
-        {/* Collapse chevron — chevron-down icon rotates so the visual cue
+        {/* Collapse chevron - chevron-down icon rotates so the visual cue
             (arrow points DOWN to collapse, UP to expand) matches the
             left-panel collapse pattern.  The previous variant rotated a
             chevron-up which felt backwards to repeated users. */}
@@ -307,7 +308,7 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
 
   // The card itself acts as a button (click selects the model). We render
   // it as a <div role="button"> so the inner delete button can stay a real
-  // <button> — nested <button> trips React's DOM validation warning.
+  // <button> - nested <button> trips React's DOM validation warning.
   return (
     <div
       role="button"
@@ -383,7 +384,7 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
             </span>
           )}
         </div>
-        {/* DDC converter version badge — stamped by ifc_processor on a
+        {/* DDC converter version badge - stamped by ifc_processor on a
             successful DDC pass. Hidden when missing (older imports or
             text-fallback path). v3.12.0 / Stream D. */}
         <ConverterVersionBadge metadata={model.metadata} />
@@ -395,7 +396,7 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
 /**
  * Render a small "DDC v{X}" pill on a BIM model card when the model
  * metadata carries a converter_version stamp. Falls back to nothing when
- * the field is missing — e.g. older imports that pre-date v3.12.0, or
+ * the field is missing - e.g. older imports that pre-date v3.12.0, or
  * the text-fallback IFC parser path which doesn't use the DDC binary.
  */
 function ConverterVersionBadge({
@@ -567,7 +568,7 @@ function UploadPanel({
 
     try {
       if (advancedMode && dataFile) {
-        // Advanced (data) upload — delegate to global store
+        // Advanced (data) upload - delegate to global store
         const name = modelName || 'Imported';
         startGlobalUpload({
           file: dataFile,
@@ -625,17 +626,17 @@ function UploadPanel({
                   pendingName: name,
                   pendingDiscipline: discipline,
                 });
-                // Don't proceed to upload — prompt will retry on success.
+                // Don't proceed to upload - prompt will retry on success.
                 return;
               }
             } catch (err) {
-              // If the converters endpoint fails, fall through to upload —
+              // If the converters endpoint fails, fall through to upload -
               // the backend will preflight-reject and we'll catch it below.
               if (import.meta.env.DEV) console.warn('Converter preflight check failed:', err);
             }
           }
 
-          // Delegate to global store — upload survives navigation.
+          // Delegate to global store - upload survives navigation.
           startGlobalUpload({
             file,
             projectId,
@@ -654,7 +655,7 @@ function UploadPanel({
           });
           resetForm();
         } else if (isDataFile(file.name)) {
-          // Data file upload — delegate to global store
+          // Data file upload - delegate to global store
           startGlobalUpload({
             file,
             projectId,
@@ -859,7 +860,7 @@ function UploadPanel({
             {disciplines.map((d) => <option key={d.v} value={d.v}>{d.l}</option>)}
           </select>
         </div>
-        {/* Conversion depth and PDF-sheet export are RVT-only — the options
+        {/* Conversion depth and PDF-sheet export are RVT-only - the options
             control Revit category extraction / sheet export. Hide them for
             IFC uploads where neither applies. */}
         {file && getFileExtension(file.name) === '.rvt' && (
@@ -926,7 +927,7 @@ function UploadPanel({
       </div>
     </div>
 
-    {/* Install-converter prompt — shown when a native CAD upload was
+    {/* Install-converter prompt - shown when a native CAD upload was
         deferred by the pre-upload guard or rejected by the backend
         preflight.  On success it replays the saved upload without a
         second file-picker roundtrip. */}
@@ -960,13 +961,13 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
   const { t } = useTranslation();
   const [isRetrying, setIsRetrying] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
-  // Collapsed by default — the raw backend error (which can be a multi-line
+  // Collapsed by default - the raw backend error (which can be a multi-line
   // stderr excerpt) stays hidden behind an accessible toggle so the overlay
   // leads with a calm, human one-liner instead of a wall of diagnostic text.
   const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   // model is null while the models query is still hydrating after a fresh
-  // upload / deep link — render a lightweight "loading" overlay so we don't
+  // upload / deep link - render a lightweight "loading" overlay so we don't
   // flash the empty viewer or trip the elements query into an error state.
   if (!model) {
     return (
@@ -1002,7 +1003,7 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
   // / `degraded`) plus defensive aliases for the broader conversion-status
   // vocabulary used elsewhere in the pipeline (`failed`, `pending`,
   // `queued`, `uploading`, `converting`, `no_geometry`, `converter_required`).
-  // Every entry carries a `bg` className — the lookup below NEVER reads
+  // Every entry carries a `bg` className - the lookup below NEVER reads
   // `.bg` off an undefined value (see the belt-and-suspenders fallback),
   // so an unknown status string can never crash the overlay again.
   const processingConfig = {
@@ -1071,7 +1072,7 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
   //
   // For ``converter_outdated``, the backend message helpfully includes a
   // stderr excerpt ("The following argument was not expected: …") so the
-  // user can paste it into a support ticket — but it's noise for the 95%
+  // user can paste it into a support ticket - but it's noise for the 95%
   // case where the user just wants to click Reinstall. Below we replace
   // it with a clean human sentence and surface the raw message via
   // disclosure; see `cleanDescription` after `isOutdatedConverter`.
@@ -1142,8 +1143,8 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
   // cad2data converter is not installed in this environment (it is a
   // separate, optional download and is legitimately absent on most local
   // dev machines). We lead with that calm explanation and tuck the raw
-  // backend string — e.g. "CAD conversion failed for .rvt file. Ensure the
-  // converter is properly installed and the file is valid." — behind the
+  // backend string - e.g. "CAD conversion failed for .rvt file. Ensure the
+  // converter is properly installed and the file is valid." - behind the
   // collapsible "Show details" toggle below. This generic copy must never
   // fire for a code with its own tailored message (e.g. zero_elements).
   const calmFailureDescription =
@@ -1161,7 +1162,7 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
   const description =
     cleanDescription ?? zeroElementsDescription ?? emptyModelDescription ?? calmFailureDescription ?? c.desc;
   // The raw backend message is now ALWAYS surfaced through the collapsible
-  // disclosure (when present) rather than inline — both for the outdated
+  // disclosure (when present) rather than inline - both for the outdated
   // case and the generic failure case. For `no_products` (empty_model) the
   // backend message IS the clean description we already render, and the
   // disclosure label ("Conversion failed…") would be wrong, so skip it.
@@ -1174,12 +1175,12 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
     && !!converterId;
   const showRetryButton = !isProcessing && !showInstallButton;
 
-  // Localised override for the converter_outdated branch — when the
+  // Localised override for the converter_outdated branch - when the
   // backend ships ``cause="converter_outdated"`` (i.e. exit-15 from an
   // old DDC CLI), we replace the generic title with one that names the
   // specific problem and the specific fix. The body keeps the backend's
   // composed message because it already includes the file's RVT format,
-  // the installed converter version and a single-line stderr excerpt —
+  // the installed converter version and a single-line stderr excerpt -
   // none of which the frontend can synthesise on its own.
   const headlineTitle = isOutdatedConverter
     ? t('bim.overlay_converter_outdated_title', {
@@ -1405,12 +1406,12 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
   return (
     <div className="flex flex-col -mx-4 sm:-mx-7 -mt-6 -mb-6 border-s border-border-light" style={{ height: 'calc(100vh - 56px)' }}>
       <div className="px-6 pt-4 pb-3 border-b border-border-light"><Breadcrumb items={breadcrumbItems} /></div>
-      {/* Soft modern background — calm base gradient plus two muted
+      {/* Soft modern background - calm base gradient plus two muted
           blurred colour blobs (top-left blue, bottom-right violet) for
           subtle depth.  Restrained on purpose: enough colour to feel
           "designed" without competing with the foreground content. */}
       <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900">
-        {/* Decorative cubes — tiled SVG pattern.  Large sparse tile
+        {/* Decorative cubes - tiled SVG pattern.  Large sparse tile
             (960×720) so cubes feel airy, not cluttered.  Stroke + fill
             both near-invisible (0.015 / 0.12) so the layer is pure
             texture.  Container uses `overflow-hidden` so the scrollbar
@@ -1440,7 +1441,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
               <polygon points="90,-50 0,0 0,100 90,50" fill="url(#bimCubeFadeRight)" stroke="currentColor" strokeWidth="0.5" strokeOpacity="0.12" />
               <line x1="0" y1="-100" x2="0" y2="0" stroke="currentColor" strokeWidth="0.25" strokeOpacity="0.1" />
             </symbol>
-            {/* Smaller denser tile — many small cubes so the page
+            {/* Smaller denser tile - many small cubes so the page
                 reads as a subtle isometric grid rather than a few
                 big, heavy shapes.  520×400, cubes at scale ≈0.28-0.36. */}
             <pattern id="bimCubeTile" x="0" y="0" width="520" height="400" patternUnits="userSpaceOnUse">
@@ -1458,7 +1459,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
           </defs>
           <rect width="100%" height="100%" fill="url(#bimCubeTile)" />
         </svg>
-        {/* Content wrapper — compact layout + `overflow-y-auto` with
+        {/* Content wrapper - compact layout + `overflow-y-auto` with
             hidden scrollbar means scrolling still works on short
             viewports but the scrollbar is invisible.  Tight padding
             below so the typical 1080p viewport fits everything without
@@ -1471,7 +1472,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
           {/* Row 1: Upload card (left) + Hero text (right) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch mb-8">
 
-            {/* LEFT — Upload card */}
+            {/* LEFT - Upload card */}
             <div className="flex flex-col">
               <div className="rounded-2xl bg-white dark:bg-gray-800/60 border border-border-light shadow-lg shadow-black/5 dark:shadow-black/20 p-6 flex flex-col h-full">
                 <label
@@ -1526,7 +1527,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
                 {file && (
                   <div className="mt-4 space-y-3">
                     <input type="text" className="w-full text-sm py-2.5 px-4 rounded-xl border border-border-light bg-surface-secondary text-content-primary placeholder-content-quaternary focus:outline-none focus:ring-2 focus:ring-oe-blue/30" placeholder={t('bim.model_name')} value={modelName} onChange={(e) => setModelName(e.target.value)} />
-                    {/* RVT-only options — Revit category extraction depth
+                    {/* RVT-only options - Revit category extraction depth
                         and sheet-to-PDF export don't apply to IFC uploads. */}
                     {getFileExtension(file.name) === '.rvt' && (
                       <>
@@ -1601,7 +1602,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
               )}
             </div>
 
-            {/* RIGHT — Hero text + local-processing badge (chip styled to
+            {/* RIGHT - Hero text + local-processing badge (chip styled to
                 match /dwg-takeoff so the trust signal reads identically
                 across CAD modules). The decorative animation was
                 removed to keep the page calm and let the modern mesh
@@ -1636,7 +1637,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
             </div>
           </div>
 
-          {/* Row 2: Feature cards — 3x2 grid */}
+          {/* Row 2: Feature cards - 3x2 grid */}
           <div>
             <h2 className="text-xs font-bold text-content-tertiary uppercase tracking-widest mb-3">
               {t('bim.landing_what_you_get', { defaultValue: 'What you get' })}
@@ -1654,7 +1655,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
             </div>
           </div>
 
-          {/* Row 3 removed — models now in fixed bottom filmstrip only */}
+          {/* Row 3 removed - models now in fixed bottom filmstrip only */}
           {false as boolean && (
             <div className="hidden">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1715,7 +1716,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
                       onClick={() => onSelectModel?.(m.id)}
                       className={`group relative w-full text-left rounded-xl border border-border-light border-l-[3px] ${borderAccent} bg-white dark:bg-gray-800/50 p-4 hover:shadow-lg hover:border-oe-blue/30 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer`}
                     >
-                      {/* Delete button — visible on hover */}
+                      {/* Delete button - visible on hover */}
                       {onDeleteModel && (
                         <button
                           type="button"
@@ -1787,7 +1788,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
         </div>
       </div>
 
-      {/* ── Bottom Filmstrip: Your Models — always visible so the user
+      {/* ── Bottom Filmstrip: Your Models - always visible so the user
            keeps a consistent anchor to switch or upload models.
            Previously guarded by `landingModels.length > 0` which made the
            panel appear on first render then vanish when the LandingPage
@@ -1915,15 +1916,15 @@ export function BIMPage() {
     }
   }, [accessToken]);
 
-  // BUG-AUTO-PROJECT-SELECT — when /bim is opened cold (no URL project,
+  // BUG-AUTO-PROJECT-SELECT - when /bim is opened cold (no URL project,
   // no project in the global ProjectContextStore) we silently fall back
   // to ``projectsList[0]`` for the models query.  That works for the
   // first paint but leaves the context store empty, so any other page
   // that reads ``activeProjectId`` (recents, breadcrumb, BOQ landing,
   // upload dialogs) thinks there is no active project and either dims
   // its CTA or drops the user back at the picker.  Pinning the resolved
-  // ``projectId`` into the store the first time we resolve one — and
-  // only when nothing else has set it — keeps the rest of the app in
+  // ``projectId`` into the store the first time we resolve one - and
+  // only when nothing else has set it - keeps the rest of the app in
   // sync without ever overriding an explicit user pick.
   const setActiveProjectInStore = useProjectContextStore((s) => s.setActiveProject);
   useEffect(() => {
@@ -1940,7 +1941,7 @@ export function BIMPage() {
   // highlighted across renders (parent's `[selectedElementId]` would collapse
   // the highlight to the most recent click only).
   const [multiSelectedIds, setMultiSelectedIds] = useState<string[]>([]);
-  // Resolved element rows for the current viewer selection — includes
+  // Resolved element rows for the current viewer selection - includes
   // viewer-side stubs (mesh_ref but no DB row yet) so "save as group"
   // can resolve them to real BIMElement UUIDs before persisting.
   const [selectedElementData, setSelectedElementData] = useState<BIMElementData[]>([]);
@@ -1953,7 +1954,7 @@ export function BIMPage() {
   );
 
   // Deep-link auto-select: Cmd+Shift+K global semantic search and the
-  // similar-items panel land here with `?element=<element_id>` — pick
+  // similar-items panel land here with `?element=<element_id>` - pick
   // the matching element as soon as the elements list resolves.  Cleared
   // from the URL after one shot so a refresh doesn't reapply it.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1977,6 +1978,10 @@ export function BIMPage() {
   const setSummaryPanelOpen = useBIMViewerStore((s) => s.setSummaryPanelOpen);
   const dimensionsVisible = useBIMViewerStore((s) => s.dimensionsVisible);
   const setDimensionsVisible = useBIMViewerStore((s) => s.setDimensionsVisible);
+  // Display-only metric->imperial conversion for the bounding-box card (#270).
+  // The stored bounding_box stays metric-canonical; only what is rendered in
+  // the dimensions card is converted to the user's measurement system.
+  const displayQty = useDisplayQuantity();
   const assetCardEnabled = useBIMViewerStore((s) => s.assetCardEnabled);
   const setAssetCardEnabled = useBIMViewerStore((s) => s.setAssetCardEnabled);
   const qualityMode = useBIMViewerStore((s) => s.qualityMode);
@@ -2020,7 +2025,7 @@ export function BIMPage() {
     string,
     DiffChangeType
   > | null>(null);
-  /** Smart Views side-panel state. Driven by the toolbar button — the
+  /** Smart Views side-panel state. Driven by the toolbar button - the
    *  evaluator result itself lives in `useSmartViewState`. */
   const [smartViewsPanelOpen, setSmartViewsPanelOpen] = useState(false);
   const smartViewEvalStates = useSmartViewState((s) => s.lastEvalResult?.states ?? null);
@@ -2028,13 +2033,13 @@ export function BIMPage() {
    *  when the user clicks an element; multiple elements when "quick
    *  takeoff" on a filtered category. */
   const [linkCandidates, setLinkCandidates] = useState<BIMElementData[] | null>(null);
-  /** Save-as-group modal state — captures the current filter snapshot. */
+  /** Save-as-group modal state - captures the current filter snapshot. */
   const [saveGroupState, setSaveGroupState] = useState<{
     filterCriteria: BIMGroupFilterCriteria;
     elements: BIMElementData[];
   } | null>(null);
   /** Inline create-from-element modal targets.  Each one stores the
-   *  elements the user wants to link from — typically [singleClickedElement]. */
+   *  elements the user wants to link from - typically [singleClickedElement]. */
   const [createTaskFor, setCreateTaskFor] = useState<BIMElementData[] | null>(null);
   const [linkDocumentFor, setLinkDocumentFor] = useState<BIMElementData[] | null>(null);
   const [linkActivityFor, setLinkActivityFor] = useState<BIMElementData[] | null>(null);
@@ -2143,7 +2148,7 @@ export function BIMPage() {
   }, [statusPollQuery.data, activeModel, queryClient, projectId, activeModelId]);
 
   // Auto-detect project when navigating to /bim/:modelId without correct project context.
-  // Runs at most once per urlModelId — never overrides an explicit project switch
+  // Runs at most once per urlModelId - never overrides an explicit project switch
   // from the top selector (which would otherwise snap the user back to this model's project).
   const setActiveProject = useProjectContextStore((s) => s.setActiveProject);
   const autoDetectedRef = useRef<string | null>(null);
@@ -2189,7 +2194,7 @@ export function BIMPage() {
       autoDetectedRef.current = urlModelId;
       urlModelMissingRef.current = true;
       // Surface the missing-model state so the user doesn't think the
-      // model is "empty" — previously a 404 here was silent and the UI
+      // model is "empty" - previously a 404 here was silent and the UI
       // fell back to "No elements to display" (audit P1-13).
       const shortId = urlModelId.slice(0, 8);
       addToast({
@@ -2239,7 +2244,7 @@ export function BIMPage() {
     }
   }, [activeModelId, urlProjectId, navigate]);
 
-  // Reset transient viewer state when switching between models — covers the
+  // Reset transient viewer state when switching between models - covers the
   // auto-pick + deep-link paths above which only set activeModelId without
   // clearing selection (only explicit user clicks do that today).  Without
   // these clears, stale element ids from the previous model would highlight
@@ -2291,7 +2296,7 @@ export function BIMPage() {
     // Only load elements once we know the model is actually ready.  Firing
     // earlier (e.g. while the model is still in 'processing' state right after
     // an upload) used to surface a misleading "Failed to load model elements"
-    // toast — the inline NonReadyOverlay now drives the UI for non-ready
+    // toast - the inline NonReadyOverlay now drives the UI for non-ready
     // states and the elements query waits its turn.
     // A 'degraded' model still has its geometry and elements persisted (the
     // import succeeded but the DDC converter was unavailable, or no quantities
@@ -2304,7 +2309,7 @@ export function BIMPage() {
   const elements: BIMElementData[] = elementsQuery.data?.items ?? [];
   const elementsTotal: number = elementsQuery.data?.total ?? 0;
 
-  // BOQ progress per element — fetched ONLY while the "By progress" colour
+  // BOQ progress per element - fetched ONLY while the "By progress" colour
   // mode is active (the skeleton element list carries no BOQ links, so
   // progress comes from the enriched listing's `current_pct`). Gated on the
   // mode so we never pay the extra round trip(s) for users who don't open
@@ -2329,7 +2334,7 @@ export function BIMPage() {
     return out;
   }, [progressQuery.data]);
   // Parallel map of the headline progress entry's recorded ISO date, keyed
-  // by element id — drives the "as of <date>" line in the selected-element
+  // by element id - drives the "as of <date>" line in the selected-element
   // info panel. Kept separate from the numeric map so the 3D colour ramp
   // stays a pure number lookup.
   const progressDateByElementId: Record<string, string> = useMemo(() => {
@@ -2360,8 +2365,8 @@ export function BIMPage() {
   // Deep-link: ?isolate=id1,id2,...[&clash=1][&focus=cx,cy,cz]
   //
   // Used by:
-  //   • BOQ editor "View in BIM" — one or more linked element ids.
-  //   • /clash review "3D" link — the two interfering element ids plus
+  //   • BOQ editor "View in BIM" - one or more linked element ids.
+  //   • /clash review "3D" link - the two interfering element ids plus
   //     `clash=1` (colour them clash-red) and `focus=cx,cy,cz` (the clash
   //     world centroid). The centroid is the reliable camera target: on
   //     showcase IFC/RVT models the GLB nodes are numeric Revit ids that
@@ -2392,13 +2397,13 @@ export function BIMPage() {
     // Which of the requested ids actually exist in this model's element
     // list. The clash backend stores real BIMElement UUIDs, so for a seeded
     // showcase model these resolve directly. (We do NOT bail when the
-    // intersection is empty for a clash with a centroid — the viewer can
+    // intersection is empty for a clash with a centroid - the viewer can
     // still frame the interference via `focus`.)
     const elementIdSet = new Set(elements.map((e) => e.id));
     const validIds = ids.filter((id) => elementIdSet.has(id));
 
     if (validIds.length === 0 && !(isClash && focus)) {
-      // Non-clash deep-link with no resolvable ids and no centroid — there
+      // Non-clash deep-link with no resolvable ids and no centroid - there
       // is nothing meaningful we can show. Leave the param in place so a
       // later element page (lazy load) can still satisfy it.
       return;
@@ -2432,7 +2437,7 @@ export function BIMPage() {
     setBIMSelection,
   ]);
 
-  // Saved element groups for the current model — populated by the
+  // Saved element groups for the current model - populated by the
   // /api/v1/bim_hub/element-groups/ endpoint and rendered at the top
   // of BIMFilterPanel for one-click apply.  Refetch is triggered by
   // the SaveGroupModal's success path via React Query invalidation.
@@ -2449,7 +2454,7 @@ export function BIMPage() {
     return savedGroups.find((g) => g.id === activeGroupId) ?? null;
   }, [activeGroupId, savedGroups]);
 
-  // Direct URL for Three.js loaders — no blob intermediary, no race conditions.
+  // Direct URL for Three.js loaders - no blob intermediary, no race conditions.
   // The ?token= param authenticates the request (Three.js can't set headers).
   // Cache-bust with model updated_at to ensure fresh geometry after re-upload.
   const geometryUrl = useMemo(() => {
@@ -2499,14 +2504,14 @@ export function BIMPage() {
    * loaded and the viewer's camera bridge is available, we hydrate
    * the camera + selection from the URL.
    *
-   * The write is debounced to 500ms — an OrbitControls drag fires
+   * The write is debounced to 500ms - an OrbitControls drag fires
    * dozens of change events per second, which would flood the
    * history stack and create noticeable stutter on 100k-element
    * models. */
   const urlStateAppliedRef = useRef(false);
 
   // Hydrate camera + selection from URL when the model and viewer
-  // bridge are both ready. Runs once per activeModelId — subsequent
+  // bridge are both ready. Runs once per activeModelId - subsequent
   // camera moves or selection changes are driven by user input.
   useEffect(() => {
     if (!activeModelId) return;
@@ -2519,7 +2524,7 @@ export function BIMPage() {
     }
     // Try applying via the viewer's camera bridge; back off one frame
     // if it isn't ready yet (the bridge publishes after the <canvas />
-    // ref populates, which can be 1–2 frames behind the parent render).
+    // ref populates, which can be 1-2 frames behind the parent render).
     let cancelled = false;
     let attempts = 0;
     const apply = () => {
@@ -2581,7 +2586,7 @@ export function BIMPage() {
   // and no consumer has to learn three.js internals.
   //
   // selectionSignature tracks whatever the current multi/single selection
-  // resolves to — we derive it inside the effect so this hook doesn't
+  // resolves to - we derive it inside the effect so this hook doesn't
   // depend on a value declared lower in the component.
   const selectionSignature = multiSelectedIds.length > 0
     ? multiSelectedIds.join(',')
@@ -2607,7 +2612,7 @@ export function BIMPage() {
     const getBridge = (): CameraBridge | undefined =>
       (window as unknown as { __oeBim?: CameraBridge }).__oeBim;
 
-    // Read the live camera + selection and write to the URL — only when the
+    // Read the live camera + selection and write to the URL - only when the
     // serialized payload actually changed, so an idle subscription never
     // touches history.
     const flush = () => {
@@ -2630,7 +2635,7 @@ export function BIMPage() {
     };
 
     // Camera 'change' fires dozens of times per second during an orbit
-    // drag — coalesce them into one URL write 500ms after motion stops.
+    // drag - coalesce them into one URL write 500ms after motion stops.
     const scheduleFlush = () => {
       if (debounceTimer !== null) window.clearTimeout(debounceTimer);
       debounceTimer = window.setTimeout(() => {
@@ -2658,7 +2663,7 @@ export function BIMPage() {
     trySubscribe();
 
     // Selection changes (effect re-run via selectionSignature) write
-    // immediately — the camera may be idle, so we can't wait for a move.
+    // immediately - the camera may be idle, so we can't wait for a move.
     flush();
 
     return () => {
@@ -2667,12 +2672,12 @@ export function BIMPage() {
       if (debounceTimer !== null) window.clearTimeout(debounceTimer);
       unsubscribe?.();
     };
-    // selectionSignature is intentional — re-running on selection change
+    // selectionSignature is intentional - re-running on selection change
     // re-subscribes (cheap) and flushes the new selection immediately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeModelId, selectionSignature]);
 
-  // Stable callback for BIMFilterPanel — uses functional setState so it
+  // Stable callback for BIMFilterPanel - uses functional setState so it
   // doesn't need to track filterPredicate in its dependency list.
   const handleFilterChange = useCallback(
     (predicate: (el: BIMElementData) => boolean, visibleCount: number) => {
@@ -2726,7 +2731,7 @@ export function BIMPage() {
     if (elements.length > 0) setLinkCandidates(elements);
   }, []);
 
-  // Cross-module navigation handlers — fired when the user clicks a row
+  // Cross-module navigation handlers - fired when the user clicks a row
   // in the Linked Documents / Tasks / Activities sections of the
   // selected-element panel.  Each one takes them to the relevant module
   // and pre-selects the target.
@@ -2749,7 +2754,7 @@ export function BIMPage() {
     [navigate],
   );
 
-  // Inline-create handlers — fired when the user clicks "+ New" / "+ Link"
+  // Inline-create handlers - fired when the user clicks "+ New" / "+ Link"
   // in the cross-module sections of the selected-element panel.  These
   // open the inline modals so the user never has to leave the BIM viewer
   // to create a task, link a drawing, or attach a schedule activity.
@@ -2772,7 +2777,7 @@ export function BIMPage() {
     [navigate],
   );
 
-  // Link a saved group to a BOQ position — looks up every member element
+  // Link a saved group to a BOQ position - looks up every member element
   // by id from the current `elements` list and opens AddToBOQModal with
   // the resolved subset.  If some member ids aren't in the loaded element
   // list (e.g. the group references elements from a different model that
@@ -2836,7 +2841,7 @@ export function BIMPage() {
   // arrays.  We deliberately drop the `groupBy` axis (which is purely
   // a UI grouping choice and not part of the predicate) and the
   // `buildingsOnly` toggle (which is a viewport-level setting, not a
-  // group definition — saved groups always include their full member
+  // group definition - saved groups always include their full member
   // set even if they're noise/annotations).
   type FilterStateShape = {
     search: string;
@@ -2855,11 +2860,11 @@ export function BIMPage() {
       const search = filter.search.trim();
       if (search) criteria.name_contains = search;
       // Prefer the explicit multi-selection when the user has Ctrl+clicked
-      // a subset — that gesture means "this is what I want", not "every
+      // a subset - that gesture means "this is what I want", not "every
       // element matching the current filter".  Falls back to the visible
       // (filtered + isolated) subset otherwise.  We pass full element rows
       // (not ids) so SaveGroupModal can resolve viewer stubs to real
-      // BIMElement UUIDs before persisting — storing stub ids verbatim
+      // BIMElement UUIDs before persisting - storing stub ids verbatim
       // was the root cause of "group save broken".
       const targetElements =
         selectedElementData.length > 0 ? selectedElementData : visibleElements;
@@ -2880,7 +2885,7 @@ export function BIMPage() {
     [],
   );
 
-  // Highlight a group's members on hover — set isolatedIds to a temporary
+  // Highlight a group's members on hover - set isolatedIds to a temporary
   // preview without committing.  We use the BIM viewer's highlightedIds
   // prop instead to avoid flickering the isolation state.
   const handleHighlightGroup = useCallback(
@@ -2911,7 +2916,7 @@ export function BIMPage() {
     });
   }, [queryClient, projectId, activeModelId]);
 
-  // Remove a BIM↔BOQ link — fires from the properties panel's unlink button.
+  // Remove a BIM↔BOQ link - fires from the properties panel's unlink button.
   const handleUnlinkBOQ = useCallback(
     async (linkId: string) => {
       try {
@@ -2933,7 +2938,7 @@ export function BIMPage() {
     [activeModelId, addToast, queryClient, t],
   );
 
-  // Kick a "quick takeoff" from the currently-applied filter — aggregate all
+  // Kick a "quick takeoff" from the currently-applied filter - aggregate all
   // elements that match the active filter predicate and open AddToBOQ with
   // the full subset so the user can generate one BOQ position from e.g.
   // "all walls on level 1".
@@ -2958,7 +2963,7 @@ export function BIMPage() {
   const handleUploadComplete = useCallback((modelId: string) => {
     setActiveModelId(modelId); setShowUploadOverride(false); setSelectedElementId(null); setMultiSelectedIds([]);
     setUploadOpen(false); setUploadConvertedName(null);
-    // Invalidate both model list and elements — the model is ready on the
+    // Invalidate both model list and elements - the model is ready on the
     // backend but the list cache may still show 'processing' for a moment.
     queryClient.invalidateQueries({ queryKey: ['bim-models', projectId] });
     queryClient.invalidateQueries({ queryKey: ['bim-elements', modelId] });
@@ -2970,10 +2975,10 @@ export function BIMPage() {
     }, 2000);
   }, [queryClient, projectId]);
 
-  // Watch global BIM upload store — when a job for this project finishes
+  // Watch global BIM upload store - when a job for this project finishes
   // successfully, auto-select the new model and refresh the model list.
   // Completion / error toasts are user-facing here (not the pill in
-  // GlobalUploadIndicator — that's only a progress indicator).
+  // GlobalUploadIndicator - that's only a progress indicator).
   const globalUploadJobs = useBIMUploadStore((s) => s.jobs);
   const completedJobRef = useRef(new Set<string>());
   useEffect(() => {
@@ -3039,7 +3044,7 @@ export function BIMPage() {
 
   // Bounding-box dimensions of the current single selection. Union bbox
   // across the whole multi-selection would be possible, but estimators
-  // reported the "what is this one piece?" view as most useful — keep
+  // reported the "what is this one piece?" view as most useful - keep
   // the card single-selection-only to avoid confusing aggregates.
   const selectedDimensions = useMemo(() => {
     if (!selectedElementId || selectedElementIds.length > 1) return null;
@@ -3087,7 +3092,7 @@ export function BIMPage() {
   // A model is "non-ready" when the viewer must show the inline empty /
   // converting state instead of mounting BIMViewer (which would blind-fetch
   // geometry). Only `ready` and `degraded` carry a 3D mesh on the server
-  // (`degraded` = geometry imported, quantities missing — still viewable),
+  // (`degraded` = geometry imported, quantities missing - still viewable),
   // so every other status is non-ready. We enumerate the known no-geometry /
   // pending / failed variants and add defensive aliases (pending/queued/
   // uploading/converting/failed/no_geometry) so an unexpected status string
@@ -3127,7 +3132,7 @@ export function BIMPage() {
                   className="text-[10px] text-content-tertiary truncate max-w-[160px] lg:max-w-[280px] cursor-help"
                   title={(() => {
                     // Disk-usage info now surfaces here on hover instead of as
-                    // an always-visible chip in the header — chip ate space and
+                    // an always-visible chip in the header - chip ate space and
                     // distracted from the model name. Same data, better tucked.
                     const data = modelsQuery.data;
                     if (!hasModels || !data?.storage_root_label) {
@@ -3249,7 +3254,7 @@ export function BIMPage() {
                 {t('bim.summary_button', { defaultValue: 'Summary' })}
               </button>
 
-              {/* Property search — opens a small popover with a column /
+              {/* Property search - opens a small popover with a column /
                   operator / value query builder hitting the Parquet via
                   DuckDB. Matches are piped into the isolation set so the
                   user sees only the queried elements (v3.12.0 / Stream D). */}
@@ -3458,7 +3463,7 @@ export function BIMPage() {
                 <span className="hidden 2xl:inline">{t('smartViews.title', { defaultValue: 'Smart Views' })}</span>
               </button>
 
-              {/* Color-by selector — three families:
+              {/* Color-by selector - three families:
                   · Field-based (Storey / Type) use the hash-to-hue palette
                   · Compliance-based (Validation / BOQ / Documents) use a
                     fixed red/amber/green palette and turn the 3D viewer
@@ -3515,7 +3520,7 @@ export function BIMPage() {
                 </optgroup>
               </select>
 
-              {/* Render-quality segment — 4 presets controlling pixelRatio,
+              {/* Render-quality segment - 4 presets controlling pixelRatio,
                   lighting and per-material transparency. Persisted in
                   localStorage via useBIMViewerStore. Fast/Walk strip
                   alpha-blending; Visual keeps glass translucent but flips
@@ -3610,7 +3615,7 @@ export function BIMPage() {
         </div>
       </div>
 
-      {/* ── Page intro / help banner — explains what the BIM viewer does and
+      {/* ── Page intro / help banner - explains what the BIM viewer does and
             how it ties into BOQ and the canonical model. Collapses to a
             one-line header (remembered per page in localStorage). ── */}
       <DismissibleInfo
@@ -3634,7 +3639,7 @@ export function BIMPage() {
         })}
       </DismissibleInfo>
 
-      {/* ── Converter status banner — surfaces any missing DDC
+      {/* ── Converter status banner - surfaces any missing DDC
             converters so the user can one-click install them before
             dragging a native CAD file onto the upload zone. Starts
             collapsed once at least one model is ``status="ready"`` so
@@ -3669,7 +3674,7 @@ export function BIMPage() {
 
       {/* ── 3D Viewport with filter sidebar ── */}
       <div className="flex-1 min-h-0 relative bg-surface-secondary flex">
-        {/* Filter sidebar — only when model has loaded elements */}
+        {/* Filter sidebar - only when model has loaded elements */}
         {activeModelId && !isModelNonReady && elements.length > 0 && filterPanelOpen && (
           <div className="absolute top-0 start-0 h-full z-20 overflow-y-auto flex flex-col">
             <BIMFilterGroupsPanel
@@ -3727,35 +3732,49 @@ export function BIMPage() {
               )}
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px] tabular-nums">
-              <div>
-                <div className="text-[9px] uppercase text-content-tertiary">L</div>
-                <div className="font-semibold text-content-primary">
-                  {selectedDimensions.L.toFixed(2)}<span className="text-[9px] text-content-tertiary ml-0.5">m</span>
-                </div>
-              </div>
-              <div>
-                <div className="text-[9px] uppercase text-content-tertiary">W</div>
-                <div className="font-semibold text-content-primary">
-                  {selectedDimensions.W.toFixed(2)}<span className="text-[9px] text-content-tertiary ml-0.5">m</span>
-                </div>
-              </div>
-              <div>
-                <div className="text-[9px] uppercase text-content-tertiary">H</div>
-                <div className="font-semibold text-content-primary">
-                  {selectedDimensions.H.toFixed(2)}<span className="text-[9px] text-content-tertiary ml-0.5">m</span>
-                </div>
-              </div>
+              {(() => {
+                // Convert L/W/H + BBox volume at the DISPLAY boundary only -
+                // selectedDimensions stays metric-canonical (#270).
+                const dimL = displayQty.convert(selectedDimensions.L, 'm');
+                const dimW = displayQty.convert(selectedDimensions.W, 'm');
+                const dimH = displayQty.convert(selectedDimensions.H, 'm');
+                return (
+                  <>
+                    <div>
+                      <div className="text-[9px] uppercase text-content-tertiary">L</div>
+                      <div className="font-semibold text-content-primary">
+                        {dimL.value.toFixed(2)}<span className="text-[9px] text-content-tertiary ml-0.5">{dimL.unit}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] uppercase text-content-tertiary">W</div>
+                      <div className="font-semibold text-content-primary">
+                        {dimW.value.toFixed(2)}<span className="text-[9px] text-content-tertiary ml-0.5">{dimW.unit}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] uppercase text-content-tertiary">H</div>
+                      <div className="font-semibold text-content-primary">
+                        {dimH.value.toFixed(2)}<span className="text-[9px] text-content-tertiary ml-0.5">{dimH.unit}</span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             <div className="mt-1.5 pt-1.5 border-t border-border-light text-[10px] text-content-tertiary flex items-center justify-between">
               <span>{t('bim.bbox_volume', { defaultValue: 'BBox volume' })}</span>
               <span className="tabular-nums font-medium text-content-secondary">
-                {selectedDimensions.volume.toFixed(2)} m³
+                {(() => {
+                  const v = displayQty.convert(selectedDimensions.volume, 'm³');
+                  return `${v.value.toFixed(2)} ${v.unit}`;
+                })()}
               </span>
             </div>
           </div>
         )}
 
-        {/* Snapshot registry popover — toolbar button → projects-level list
+        {/* Snapshot registry popover - toolbar button → projects-level list
             of frozen parquet datasets (replaces the /dashboards page). */}
         {snapshotsOpen && projectId && (
           <BIMSnapshotsPopover
@@ -3764,7 +3783,7 @@ export function BIMPage() {
           />
         )}
 
-        {/* Asset-info card — anchored bottom-right of the viewport. Hidden
+        {/* Asset-info card - anchored bottom-right of the viewport. Hidden
             when the user toggles the "Asset Card" button off in the top
             toolbar or dismisses the card directly. */}
         {(() => {
@@ -3794,7 +3813,7 @@ export function BIMPage() {
           );
         })()}
 
-        {/* PDF generation indicator — shown when the upload job for the
+        {/* PDF generation indicator - shown when the upload job for the
             active model has a deferred PDF export running on the backend.
             Pure status bar, never blocks interaction with the viewer. */}
         {(() => {
@@ -3876,7 +3895,7 @@ export function BIMPage() {
                     title: t('bim.converter_installed_title', { defaultValue: 'Converter installed' }),
                     message: r.message || t('bim.converter_installed_desc', { defaultValue: 'Retrying conversion now…' }),
                   });
-                  // Auto-retry after a successful install — saves the user
+                  // Auto-retry after a successful install - saves the user
                   // an extra click and keeps the workflow continuous.
                   if (activeModel) {
                     await retryBIMModelProcessing(activeModel.id);
@@ -3950,7 +3969,7 @@ export function BIMPage() {
             className="h-full"
           />
 
-          {/* Lazy-load info bar — shown when viewing a group subset */}
+          {/* Lazy-load info bar - shown when viewing a group subset */}
           {activeGroupId && !fullModelRequested && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-border-light shadow-lg text-sm">
               <Layers size={16} className="text-oe-blue shrink-0" />
@@ -4006,10 +4025,10 @@ export function BIMPage() {
             caused a zombie "Converting CAD model…" toast when UploadPanel set
             stage='converting' and no code path later flipped it to 'ready'. */}
 
-        {/* Low mesh-match warning — shown when the loaded DAE has no per-element
+        {/* Low mesh-match warning - shown when the loaded DAE has no per-element
             mapping (e.g. DDC RVT exports with numeric node names), which means
             element filters can't hide individual objects in the viewport. */}
-        {/* Low mesh-match warning removed — positional fallback always provides
+        {/* Low mesh-match warning removed - positional fallback always provides
             workable filtering even when direct name-matching is sparse. */}
         {false && meshMatchRatio !== null && (
           <div className="hidden">
@@ -4046,7 +4065,7 @@ export function BIMPage() {
           </div>
         )}
 
-        {/* Smart Views — rule-based, model-survivable views. Docked on
+        {/* Smart Views - rule-based, model-survivable views. Docked on
             the left next to the diff panel (lower z-index so the diff
             panel sits in front when both are open). Always available as
             long as a model is loaded; the panel itself handles the no-
@@ -4062,7 +4081,7 @@ export function BIMPage() {
           </div>
         )}
 
-        {/* Model-version diff review — docked on the left so it never
+        {/* Model-version diff review - docked on the left so it never
             collides with the right-panel tabs.  Read-only consumer of the
             backend per-element diff. */}
         {activeModelId && !isModelNonReady && elements.length > 0 && diffPanelOpen && (
@@ -4096,7 +4115,7 @@ export function BIMPage() {
         onUpload={() => setUploadOpen(true)}
       />
 
-      {/* BIM ↔ BOQ linking modal — opened from the properties panel
+      {/* BIM ↔ BOQ linking modal - opened from the properties panel
           ("Add to BOQ" button) or the filter panel's quick-takeoff
           action.  Renders a single-element or bulk-element linker. */}
       {linkCandidates && linkCandidates.length > 0 && projectId && (
@@ -4111,7 +4130,7 @@ export function BIMPage() {
         />
       )}
 
-      {/* Save-as-group modal — opened from the filter panel "Save as group"
+      {/* Save-as-group modal - opened from the filter panel "Save as group"
           button.  Captures the current filter criteria + visible element ids
           and persists them as a BIMElementGroup row. */}
       {saveGroupState && projectId && (
@@ -4128,7 +4147,7 @@ export function BIMPage() {
         />
       )}
 
-      {/* Inline create-from-element modals — opened from the "+ New" /
+      {/* Inline create-from-element modals - opened from the "+ New" /
           "+ Link" buttons in the cross-module sections of the selected-
           element panel.  Each one POSTs to the relevant module + invalidates
           the bim-elements query so the new link badge appears instantly. */}
