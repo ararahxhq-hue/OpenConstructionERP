@@ -21,6 +21,7 @@ import {
   Sparkles,
   Palette,
   Bookmark,
+  ListTree,
 } from 'lucide-react';
 import type {
   BIMElementData,
@@ -44,6 +45,7 @@ import BIMLinkedBOQPanel from './BIMLinkedBOQPanel';
 import BIMGroupsPanel from './BIMGroupsPanel';
 import BIMLayersPanel from './BIMLayersPanel';
 import BIMToolsPanel from './BIMToolsPanel';
+import BIMSpatialTreePanel from './BIMSpatialTreePanel';
 import ColorByPropertyPanel from './ColorByPropertyPanel';
 import SelectionSetsPanel from './SelectionSetsPanel';
 import { MatchSuggestionsPanel, useAcceptMatch } from '@/features/match';
@@ -252,7 +254,7 @@ export default function BIMRightPanelTabs({
   // The list comes from the static `tabs` declaration below; we need it
   // here for the hook, so the ids list is extracted into a stable const.
   const TAB_IDS: BIMRightPanelTab[] = [
-    'properties', 'layers', 'tools', 'trait-lens', 'bundles', 'groups', 'match',
+    'properties', 'structure', 'layers', 'tools', 'trait-lens', 'bundles', 'groups', 'match',
   ];
   const onTabKeyDown = useTabKeyboardNav<BIMRightPanelTab>({
     ids: TAB_IDS,
@@ -270,6 +272,11 @@ export default function BIMRightPanelTabs({
       id: 'properties',
       label: t('bim.tab_properties', { defaultValue: 'Properties' }),
       icon: ClipboardList,
+    },
+    {
+      id: 'structure',
+      label: t('bim.tab_structure', { defaultValue: 'Structure' }),
+      icon: ListTree,
     },
     {
       id: 'layers',
@@ -362,6 +369,21 @@ export default function BIMRightPanelTabs({
             selectedElementId={selectedElementId ?? null}
             onHighlightElements={onHighlightBOQElements}
             onClose={onClose}
+          />
+        )}
+        {activeTab === 'structure' && (
+          <BIMSpatialTreePanel
+            elements={elements}
+            selectedElementId={selectedElementId ?? null}
+            onSelectElement={(id) => {
+              // Prefer a real viewer selection (clears others, updates the
+              // Properties tab via onElementSelect); fall back to a highlight
+              // before the scene has mounted its managers.
+              const sm = bridgeManagers.selectionManager;
+              if (sm) sm.selectByIds([id]);
+              else onHighlightBOQElements([id]);
+            }}
+            onHighlightElements={onHighlightBOQElements}
           />
         )}
         {activeTab === 'layers' && <BIMLayersPanel elements={elements} />}
