@@ -125,6 +125,12 @@ interface NavItem {
   moduleKey?: string;
   advancedOnly?: boolean; // Hidden in simple mode
   tourId?: string; // data-tour attribute for onboarding
+  /** Optional "when to use this" one-liner. Surfaced in the row's hover
+   *  tooltip after the label so look-alike modules (the three procurement
+   *  flows, see #280) are easy to tell apart at a glance. `defaultHelp` is
+   *  the English fallback shown until the `helpKey` lands in every locale. */
+  helpKey?: string;
+  defaultHelp?: string;
   /** Optional role gate — hide the entry unless the JWT role matches.
    *  Used for admin-only items like the Audit Log (`audit.view`
    *  permission, MANAGER+ on the backend). */
@@ -147,6 +153,10 @@ interface NavGroup {
    *  never renders a raw key. */
   defaultLabel?: string;
   descriptionKey?: string;
+  /** English fallback for `descriptionKey`, shown as a small note under the
+   *  group header until the locale string is added (mirrors `defaultLabel`).
+   *  Used by the Procurement group to explain which sourcing flow to pick. */
+  defaultDescription?: string;
   items: NavItem[];
   defaultOpen: boolean;
   hideInSimple?: boolean; // Entire group hidden in simple mode
@@ -330,7 +340,8 @@ const navGroups: NavGroup[] = [
     ],
   },
   // ── 9. COMMERCIAL ──────────────────────────────────────────────────
-  // CRM lead → contract award → subcontractors, bid management, tender.
+  // CRM lead → contract award → subcontractors. Sourcing (bid, tender,
+  // RFQ) lives in its own Procurement group below (see #280).
   {
     id: 'grp_commercial',
     labelKey: 'sidebar.group.commercial',
@@ -341,23 +352,71 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.crm', to: '/crm', icon: Briefcase },
       { labelKey: 'nav.contracts', to: '/contracts', icon: FileSignature },
       { labelKey: 'nav.subcontractors', to: '/subcontractors', icon: HardHat },
-      { labelKey: 'nav.bid_management', to: '/bid-management', icon: Scale },
-      { labelKey: 'tendering.title', to: '/tendering', icon: FileText, moduleKey: 'tendering', advancedOnly: true },
     ],
   },
-  // ── 10. PROCUREMENT & CHANGE ───────────────────────────────────────
-  // Variations / MoC, supplier catalogues, procurement, change orders.
+  // ── 10. PROCUREMENT ────────────────────────────────────────────────
+  // The three sourcing flows kept deliberately separate but gathered in
+  // one place, each labelled for when to use it, plus the supplier price
+  // book they all draw from (#280). Order runs lightest to most formal.
   {
     id: 'grp_procurement',
     labelKey: 'sidebar.group.procurement',
-    defaultLabel: 'Procurement & Change',
+    defaultLabel: 'Procurement',
+    descriptionKey: 'sidebar.group.procurement_desc',
+    defaultDescription:
+      'Three ways to buy. RFQ for quick quotes, Bid Management for formal competitive bids, Tendering when pricing from a bill of quantities.',
+    defaultOpen: true,
+    hideInSimple: true,
+    items: [
+      {
+        labelKey: 'procurement.title',
+        to: '/procurement',
+        icon: Package,
+        advancedOnly: true,
+        helpKey: 'sidebar.help.procurement',
+        defaultHelp: 'Quick vendor quotes (RFQ) through to purchase orders.',
+      },
+      {
+        labelKey: 'nav.bid_management',
+        to: '/bid-management',
+        icon: Scale,
+        helpKey: 'sidebar.help.bid_management',
+        defaultHelp:
+          'Formal bidding with bidder invitations, a questions board and bid leveling.',
+      },
+      {
+        labelKey: 'tendering.title',
+        to: '/tendering',
+        icon: FileText,
+        moduleKey: 'tendering',
+        advancedOnly: true,
+        helpKey: 'sidebar.help.tendering',
+        defaultHelp:
+          'Priced from a bill of quantities; writes the winning rates back into the BOQ.',
+      },
+      {
+        labelKey: 'nav.supplier_catalogs',
+        to: '/supplier-catalogs',
+        icon: ShoppingCart,
+        helpKey: 'sidebar.help.supplier_catalogs',
+        defaultHelp: 'Vendor price lists that the quotes and bids draw from.',
+      },
+    ],
+  },
+  // ── 10b. CHANGE & RECORDS ──────────────────────────────────────────
+  // Variations / MoC / change orders, the change-intelligence analytics
+  // they feed, and the capture surfaces (phone log, connectors, inbound,
+  // reconciliation, find). Split out of the old "Procurement & Change"
+  // group so procurement reads clean (#280).
+  {
+    id: 'grp_change',
+    labelKey: 'sidebar.group.change',
+    defaultLabel: 'Change & Records',
     defaultOpen: true,
     hideInSimple: true,
     items: [
       { labelKey: 'nav.variations', to: '/variations', icon: GitBranch },
       { labelKey: 'moc.title', to: '/moc', icon: Replace, advancedOnly: true },
-      { labelKey: 'nav.supplier_catalogs', to: '/supplier-catalogs', icon: ShoppingCart },
-      { labelKey: 'procurement.title', to: '/procurement', icon: Package, advancedOnly: true },
       { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
       { labelKey: 'nav.change_intelligence', to: '/change-intelligence', icon: BrainCircuit, advancedOnly: true },
       { labelKey: 'nav.value', to: '/value', icon: TrendingUp, advancedOnly: true },
@@ -1571,6 +1630,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               )}
             <NavGroupSection
               label={t(group.labelKey, { defaultValue: group.defaultLabel ?? group.id })}
+              description={
+                group.descriptionKey
+                  ? t(group.descriptionKey, {
+                      defaultValue: group.defaultDescription ?? '',
+                    })
+                  : undefined
+              }
               isCollapsed={isCollapsed}
               onToggle={() => toggleGroup(group.id)}
               iconified={iconified}
@@ -1932,12 +1998,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
 function NavGroupSection({
   label,
+  description,
   isCollapsed,
   onToggle,
   children,
   iconified,
 }: {
   label: string;
+  description?: string;
   isCollapsed: boolean;
   onToggle: () => void;
   children: React.ReactNode;
@@ -2007,6 +2075,11 @@ function NavGroupSection({
           aria-hidden
         />
       </button>
+      {!isCollapsed && description && (
+        <p className="mb-1 px-2 text-[10px] leading-snug text-content-quaternary">
+          {description}
+        </p>
+      )}
       {!isCollapsed && children}
     </div>
   );
@@ -2048,6 +2121,12 @@ function SidebarItem({
   const Icon = item.icon;
   const kbdHint = KBD_HINTS[item.to];
   const tourTestId = PRODUCT_TOUR_NAV_TESTIDS[item.to];
+  // Hover tooltip: label, plus the "when to use this" one-liner when the
+  // item defines one (procurement look-alikes, #280). Kept on one line.
+  const helpText = item.helpKey
+    ? t(item.helpKey, { defaultValue: item.defaultHelp ?? '' })
+    : '';
+  const titleText = helpText ? `${label} - ${helpText}` : label;
 
   // Route-transition feedback: while THIS row's destination is loading
   // (history pushed, React location not yet committed — see
@@ -2094,7 +2173,7 @@ function SidebarItem({
         to={item.to}
         end={item.to === '/' || hasQuery}
         onClick={onClick}
-        title={label}
+        title={titleText}
         aria-label={label}
         {...(item.tourId ? { 'data-tour': item.tourId } : {})}
         {...(tourTestId ? { 'data-testid': tourTestId } : {})}
@@ -2143,7 +2222,7 @@ function SidebarItem({
           }
           onClick?.();
         }}
-        title={label}
+        title={titleText}
         {...(item.tourId ? { 'data-tour': item.tourId } : {})}
         {...(tourTestId ? { 'data-testid': tourTestId } : {})}
         className={() => {
