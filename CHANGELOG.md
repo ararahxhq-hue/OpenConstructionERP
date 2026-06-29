@@ -7,14 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [9.0.2] - 2026-06-28
+## [9.1.0] - 2026-06-29
 
-A fix release for the PDF takeoff viewer: saved measurements and the per-sheet scale now come back correctly after a page reload.
+A coordination, projects and notifications release built on community reports. It makes project status a first-class, auditable thing, turns notification settings into a real routing matrix that also drives connected chat tools, and completes the PDF takeoff reload fixes.
+
+### Added
+
+- Projects gain a working status beyond active and archived: set a project to waiting, on hold or finished from the project page, see it as a coloured badge across the project list, and review a status history that records who changed the status from one value to the next and when. Archived projects now have their own view, so they no longer just disappear: filter the list by active, archived or all, and restore an archived project with one action.
+- Notification settings are now a complete, reachable routing matrix: choose, per event and per channel, what you are notified about and at what cadence (real time, hourly or daily digest). Connected chat integrations (Telegram, Slack, Teams, Discord, WhatsApp) now actually receive those notifications, each filtered by the events you choose for it, so a chat bot can be pointed at exactly the events you care about. Posting a comment in a project discussion now notifies the other participants and the project owner with a link back to the thread.
 
 ### Fixed
 
-- Quantity takeoff measurements saved to a project now reappear after you reload the page. The viewer loads them from the server in the background, but a re-render that happened while that load was still in flight could cancel it and leave the sheet blank even though the work was safely stored. The background load no longer cancels itself, so the measurements are restored every time.
+- Quantity takeoff measurements saved to a project reappear after you reload the page. The viewer loads them from the server in the background, but a re-render that happened while that load was still in flight could cancel it and leave the sheet blank even though the work was safely stored. The background load no longer cancels itself, so the measurements are restored every time.
 - A drawing page that was never calibrated no longer shows a "calibrated" scale badge after a reload. Each measurement now records whether its page was actually calibrated, so a page left on the default scale comes back reading "not calibrated" while a genuinely calibrated sheet keeps its scale.
+- A drafted RFI can be opened from the RFI page. The transition from draft to open already existed on the server but had no button, so a drafted RFI could not be published from the interface.
+- Project discussions show each author's name instead of a raw identifier, and the discussion is now reachable directly from the project page next to Documents.
+- The Client and Partner Portal invite dialog shows the complete sign-in link to send rather than the bare token, and the notification raised when a portal user is invited now opens the portal user list instead of a page that did not exist.
+
+### Changed
+
+- The project list can be filtered by status, including archived and an all view that spans every state, with archived projects fetched only when they are asked for.
 
 ## [9.0.1] - 2026-06-27
 
