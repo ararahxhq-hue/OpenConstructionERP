@@ -693,6 +693,10 @@ export function BIMViewer({
    *  the only mode that hides the cursor. Gates the centred crosshair so the
    *  default drag-to-look (cursor visible) doesn't show a redundant reticle. */
   const [walkPointerLockMode, setWalkPointerLockMode] = useState(false);
+  /** True when the user has chosen pointer-lock FPS mouse-look (cursor
+   *  captured, hands-free look) over the default hold-and-drag look. Drives
+   *  the in-hint mode toggle and is applied to WalkMode on each walk enter. */
+  const [walkFps, setWalkFps] = useState(false);
   /** True while the WebGL context is lost and recovering (pdf11). Drives a
    *  non-fatal banner so a transient GPU reset no longer reads as a crash. */
   const [contextLost, setContextLost] = useState(false);
@@ -3570,7 +3574,10 @@ export function BIMViewer({
               } else {
                 if (ctrl) ctrl.enabled = false;
                 try {
+                  helper.setLockCursor(walkFps);
                   helper.enable();
+                  const bounds = sceneRef.current?.getContentBounds?.() ?? null;
+                  if (bounds) helper.placeAtEyeLevel(bounds);
                   setWalkActive(true);
                 } catch (err) {
                   // Defensive: restore controls if WalkMode's own
@@ -3614,18 +3621,39 @@ export function BIMViewer({
           user exits walk mode. */}
       {walkActive && (
         <div
-          className="absolute top-3 start-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/85 backdrop-blur text-white text-[11px] font-medium shadow-lg pointer-events-none select-none"
+          className="absolute top-3 start-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/85 backdrop-blur text-white text-[11px] font-medium shadow-lg select-none"
           data-testid="bim-walk-hint"
           role="status"
           aria-live="polite"
         >
           <Move3d size={12} className="text-sky-300 shrink-0" />
           <span>
-            {t('viewerTools.walk_hint_overlay', {
-              defaultValue:
-                'Drag to look · WASD/arrows move · Space/Shift up/down · Esc exit',
-            })}
+            {walkFps
+              ? t('viewerTools.walk_hint_fps', {
+                  defaultValue:
+                    'Move the mouse to look around · WASD/arrows move · Space/Shift up/down · Esc exit',
+                })
+              : t('viewerTools.walk_hint_overlay', {
+                  defaultValue:
+                    'Hold the left mouse button and drag to look · WASD/arrows move · Space/Shift up/down · Esc exit',
+                })}
           </span>
+          <button
+            type="button"
+            data-testid="bim-walk-fps-toggle"
+            onClick={() => {
+              const helper = walkModeRef.current;
+              if (!helper) return;
+              const next = !walkFps;
+              helper.setLockCursor(next);
+              setWalkFps(next);
+            }}
+            className="ml-1 rounded border border-white/30 px-1.5 py-0.5 text-[10px] font-medium hover:bg-white/15"
+          >
+            {walkFps
+              ? t('viewerTools.walk_mode_drag', { defaultValue: 'Drag to look' })
+              : t('viewerTools.walk_mode_fps', { defaultValue: 'Mouse-look (FPS)' })}
+          </button>
         </div>
       )}
 
