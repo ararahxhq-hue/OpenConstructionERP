@@ -113,7 +113,7 @@ import {
   deleteRequirement,
   importRequirementsFromFile,
   validateRequirementSetAgainstModel,
-  requirementsTemplateUrl,
+  downloadRequirementsTemplate,
   type Requirement,
   type RequirementSet,
   type AddRequirementPayload,
@@ -1278,9 +1278,14 @@ function RuleEditorModal({
             >
               {t('common.cancel', { defaultValue: 'Cancel' })}
             </button>
+            {/* Enabled whenever not mid-save: a disabled Save button reads as
+                "the button does nothing". The name input is `required`, so a
+                click with an empty name triggers native field validation that
+                points the user at what is missing instead of silently doing
+                nothing. handleSubmit still guards the empty-name case. */}
             <button
               type="submit"
-              disabled={submitting || !form.name.trim()}
+              disabled={submitting}
               className="flex items-center gap-1.5 rounded-lg bg-oe-blue px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-oe-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting && <Loader2 size={12} className="animate-spin" />}
@@ -2512,9 +2517,20 @@ function RequirementsTabContent({
             />
           </label>
 
-          {/* Excel template download */}
-          <a
-            href={requirementsTemplateUrl()}
+          {/* Excel template download. Uses an authenticated fetch: the
+              endpoint is JWT-guarded and a bare anchor click sends no Bearer
+              token, so it 401s and nothing downloads. */}
+          <button
+            type="button"
+            onClick={() => {
+              downloadRequirementsTemplate().catch((e) =>
+                addToast({
+                  type: 'error',
+                  title: t('common.error', { defaultValue: 'Error' }),
+                  message: e instanceof Error ? e.message : String(e),
+                }),
+              );
+            }}
             className="flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-[11px] font-medium text-content-secondary hover:border-oe-blue hover:text-oe-blue"
             title={t('bim_rules.req_template_btn_title', {
               defaultValue: 'Download Excel template',
@@ -2522,7 +2538,7 @@ function RequirementsTabContent({
           >
             <Download size={12} />
             {t('bim_rules.req_template_btn', { defaultValue: 'Template' })}
-          </a>
+          </button>
 
           {/* Export current set */}
           {currentSetId && requirements.length > 0 && (
