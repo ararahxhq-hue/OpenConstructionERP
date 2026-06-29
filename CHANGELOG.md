@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.2.0] - 2026-06-29
+
+A BIM viewer, scheduling interoperability and localization release, built largely on community reports. The model viewer grows from a single-model preview into a full federated workspace, schedules can now be moved in and out as Microsoft Project XML, and the change, reconciliation and approval screens speak every language the rest of the app does.
+
+### Added
+
+- The BIM viewer becomes a full federated workspace. Open several models together in one coordinated 3D scene, select elements and read their properties, measure point-to-point distances, and go full screen. A spatial structure tree (project, site, building, storey) lets you navigate and isolate elements by where they sit in the model, and a discoverable Walk mode drops you in at eye level with first-person mouse-look.
+- Filter the model and turn the result into a report. Build a smart filter in the model view to get an on-screen, printable quantity report of the matching elements, or export those quantities straight to a single Bill of Quantities Excel workbook.
+- Saved smart views and selection sets can be organised into named folders, so a large model's saved cuts and groups stay tidy.
+- Schedules export to Microsoft Project XML, and the schedule screen now has import buttons for Microsoft Project XML and Primavera P6 XER files. The importers already existed under the hood; this gives them a home in the interface, alongside a one-click CSV export, and surfaces any approximation warnings the import reports.
+- A referenced PDF opens inline where you are working. A file attached to a transmittal, inspection or NCR can now be previewed in place using the same viewer as the File Manager, instead of forcing you to leave the screen, and files can now be linked to inspections and NCRs as well.
+- Procurement gets its own menu area. The three procurement flows (quick vendor quotes, formal bid management, and tendering from a bill of quantities) are grouped under one Procurement heading, each labelled for when to use it with a short note, and the change-tracking modules move into a clearer Change and Records group.
+
+### Changed
+
+- The Change Intelligence, event reconciliation and approval-route screens are now fully translated across all 26 languages. These newer screens had been falling back to English in every non-English locale; that gap is closed, with 305 strings per language covering the change tabs and back-charge recovery forms, reconciliation, and approval-route delegation and escalation.
+
+### Fixed
+
+- The BIM rules and checks screen works as expected: the rule template downloads instead of hitting an authentication wall, and the Save button no longer looks dead when there is nothing to save.
+- Opening a drawing sheet from Project Files now opens its parent document in the PDF takeoff tool rather than failing to find it, and an administrator can open files in any folder.
+- Quantity takeoff edits sync reliably. Deleting a measurement or changing a non-geometry field is now saved, and measurements no longer carry over between different documents.
+
 ## [9.1.0] - 2026-06-29
 
 A coordination, projects and notifications release built on community reports. It makes project status a first-class, auditable thing, turns notification settings into a real routing matrix that also drives connected chat tools, and completes the PDF takeoff reload fixes.
