@@ -10,7 +10,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { primaryModule, modulesForKind } from './kindModule';
+import {
+  primaryModule,
+  modulesForKind,
+  isInlinePreviewRow,
+  pdfTakeoffTargetFor,
+} from './kindModule';
+import type { FileRow } from './types';
 
 describe('primaryModule - BIM documents convert on demand (#273)', () => {
   it('routes a document-kind IFC through ?docId= (not a model-id path)', () => {
@@ -48,8 +54,91 @@ describe('primaryModule - other kinds unaffected', () => {
     expect(route).not.toContain('docId=');
   });
 
-  it('document-kind PDF still opens in PDF Takeoff', () => {
-    expect(primaryModule('document', '.pdf').route('PROJ1', 'DOC-1')).toBe(
+  it('document-kind PDF now reads inline by default (#284), not PDF Takeoff', () => {
+    const primary = primaryModule('document', '.pdf');
+    // The default open action is the inline reader, flagged so consumers open
+    // the overlay instead of navigating to the takeoff tool.
+    expect(primary.inlinePreview).toBe(true);
+    // The route is a harmless fallback that keeps the file selected in /files.
+    expect(primary.route('PROJ1', 'DOC-1')).toBe('/projects/PROJ1/files?file=DOC-1');
+    // It must NOT route into PDF Takeoff anymore.
+    expect(primary.route('PROJ1', 'DOC-1')).not.toContain('/takeoff');
+  });
+});
+
+describe('PDF documents read inline by default; Takeoff is opt-in (#284)', () => {
+  function pdfRow(over: Partial<FileRow> = {}): FileRow {
+    return {
+      id: 'DOC-1',
+      kind: 'document',
+      name: 'contract.pdf',
+      project_id: 'PROJ1',
+      size_bytes: 1,
+      mime_type: 'application/pdf',
+      extension: '.pdf',
+      modified_at: null,
+      physical_path: '',
+      relative_path: '',
+      storage_backend: 'local',
+      download_url: '/api/v1/documents/DOC-1/download/',
+      preview_url: null,
+      thumbnail_url: null,
+      discipline: null,
+      category: null,
+      extra: {},
+      ...over,
+    };
+  }
+
+  it('isInlinePreviewRow is true for a PDF document with a download URL', () => {
+    expect(isInlinePreviewRow(pdfRow())).toBe(true);
+  });
+
+  it('isInlinePreviewRow sniffs the mime type when the extension is missing', () => {
+    expect(isInlinePreviewRow(pdfRow({ extension: null }))).toBe(true);
+  });
+
+  it('isInlinePreviewRow is false without a download URL (nothing to fetch)', () => {
+    expect(isInlinePreviewRow(pdfRow({ download_url: null }))).toBe(false);
+  });
+
+  it('isInlinePreviewRow is false for a non-PDF document (e.g. an image)', () => {
+    expect(
+      isInlinePreviewRow(
+        pdfRow({ name: 'site.jpg', extension: '.jpg', mime_type: 'image/jpeg' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('isInlinePreviewRow is false for a DWG/IFC document (those route to a module)', () => {
+    expect(
+      isInlinePreviewRow(
+        pdfRow({ name: 'plan.dwg', extension: '.dwg', mime_type: null }),
+      ),
+    ).toBe(false);
+  });
+
+  it('pdfTakeoffTargetFor offers the takeoff route for a PDF document', () => {
+    const target = pdfTakeoffTargetFor(pdfRow());
+    expect(target).not.toBeNull();
+    expect(target!.route('PROJ1', 'DOC-1')).toBe(
+      '/takeoff?doc=DOC-1&source=document&tab=measurements',
+    );
+  });
+
+  it('pdfTakeoffTargetFor returns null for a non-PDF row', () => {
+    expect(pdfTakeoffTargetFor(pdfRow({ extension: '.jpg', mime_type: 'image/jpeg' }))).toBeNull();
+  });
+
+  it('modulesForKind for a PDF document offers inline View first, then PDF Takeoff', () => {
+    const mods = modulesForKind('document', '.pdf');
+    expect(mods.length).toBeGreaterThanOrEqual(2);
+    // Primary is the inline reader.
+    expect(mods[0]!.inlinePreview).toBe(true);
+    // PDF Takeoff is present as an explicit, non-default choice.
+    const takeoff = mods.find((m) => m.label === 'PDF Takeoff');
+    expect(takeoff).toBeDefined();
+    expect(takeoff!.route('PROJ1', 'DOC-1')).toBe(
       '/takeoff?doc=DOC-1&source=document&tab=measurements',
     );
   });

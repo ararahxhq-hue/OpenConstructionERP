@@ -35,6 +35,22 @@ type StatusFilter = 'all' | 'active' | 'archived';
 
 const ITEMS_PER_PAGE = 12;
 
+/**
+ * Whether any non-default filter or search is currently applied.
+ *
+ * This drives the "no matching projects" empty state and - critically -
+ * keeps the filter toolbar mounted when a filtered fetch (e.g. the Archived
+ * view) comes back empty. Without it, an empty Archived list dropped the
+ * whole toolbar, stranding the user with no Active/Archived switch (#284).
+ */
+export function isProjectFilterActive(
+  searchQuery: string,
+  statusFilter: StatusFilter,
+  regionFilter: string,
+): boolean {
+  return Boolean(searchQuery) || statusFilter !== 'all' || regionFilter !== 'all';
+}
+
 // Region tags + colours are derived from actual project data — no
 // region-specific list is hard-coded in the default UI per the
 // "no country-specific standards or city names in default UI" rule.
@@ -322,6 +338,13 @@ export function ProjectsPage() {
     (page - 1) * ITEMS_PER_PAGE,
     page * ITEMS_PER_PAGE,
   );
+
+  // Whether any non-default filter or search is currently applied. Drives
+  // both the "no matching projects" empty state and - critically - keeping
+  // the filter toolbar mounted when a filtered view (e.g. Archived) comes
+  // back empty, so the user can always switch back to Active. Without this
+  // guard an empty Archived view hid the toolbar and trapped the user (#284).
+  const hasActiveFilter = isProjectFilterActive(searchQuery, statusFilter, regionFilter);
 
   /* ── Stats ────────────────────────────────────────────────────────── */
 
@@ -713,8 +736,11 @@ export function ProjectsPage() {
         </>
       )}
 
-      {/* Search + Filters */}
-      {projects && projects.length > 0 && (
+      {/* Search + Filters. Stay mounted whenever there are projects OR a
+          filter/search is active: a filtered fetch (e.g. Archived) can return
+          an empty list, and hiding the toolbar there would strand the user on
+          the Archived view with no Active/Archived switch to get back. */}
+      {((projects && projects.length > 0) || hasActiveFilter) && (
         <Card padding="none" className="mb-6">
           <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             {/* Search */}
@@ -815,13 +841,30 @@ export function ProjectsPage() {
         // the "No projects yet" empty state, which would silently hide an
         // auth/permission/server error behind a create-your-first CTA.
         <RecoveryCard error={projectsErrorValue} onRetry={() => refetchProjects()} />
-      ) : filtered.length === 0 && (searchQuery || statusFilter !== 'all' || regionFilter !== 'all') ? (
+      ) : filtered.length === 0 && hasActiveFilter ? (
         <EmptyState
           icon={<Search size={28} strokeWidth={1.5} />}
           title={t('projects.no_results', { defaultValue: 'No matching projects' })}
-          description={t('projects.no_results_hint', {
-            defaultValue: 'Try adjusting your search or filters',
-          })}
+          description={
+            statusFilter === 'archived'
+              ? t('projects.no_archived_hint', {
+                  defaultValue: 'No archived projects. Switch back to active projects below.',
+                })
+              : t('projects.no_results_hint', {
+                  defaultValue: 'Try adjusting your search or filters',
+                })
+          }
+          // Give a one-click escape back to the active list. The filter
+          // toolbar above already lets the user switch, but a primary action
+          // here makes the way out unmissable from an empty filtered view.
+          action={{
+            label: t('projects.show_active', { defaultValue: 'Show active projects' }),
+            onClick: () => {
+              setSearchQuery('');
+              setStatusFilter('active');
+              setRegionFilter('all');
+            },
+          }}
         />
       ) : !projects || projects.length === 0 ? (
         <div className="space-y-4">
@@ -971,7 +1014,7 @@ export function ProjectsPage() {
                 to: Math.min(page * ITEMS_PER_PAGE, filtered.length),
                 filtered: filtered.length,
               })}
-              {(searchQuery || statusFilter !== 'all' || regionFilter !== 'all') && filtered.length !== (projects?.length ?? 0)
+              {hasActiveFilter && filtered.length !== (projects?.length ?? 0)
                 ? ` (${t('projects.filtered_from', { defaultValue: 'filtered from {{total}}', total: projects?.length ?? 0 })})`
                 : ''}
             </p>

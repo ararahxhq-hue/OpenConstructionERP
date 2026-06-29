@@ -21,6 +21,19 @@ describe('ProjectStatusBadge', () => {
     expect(screen.getByText('In review')).toBeInTheDocument();
   });
 
+  it('renders the curated "cancelled" status with its label (#284)', () => {
+    // "cancelled" is a curated terminal status (distinct from "on hold" /
+    // "waiting"), so it must render its own label, not a humanised fallback.
+    render(<ProjectStatusBadge status="cancelled" />);
+    expect(screen.getByText('Cancelled')).toBeInTheDocument();
+  });
+
+  it('includes "cancelled" in the curated set so pickers/filters offer it (#284)', () => {
+    // The status picker + any status-driven UI map over CURATED_PROJECT_STATUSES,
+    // so membership here is what surfaces the option everywhere it is chosen.
+    expect(CURATED_PROJECT_STATUSES).toContain('cancelled');
+  });
+
   it('renders every curated status without throwing', () => {
     for (const s of CURATED_PROJECT_STATUSES) {
       const { unmount } = render(<ProjectStatusBadge status={s} />);
