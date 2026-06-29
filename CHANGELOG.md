@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.3.0] - 2026-06-29
+
+A measurement-system and portal-polish release. The Imperial preference now follows you out of the Takeoff canvas into every read-only display and printed report, while machine-readable exports stay canonical so no stored figure is ever changed by a display unit. A run of community-reported rough edges across Project Files, Finance, GeoHub and the project list are smoothed out.
+
+### Added
+
+- The Imperial measurement-system preference is now honoured wherever a quantity is read, not only in Takeoff. The BIM element inspector and its geometry read-outs (width, height, depth, diagonal, footprint and bounding volume), read-only quantity displays and the printed Bill of Quantities report convert metres and square or cubic metres into feet when Imperial is selected. Money is never converted, and the Excel, CSV and GAEB exports stay in canonical metric so a figure can never be silently changed by a display unit.
+- A PDF in Project Files opens in an inline reader by default, so contracts, specifications and letters can be read in place; opening it in PDF Takeoff is offered as an explicit, separate choice for the plans that need measuring.
+- Finance gains lightweight invoice status control. A draft invoice can be sent for approval in one click, and an invoice can be moved between its safe, reversible states from the edit dialog. Approving an invoice and recording payment still go through their existing controlled actions.
+
+### Changed
+
+- The project overview photo strip now includes image documents, not only geo-tagged site photos, so a project's pictures all show up in one place.
+- The new strings introduced across these screens are translated across all 26 languages.
+
+### Fixed
+
+- The project list toolbar no longer disappears on an empty Archived view, which previously left no way back to the active projects; the Archived empty state now offers a direct way back to active projects.
+- The Cancelled project status is recognised and shown with its own label and colour.
+- GeoHub places a project on the map without a detour: the map auto-anchors from the address set in project settings, and choosing to place the pin manually drops a draggable marker in place instead of redirecting to settings.
+- The change-order and field-report confirmation dialogs show wording that matches the action. Submit, approve, reject and execute no longer share a prompt worded for deletion.
+
 ## [9.2.0] - 2026-06-29
 
 A BIM viewer, scheduling interoperability and localization release, built largely on community reports. The model viewer grows from a single-model preview into a full federated workspace, schedules can now be moved in and out as Microsoft Project XML, and the change, reconciliation and approval screens speak every language the rest of the app does.
