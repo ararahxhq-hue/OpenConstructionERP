@@ -373,6 +373,23 @@ export default function BIMRightPanelTabs({
             getCurrentClipState={getCurrentClipState}
             getCurrentScreenshot={getCurrentScreenshot}
             onApplyViewpoint={onApplyViewpoint}
+            getExportContext={() => {
+              // Resolve the live selection + active storey/type filter so the
+              // BOQ export can scope to exactly what the user sees. Both come
+              // off the same window bridges the rest of this panel uses.
+              const snap = getFilterBridge()?.get();
+              const filters =
+                snap && (snap.storeys.length > 0 || snap.types.length > 0)
+                  ? {
+                      ...(snap.storeys.length > 0 ? { storey: snap.storeys } : {}),
+                      ...(snap.types.length > 0 ? { element_type: snap.types } : {}),
+                    }
+                  : null;
+              return {
+                selectedIds: bridgeManagers.selectionManager?.getSelectedIds() ?? [],
+                filters,
+              };
+            }}
           />
         )}
         {activeTab === 'trait-lens' && (

@@ -904,6 +904,39 @@ class SmartViewPreviewResponse(BaseModel):
     normalised_rule_tree: dict[str, Any] = Field(default_factory=dict)
 
 
+# ── BOQ export (IFC/RVT quantities to a single Excel Bill of Quantities) ──
+
+
+class BoqExportFilters(BaseModel):
+    """Optional element filters for the BOQ export. Each field, when set,
+    keeps only elements whose attribute value is in the given list."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    storey: list[str] | None = None
+    element_type: list[str] | None = None
+    discipline: list[str] | None = None
+
+
+class BoqExportRequest(BaseModel):
+    """Body of ``POST /models/{id}/export/boq.xlsx``.
+
+    Selection precedence (most specific wins): ``element_ids`` (export
+    exactly the elements the user has visible / selected in the viewer),
+    then ``group_id`` (a saved Smart View / element group), then
+    ``filters``, else the whole model. ``group_by`` controls how the
+    summary sheet rolls quantities up.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    element_ids: list[str] | None = None
+    group_id: UUID | None = None
+    filters: BoqExportFilters | None = None
+    group_by: Literal["element_type", "storey", "discipline", "element_type_storey"] = "element_type"
+    title: str | None = Field(default=None, max_length=200)
+
+
 # ── Model schema introspection (RFC 24 - Quantity Rules editor) ──────────────
 
 

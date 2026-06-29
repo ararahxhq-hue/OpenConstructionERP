@@ -101,6 +101,7 @@ from app.modules.bim_hub.schemas import (
     BOQElementLinkCreate,
     BOQElementLinkListResponse,
     BOQElementLinkResponse,
+    BoqExportRequest,
     CreateModelFromDocumentRequest,
     FederationCreate,
     FederationDiffResponse,
@@ -3974,6 +3975,41 @@ async def export_cobie_xlsx(
         headers={
             # RFC 6266 - a model name with non-Latin-1 chars would otherwise make
             # the ASGI server 500 while encoding this header.
+            "Content-Disposition": content_disposition_attachment(filename),
+            "Content-Length": str(len(xlsx_bytes)),
+        },
+    )
+
+
+@router.post("/models/{model_id}/export/boq.xlsx")
+async def export_boq_xlsx(
+    model_id: uuid.UUID,
+    body: BoqExportRequest | None = None,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("bim.read")),
+    service: BIMHubService = Depends(_get_service),
+) -> StreamingResponse:
+    """Export the model's measured quantities as a single Excel Bill of
+    Quantities (BOQ): a summary sheet grouping elements with summed areas /
+    volumes / lengths / weights plus a TOTAL row, and a detail sheet listing
+    every element. The body optionally narrows the export to the elements the
+    user has visible / selected (``element_ids``), a saved Smart View / group
+    (``group_id``), or simple ``filters`` - default is the whole model.
+    """
+    req = body or BoqExportRequest()
+    await _verify_model_access(service, model_id, user_id or "")
+    xlsx_bytes, filename = await service.export_boq(
+        model_id,
+        element_ids=req.element_ids,
+        group_id=req.group_id,
+        filters=(req.filters.model_dump(exclude_none=True) if req.filters else None),
+        group_by=req.group_by,
+        title=req.title,
+    )
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        headers={
             "Content-Disposition": content_disposition_attachment(filename),
             "Content-Length": str(len(xlsx_bytes)),
         },
