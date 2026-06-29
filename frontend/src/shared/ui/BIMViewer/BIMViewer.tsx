@@ -69,7 +69,11 @@ import { ClipManager } from './ClipManager';
 import { SectionBox } from './SectionBox';
 import { WalkMode } from './WalkMode';
 import { MeasureTool } from './MeasureTool';
-import { deriveGeometry, deriveRelations } from './canonicalElementDetails';
+import {
+  deriveGeometry,
+  deriveRelations,
+  geometryDisplayRows,
+} from './canonicalElementDetails';
 import { BIMContextMenu } from './BIMContextMenu';
 import type { BIMContextMenuState } from './BIMContextMenu';
 import BIMViewCube from './BIMViewCube';
@@ -4845,7 +4849,12 @@ export function BIMViewer({
                   </div>
                 )}
 
-                {/* Geometry — derived from the canonical bounding box. */}
+                {/* Geometry - derived from the canonical bounding box. The
+                    bbox spans are metric-canonical; geometryDisplayRows converts
+                    each value AND its unit suffix to the user's system so an
+                    imperial user reads "Width (ft)" with the foot value, not raw
+                    metres (issue #270). The unit is no longer baked into the
+                    i18n string so the suffix can follow the active system. */}
                 {elementGeometry && (
                   <div data-testid="bim-geometry-section">
                     <h4 className="text-sm font-semibold text-content-primary mb-1.5 flex items-center gap-1.5">
@@ -4853,23 +4862,24 @@ export function BIMViewer({
                       {t('bim.geometry', { defaultValue: 'Geometry' })}
                     </h4>
                     <QuantitiesTable
-                      quantities={{
-                        [t('bim.geo_width', { defaultValue: 'Width (m)' })]:
-                          elementGeometry.width,
-                        [t('bim.geo_depth', { defaultValue: 'Depth (m)' })]:
-                          elementGeometry.depth,
-                        [t('bim.geo_height', { defaultValue: 'Height (m)' })]:
-                          elementGeometry.height,
-                        [t('bim.geo_footprint', {
-                          defaultValue: 'Footprint (m²)',
-                        })]: elementGeometry.footprint,
-                        [t('bim.geo_bbox_volume', {
-                          defaultValue: 'Bounding volume (m³)',
-                        })]: elementGeometry.bboxVolume,
-                        [t('bim.geo_diagonal', {
-                          defaultValue: 'Diagonal (m)',
-                        })]: elementGeometry.diagonal,
-                      }}
+                      quantities={geometryDisplayRows(
+                        elementGeometry,
+                        {
+                          width: t('bim.geo_width_base', { defaultValue: 'Width' }),
+                          depth: t('bim.geo_depth_base', { defaultValue: 'Depth' }),
+                          height: t('bim.geo_height_base', { defaultValue: 'Height' }),
+                          footprint: t('bim.geo_footprint_base', {
+                            defaultValue: 'Footprint',
+                          }),
+                          bboxVolume: t('bim.geo_bbox_volume_base', {
+                            defaultValue: 'Bounding volume',
+                          }),
+                          diagonal: t('bim.geo_diagonal_base', {
+                            defaultValue: 'Diagonal',
+                          }),
+                        },
+                        displayQty.convert,
+                      )}
                     />
                   </div>
                 )}

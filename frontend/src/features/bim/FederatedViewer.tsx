@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { Maximize2, Minimize2, Ruler, X } from 'lucide-react';
 
 import { Button } from '@/shared/ui';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 
 import {
   FederatedViewerScene,
@@ -69,6 +70,10 @@ export function __setFederatedSceneFactoryForTests(factory: SceneFactory | null)
 export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
   function FederatedViewer({ federationId }, ref) {
     const { t } = useTranslation();
+    // Measured distances are reported in the federation's scene units
+    // (metric-canonical when shared_units is "m"); convert at the display
+    // boundary so an imperial user reads feet (issue #270).
+    const displayQty = useDisplayQuantity();
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const sceneRef = useRef<FederatedViewerScene | null>(null);
@@ -416,10 +421,16 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
             {measurement && measurement.pointCount === 2 ? (
               <span className="flex items-center gap-2">
                 <span className="font-semibold tabular-nums">
-                  {measurement.distance.toLocaleString(undefined, {
-                    maximumFractionDigits: 3,
-                  })}{' '}
-                  {unitLabel}
+                  {(() => {
+                    // Convert from the federation's scene units to the user's
+                    // system. `convert` only scales units it recognises, so a
+                    // non-metric (or custom) shared_units value passes through
+                    // unchanged - never double-converted.
+                    const d = displayQty.convert(measurement.distance, unitLabel);
+                    return `${d.value.toLocaleString(undefined, {
+                      maximumFractionDigits: 3,
+                    })} ${d.unit}`;
+                  })()}
                 </span>
                 <button
                   type="button"

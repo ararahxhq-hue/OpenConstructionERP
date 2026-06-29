@@ -14,7 +14,6 @@ import {
   type Position,
 } from './api';
 import { resourceAwareTotalInBase } from './boqHelpers';
-import { toDisplayQuantity } from '@/shared/lib/unitConversion';
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
@@ -49,15 +48,6 @@ export interface ExportOptions {
    */
   baseCurrency?: string;
   fxRates?: Array<{ currency: string; rate: number }>;
-  /**
-   * Issue #270 - the user's measurement-system preference. When 'imperial'
-   * the physical quantity numbers and their unit labels are converted at the
-   * export boundary (m -> ft, m2 -> ft2, kg -> lb ...); money (unit rate /
-   * total) is per-unit and is NEVER converted. Defaults to 'metric', which
-   * passes values through unchanged with tidy unit labels, so stored data is
-   * untouched and metric users see byte-identical output to before.
-   */
-  measurementSystem?: 'metric' | 'imperial';
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -209,10 +199,6 @@ export function buildBOQSheetData(options: ExportOptions): {
   numberFormatStartRow: number;
 } {
   const { positions, boqTitle, markupTotals, netTotal, vatRate, vatAmount, grossTotal } = options;
-  // Issue #270 - convert the physical quantity column + its unit label into
-  // the user's measurement system at this export boundary only. Money columns
-  // stay verbatim. Default 'metric' = pass-through with tidy labels.
-  const measurementSystem = options.measurementSystem ?? 'metric';
   const grouped = groupPositionsIntoSections(positions, {
     baseCurrency: options.baseCurrency,
     fxRates: options.fxRates,
@@ -283,12 +269,11 @@ export function buildBOQSheetData(options: ExportOptions): {
     merge(sectionRowIdx, 1, sectionRowIdx, 4);
 
     for (const child of group.children) {
-      const childDq = toDisplayQuantity(Number(child.quantity), child.unit, measurementSystem);
       rows.push([
         neutraliseFormula(child.ordinal),
         neutraliseFormula(child.description),
-        neutraliseFormula(childDq.unit),
-        childDq.value,
+        neutraliseFormula(child.unit),
+        child.quantity,
         child.unit_rate,
         positionTotalForExport(child, options),
         // getVariantCellValue can return number, string, or null; only
@@ -302,14 +287,13 @@ export function buildBOQSheetData(options: ExportOptions): {
       ]);
       for (const r of getResources(child)) {
         const rTotal = r.total ?? r.quantity * r.unit_rate;
-        const rDq = toDisplayQuantity(Number(r.quantity), r.unit, measurementSystem);
         rows.push([
           null,
           // The leading "\u2514 " is safe (no trigger char) but the appended
           // ``r.name`` is user-controlled \u2014 neutralise the whole cell.
           neutraliseFormula(`    \u2514 ${r.name}`),
-          neutraliseFormula(rDq.unit),
-          rDq.value,
+          neutraliseFormula(r.unit),
+          r.quantity,
           r.unit_rate,
           rTotal,
           null,
@@ -338,12 +322,11 @@ export function buildBOQSheetData(options: ExportOptions): {
   // Ungrouped
   for (const pos of grouped.ungrouped) {
     if (isSection(pos)) continue;
-    const posDq = toDisplayQuantity(Number(pos.quantity), pos.unit, measurementSystem);
     rows.push([
       neutraliseFormula(pos.ordinal),
       neutraliseFormula(pos.description),
-      neutraliseFormula(posDq.unit),
-      posDq.value,
+      neutraliseFormula(pos.unit),
+      pos.quantity,
       pos.unit_rate,
       positionTotalForExport(pos, options),
       (() => {
@@ -355,12 +338,11 @@ export function buildBOQSheetData(options: ExportOptions): {
     ]);
     for (const r of getResources(pos)) {
       const rTotal = r.total ?? r.quantity * r.unit_rate;
-      const rDq = toDisplayQuantity(Number(r.quantity), r.unit, measurementSystem);
       rows.push([
         null,
         neutraliseFormula(`    \u2514 ${r.name}`),
-        neutraliseFormula(rDq.unit),
-        rDq.value,
+        neutraliseFormula(r.unit),
+        r.quantity,
         r.unit_rate,
         rTotal,
         null,

@@ -31,6 +31,7 @@ import {
   __setFederatedSceneFactoryForTests,
   type FederatedViewerHandle,
 } from '../FederatedViewer';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 
 /* ── Fake scene implementation ──────────────────────────────────────── */
 
@@ -138,6 +139,9 @@ afterEach(() => {
   lastFakeScene = null;
   lastOnPick = null;
   lastOnMeasure = null;
+  // Reset measurement-system preference so an imperial test never leaks into
+  // the metric-default expectations of the others.
+  usePreferencesStore.getState().resetPreferences();
   cleanup();
 });
 
@@ -344,6 +348,32 @@ describe('FederatedViewer', () => {
     expect(
       screen.getByTestId('federated-viewer-measure-readout'),
     ).toHaveTextContent('12.345');
+  });
+
+  it('converts the measured distance to feet for an imperial user (#270)', async () => {
+    // shared_units is metric ("m" via detailWith); an imperial preference must
+    // scale the readout to feet rather than printing raw metres.
+    usePreferencesStore.getState().setPreference('measurementSystem', 'imperial');
+    hookValue = {
+      detail: detailWith(['m1']),
+      members: [loadedMember('m1')],
+      errors: [],
+      isLoading: false,
+      isDetailLoading: false,
+      detailError: null,
+    };
+    render(<FederatedViewer federationId="fed-1" />);
+    await waitFor(() => expect(lastOnMeasure).not.toBeNull());
+    fireEvent.click(screen.getByTestId('federated-viewer-measure-toggle'));
+    act(() => {
+      // 10 m -> 32.808 ft (factor 3.2808399).
+      lastOnMeasure!({ distance: 10, pointCount: 2 });
+    });
+    const readout = screen.getByTestId('federated-viewer-measure-readout');
+    expect(readout).toHaveTextContent('32.808');
+    expect(readout).toHaveTextContent('ft');
+    // The raw metric value must NOT be shown.
+    expect(readout).not.toHaveTextContent('10 m');
   });
 
   it('the full-screen button requests fullscreen on the container', async () => {

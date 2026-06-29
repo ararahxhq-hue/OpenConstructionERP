@@ -2853,8 +2853,6 @@ export function BOQEditorPage() {
             vatRate,
             vatAmount,
             grossTotal,
-            // Issue #270 - emit quantities + unit labels in the user's system.
-            measurementSystem,
           });
           addToast({ type: 'success', title: t('boq.file_downloaded', { defaultValue: 'File downloaded' }) });
           return;
