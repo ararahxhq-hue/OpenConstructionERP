@@ -12,6 +12,9 @@ import {
   convertUnit,
   getDisplayUnit,
   isMetricUnit,
+  toDisplayQuantity,
+  displayUnitFor,
+  fromDisplayQuantity,
 } from './unitConversion';
 
 describe('convertUnit - metric to imperial', () => {
@@ -119,5 +122,73 @@ describe('isMetricUnit', () => {
   it('returns null for unknown units', () => {
     expect(isMetricUnit('pcs')).toBeNull();
     expect(isMetricUnit('lsum')).toBeNull();
+  });
+});
+
+describe('toDisplayQuantity', () => {
+  it('passes the value through untouched for metric, only tidying the label', () => {
+    const r = toDisplayQuantity(12.5, 'm2', 'metric');
+    expect(r.value).toBe(12.5);
+    expect(r.unit).toBe('m²');
+  });
+
+  it('keeps superscript metric labels as-is for metric', () => {
+    expect(toDisplayQuantity(3, 'm³', 'metric')).toEqual({ value: 3, unit: 'm³' });
+  });
+
+  it('scales + relabels area for imperial', () => {
+    const r = toDisplayQuantity(10, 'm²', 'imperial');
+    expect(r.value).toBeCloseTo(107.639, 3);
+    expect(r.unit).toBe('ft²');
+  });
+
+  it('scales + relabels length and weight for imperial', () => {
+    expect(toDisplayQuantity(1, 'm', 'imperial').unit).toBe('ft');
+    expect(toDisplayQuantity(1, 'm', 'imperial').value).toBeCloseTo(3.2808399, 5);
+    expect(toDisplayQuantity(1, 'kg', 'imperial').unit).toBe('lb');
+    expect(toDisplayQuantity(1, 'kg', 'imperial').value).toBeCloseTo(2.20462, 4);
+  });
+
+  it('leaves countable / lump units unchanged in both systems', () => {
+    expect(toDisplayQuantity(7, 'pcs', 'imperial')).toEqual({ value: 7, unit: 'pcs' });
+    expect(toDisplayQuantity(7, 'lsum', 'metric')).toEqual({ value: 7, unit: 'lsum' });
+  });
+});
+
+describe('displayUnitFor', () => {
+  it('returns the metric display label for metric', () => {
+    expect(displayUnitFor('m2', 'metric')).toBe('m²');
+    expect(displayUnitFor('m', 'metric')).toBe('m');
+  });
+
+  it('returns the imperial label for imperial', () => {
+    expect(displayUnitFor('m²', 'imperial')).toBe('ft²');
+    expect(displayUnitFor('m', 'imperial')).toBe('ft');
+    expect(displayUnitFor('kg', 'imperial')).toBe('lb');
+  });
+
+  it('passes unmapped units through', () => {
+    expect(displayUnitFor('pcs', 'imperial')).toBe('pcs');
+  });
+});
+
+describe('fromDisplayQuantity (editable-cell reverse)', () => {
+  it('is the identity for metric', () => {
+    expect(fromDisplayQuantity(215.28, 'm²', 'metric')).toBe(215.28);
+  });
+
+  it('reverses an imperial value back to metric storage', () => {
+    // 20 m² shown as ft², typed back, must store ~20 m² again.
+    const shown = toDisplayQuantity(20, 'm²', 'imperial');
+    expect(fromDisplayQuantity(shown.value, 'm²', 'imperial')).toBeCloseTo(20, 6);
+  });
+
+  it('reverses length and weight', () => {
+    expect(fromDisplayQuantity(3.2808399, 'm', 'imperial')).toBeCloseTo(1, 6);
+    expect(fromDisplayQuantity(2.20462, 'kg', 'imperial')).toBeCloseTo(1, 5);
+  });
+
+  it('passes unmapped units through unchanged', () => {
+    expect(fromDisplayQuantity(7, 'pcs', 'imperial')).toBe(7);
   });
 });

@@ -140,3 +140,74 @@ export function convertUnit(
     displayUnit: getDisplayUnit(fromUnit),
   };
 }
+
+/** A quantity ready for display: numeric value + the label to show beside it. */
+export interface DisplayQuantity {
+  value: number;
+  unit: string;
+}
+
+/**
+ * Convert a metric-canonical quantity into the user's measurement system,
+ * the single decision every display / export surface should funnel through.
+ *
+ * The whole app stores quantities metric-canonical (m / m2 / m3 / kg ...).
+ * This helper takes such a value plus the target `system` and returns what
+ * to render:
+ *   - `metric`   : the value passes through bit-for-bit; only the unit label
+ *                  is normalised to its display form ("m2" -> "m²"), so a
+ *                  metric user sees byte-identical output to before.
+ *   - `imperial` : the value is scaled and the unit relabelled
+ *                  (m -> ft, m² -> ft², m³ -> ft³, kg -> lb ...).
+ * Units with no imperial mapping (pcs, lsum, hr, %) pass through unchanged
+ * in both systems, which is the correct behaviour for countable / lump /
+ * dimensionless items.
+ *
+ * Storage is never touched — callers feed the canonical metric value in and
+ * use the returned pair purely for rendering or human-readable export.
+ */
+export function toDisplayQuantity(
+  value: number,
+  metricUnit: string,
+  system: 'metric' | 'imperial',
+): DisplayQuantity {
+  if (system !== 'imperial') {
+    return { value, unit: getDisplayUnit(metricUnit) };
+  }
+  const result = convertUnit(value, metricUnit, 'imperial');
+  return { value: result.value, unit: result.displayUnit };
+}
+
+/**
+ * The display unit label a metric unit resolves to in the target system,
+ * without needing a value. Used where only a unit column / suffix is
+ * rendered (a header, an input adornment, a standalone unit cell).
+ */
+export function displayUnitFor(
+  metricUnit: string,
+  system: 'metric' | 'imperial',
+): string {
+  return toDisplayQuantity(0, metricUnit, system).unit;
+}
+
+/**
+ * Reverse of {@link toDisplayQuantity} for an editable field: take a number a
+ * user typed *in the displayed system* and return the metric-canonical value
+ * to store. For `metric` the value is returned unchanged; for `imperial` it
+ * is divided back out (107.64 ft² -> 10 m²). Units with no mapping pass
+ * through. This is what an imperial-aware grid's value-parser must call so a
+ * user editing a converted cell never overwrites canonical metric storage
+ * with the imperial number they see.
+ */
+export function fromDisplayQuantity(
+  value: number,
+  metricUnit: string,
+  system: 'metric' | 'imperial',
+): number {
+  if (system !== 'imperial') return value;
+  const entry =
+    METRIC_TO_IMPERIAL[metricUnit.trim()] ??
+    METRIC_TO_IMPERIAL[metricUnit.toLowerCase().trim()];
+  if (!entry || !entry.factor) return value;
+  return value / entry.factor;
+}

@@ -89,6 +89,7 @@ import { useBIMGeometryCache } from '@/stores/useBIMGeometryCache';
 import { useBIMMeasurementsStore } from '@/stores/useBIMMeasurementsStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { copyToClipboard } from '@/shared/lib/browser';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -725,6 +726,14 @@ export function BIMViewer({
   const summaryPanelOpen = useBIMViewerStore((s) => s.summaryPanelOpen);
   const setSummaryPanelOpen = useBIMViewerStore((s) => s.setSummaryPanelOpen);
   const qualityMode = useBIMViewerStore((s) => s.qualityMode);
+  // BIM quantities are stored metric-canonical; convert at the display
+  // boundary so an imperial user sees ft / ft2 / ft3 in the model summary
+  // and selection rollups too (issue #270). Storage is never touched.
+  const displayQty = useDisplayQuantity();
+  const showQty = (value: number, metricUnit: string, maxFrac = 1) => {
+    const d = displayQty.convert(value, metricUnit);
+    return `${d.value.toLocaleString(undefined, { maximumFractionDigits: maxFrac })} ${d.unit}`;
+  };
   const [measureCount, setMeasureCount] = useState(0);
   /** Local mirror of the live section-box / plane state for the popover. */
   const [clipBox, setClipBox] = useState({
@@ -4354,7 +4363,7 @@ export function BIMViewer({
                         {t('bim.qty_volume', { defaultValue: 'Volume' })}
                       </span>
                       <span className="text-xs font-semibold text-content-primary tabular-nums">
-                        {modelSummary.totalVolume.toLocaleString(undefined, { maximumFractionDigits: 1 })} m&sup3;
+                        {showQty(modelSummary.totalVolume, 'm³')}
                       </span>
                     </div>
                   )}
@@ -4364,7 +4373,7 @@ export function BIMViewer({
                         {t('bim.qty_area', { defaultValue: 'Area' })}
                       </span>
                       <span className="text-xs font-semibold text-content-primary tabular-nums">
-                        {modelSummary.totalArea.toLocaleString(undefined, { maximumFractionDigits: 1 })} m&sup2;
+                        {showQty(modelSummary.totalArea, 'm²')}
                       </span>
                     </div>
                   )}
@@ -4374,7 +4383,7 @@ export function BIMViewer({
                         {t('bim.qty_length', { defaultValue: 'Length' })}
                       </span>
                       <span className="text-xs font-semibold text-content-primary tabular-nums">
-                        {modelSummary.totalLength.toLocaleString(undefined, { maximumFractionDigits: 1 })} m
+                        {showQty(modelSummary.totalLength, 'm')}
                       </span>
                     </div>
                   )}
@@ -4409,6 +4418,12 @@ export function BIMViewer({
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 4,
                           });
+                    // Convert metric-canonical rollups to the active system
+                    // for display only (issue #270). a.unit stays the metric
+                    // key; DISTINCT categoricals carry unit "" so they pass
+                    // through unchanged.
+                    const dispUnit = displayQty.unitFor(a.unit);
+                    const cv = (n: number) => displayQty.convert(n, a.unit).value;
                     if (a.mode === 'sum') {
                       return (
                         <div
@@ -4432,11 +4447,11 @@ export function BIMViewer({
                           </div>
                           <div className="flex items-baseline gap-1 shrink-0">
                             <span className="text-[12px] font-semibold text-content-primary tabular-nums">
-                              {fmtNum(a.sum)}
+                              {fmtNum(cv(a.sum))}
                             </span>
                             {a.unit && (
                               <span className="text-[9px] text-content-quaternary font-mono">
-                                {a.unit}
+                                {dispUnit}
                               </span>
                             )}
                           </div>
@@ -4469,11 +4484,11 @@ export function BIMViewer({
                             </div>
                             <div className="flex items-baseline gap-1 shrink-0">
                               <span className="text-[12px] font-semibold text-content-primary tabular-nums">
-                                {fmtNum(a.avg)}
+                                {fmtNum(cv(a.avg))}
                               </span>
                               {a.unit && (
                                 <span className="text-[9px] text-content-quaternary font-mono">
-                                  {a.unit}
+                                  {dispUnit}
                                 </span>
                               )}
                             </div>
@@ -4482,12 +4497,12 @@ export function BIMViewer({
                             <div className="flex items-center justify-end gap-2 mt-0.5 text-[9px] text-content-quaternary tabular-nums">
                               <span>
                                 {t('bim.agg_min', { defaultValue: 'min' })}{' '}
-                                {fmtNum(a.min)}
+                                {fmtNum(cv(a.min))}
                               </span>
                               <span>·</span>
                               <span>
                                 {t('bim.agg_max', { defaultValue: 'max' })}{' '}
-                                {fmtNum(a.max)}
+                                {fmtNum(cv(a.max))}
                               </span>
                               <span>·</span>
                               <span>
@@ -4535,10 +4550,10 @@ export function BIMViewer({
                               key={v}
                               className="inline-flex items-baseline gap-0.5 px-1.5 py-0.5 rounded border border-border-light bg-surface-secondary text-[10px] tabular-nums font-mono text-content-primary"
                             >
-                              {fmtNum(v)}
+                              {fmtNum(cv(v))}
                               {a.unit && (
                                 <span className="text-[8px] text-content-quaternary">
-                                  {a.unit}
+                                  {dispUnit}
                                 </span>
                               )}
                             </span>
