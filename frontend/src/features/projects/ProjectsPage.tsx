@@ -20,6 +20,7 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useLocalStorage } from '@/shared/hooks/useLocalStorage';
 import { CreateProjectModal } from './CreateProjectPage';
 import { projectsGuide } from './projectsGuide';
+import { ProjectStatusBadge } from './ProjectStatusBadge';
 import { BIMConverterStatusBanner } from '../bim/BIMConverterStatusBanner';
 
 interface ProjectBOQStats {
@@ -99,8 +100,17 @@ export function ProjectsPage() {
     error: projectsErrorValue,
     refetch: refetchProjects,
   } = useQuery({
-    queryKey: ['projects'],
-    queryFn: projectsApi.list,
+    queryKey: ['projects', statusFilter],
+    // Fetch by status so archived projects are actually retrieved: the default
+    // list endpoint excludes archived, so 'archived' and 'all' must ask for
+    // them explicitly. 'active' keeps the lighter default fetch (every
+    // non-archived project, custom statuses included).
+    queryFn: () =>
+      statusFilter === 'archived'
+        ? projectsApi.listByStatus('archived')
+        : statusFilter === 'all'
+          ? projectsApi.listByStatus('all')
+          : projectsApi.list(),
     staleTime: 5 * 60_000,
   });
 
@@ -239,9 +249,14 @@ export function ProjectsPage() {
       );
     }
 
-    // Status filter
-    if (statusFilter !== 'all') {
-      list = list.filter((p) => p.status === statusFilter);
+    // Status filter. 'active' shows every working (non-archived) project so
+    // custom statuses (waiting / on hold / finished) stay visible; 'archived'
+    // shows only archived; 'all' shows everything. The list is already fetched
+    // by status above, so this just guards against a stale cache.
+    if (statusFilter === 'active') {
+      list = list.filter((p) => p.status !== 'archived');
+    } else if (statusFilter === 'archived') {
+      list = list.filter((p) => p.status === 'archived');
     }
 
     // Region filter
@@ -1192,10 +1207,11 @@ function ProjectCard({
             {project.name.charAt(0).toUpperCase()}
           </div>
           <div className="flex items-center gap-1.5">
-            {project.status === 'archived' && (
-              <Badge variant="neutral" size="sm">
-                {t('projects.status_archived', { defaultValue: 'Archived' })}
-              </Badge>
+            {/* Surface any non-active status (waiting / on hold / finished /
+                archived) as a coloured pill. Active is the implied default,
+                so we omit its badge to keep the common case uncluttered. */}
+            {project.status && project.status !== 'active' && (
+              <ProjectStatusBadge status={project.status} dot={false} />
             )}
             <PinButton projectId={project.id} />
             <button
