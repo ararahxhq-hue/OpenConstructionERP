@@ -434,7 +434,7 @@ export function FileManagerPage() {
       ctx.setActiveProject(row.project_id, name);
     }
     recordRecentlyViewed(row);
-    navigate(target.route(row.project_id, row.id));
+    navigate(target.route(row.project_id, row.id, row.extra));
   }
 
   function handleOpenRecent(item: RecentItem) {

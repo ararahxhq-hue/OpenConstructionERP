@@ -1347,8 +1347,18 @@ export function TakeoffPage() {
         });
         setActiveTab('measurements');
       } catch {
-        // Documents-module fetch failed; leave viewer untouched so the
-        // user sees the empty state instead of a broken pdf.js attempt.
+        if (cancelled) return;
+        // The documents-module metadata fetch failed (e.g. the id belongs to
+        // another table, or access was denied). Surface it instead of leaving
+        // a silently empty page.
+        useToastStore.getState().addToast({
+          type: 'error',
+          title: t('takeoff.open_failed_title', { defaultValue: 'Could not open file' }),
+          message: t('takeoff.open_failed_msg', {
+            defaultValue:
+              'This file could not be opened in the takeoff viewer. It may have been moved, or you may not have access to it.',
+          }),
+        });
       }
     })();
     return () => {

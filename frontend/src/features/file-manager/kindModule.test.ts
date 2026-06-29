@@ -55,6 +55,32 @@ describe('primaryModule - other kinds unaffected', () => {
   });
 });
 
+describe('primaryModule - a sheet opens its PARENT document, not the sheet id (Sirega 404)', () => {
+  it('routes a sheet through its parent document_id from extra', () => {
+    const route = primaryModule('sheet', '.pdf').route('PROJ1', 'SHEET-1', {
+      document_id: 'DOC-PARENT',
+    });
+    expect(route).toBe('/takeoff?doc=DOC-PARENT&source=document&tab=measurements');
+    // The Sheet PK must never be sent as the doc id — that 404s the viewer.
+    expect(route).not.toContain('SHEET-1');
+  });
+
+  it('falls back to the sheet id when no parent document_id is present', () => {
+    expect(primaryModule('sheet', '.pdf').route('PROJ1', 'SHEET-1')).toBe(
+      '/takeoff?doc=SHEET-1&source=document&tab=measurements',
+    );
+  });
+
+  it('ignores an empty-string or null document_id and falls back to the id', () => {
+    expect(
+      primaryModule('sheet', '.pdf').route('PROJ1', 'SHEET-1', { document_id: '' }),
+    ).toBe('/takeoff?doc=SHEET-1&source=document&tab=measurements');
+    expect(
+      primaryModule('sheet', '.pdf').route('PROJ1', 'SHEET-1', { document_id: null }),
+    ).toBe('/takeoff?doc=SHEET-1&source=document&tab=measurements');
+  });
+});
+
 describe('modulesForKind - document-kind BIM offers the convert-on-demand viewer', () => {
   it('returns only the ?docId= BIM viewer for a document-kind IFC', () => {
     const mods = modulesForKind('document', '.ifc');

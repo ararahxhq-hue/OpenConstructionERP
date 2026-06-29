@@ -104,8 +104,10 @@ export interface ModuleTarget {
   description: string;
   descriptionI18nKey: string;
   icon: LucideIcon;
-  /** Path template — `{projectId}` is substituted in by the consumer. */
-  route: (projectId: string, fileId?: string) => string;
+  /** Path template — `{projectId}` is substituted in by the consumer.
+   *  `extra` carries the FileRow's `extra` bag so kind-specific routes can
+   *  read fields beyond the id (e.g. a sheet's parent `document_id`). */
+  route: (projectId: string, fileId?: string, extra?: Record<string, unknown>) => string;
   /**
    * Some destinations (Clash Detection, CAD-BIM BI Explorer) resolve the
    * project from the global project-context store rather than from a path
@@ -177,12 +179,22 @@ export const KIND_MODULES: Record<FileKind, ModuleTarget[]> = {
       description: 'Open the parent PDF in the takeoff viewer',
       descriptionI18nKey: 'files.module.pdf_takeoff_desc_sheet',
       icon: Ruler,
-      // TakeoffPage reads `doc`/`source`/`tab` (not `sheet`), so mirror the
-      // document-kind builder: open the source PDF with the measurements tab.
-      route: (_p, f) =>
-        f
-          ? `/takeoff?doc=${encodeURIComponent(f)}&source=document&tab=measurements`
-          : '/takeoff',
+      // A sheet row's id is the Sheet PK, but the takeoff viewer resolves
+      // `doc` against the DOCUMENTS table, so passing the sheet id 404s and
+      // leaves the viewer blank. Open the PARENT document the sheet was
+      // extracted from instead - the sheets collector carries that id in the
+      // FileRow `extra.document_id`. Fall back to the sheet id only if it is
+      // somehow absent (no worse than the old behaviour).
+      route: (_p, f, extra) => {
+        const parent =
+          extra && extra.document_id != null && extra.document_id !== ''
+            ? String(extra.document_id)
+            : null;
+        const doc = parent ?? f;
+        return doc
+          ? `/takeoff?doc=${encodeURIComponent(doc)}&source=document&tab=measurements`
+          : '/takeoff';
+      },
     },
     {
       label: 'File Manager',
