@@ -2176,9 +2176,7 @@ async def export_schedule_msp_xml(
             )
         )
 
-    rel_stmt = select(ScheduleRelationship).where(
-        ScheduleRelationship.schedule_id == schedule_id
-    )
+    rel_stmt = select(ScheduleRelationship).where(ScheduleRelationship.schedule_id == schedule_id)
     rel_result = await session.execute(rel_stmt)
     for rel in rel_result.scalars().all():
         succ = uid_by_act.get(str(rel.successor_id))

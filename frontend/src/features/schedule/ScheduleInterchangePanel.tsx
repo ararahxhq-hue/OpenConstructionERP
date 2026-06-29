@@ -128,7 +128,7 @@ export function ScheduleInterchangePanel({
   const [preview, setPreview] = useState<ScheduleCleanPreview | null>(null);
   const [importResult, setImportResult] = useState<ScheduleImportResult | null>(null);
 
-  // ── Vendor file import (#205): MS Project XML / Primavera XER ────────────
+  // ── Vendor file import (#205): MS Project XML / XER ──────────────────────
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const [vendorFile, setVendorFile] = useState<File | null>(null);
   const [vendorResult, setVendorResult] = useState<VendorImportResult | null>(null);
@@ -264,7 +264,7 @@ export function ScheduleInterchangePanel({
     },
   });
 
-  /* ── Import a vendor file (MS Project XML / Primavera XER) (#205) ─────── */
+  /* ── Import a vendor file (MS Project XML / XER) (#205) ───────────────── */
   const vendorImportMut = useMutation({
     mutationFn: () => {
       if (!vendorFile) return Promise.reject(new Error('No file selected'));
@@ -587,20 +587,20 @@ export function ScheduleInterchangePanel({
         )}
       </Card>
 
-      {/* ── Import from MS Project / Primavera (#205) ─────────────────────── */}
+      {/* ── Import from MS Project / XER (#205) ───────────────────────────── */}
       <Card padding="md">
         <div className="mb-1 flex items-center gap-2">
           <FileCode2 size={16} className="text-content-secondary" />
           <h3 className="text-sm font-semibold text-content-primary">
             {t('schedule.interchange.vendor_import_title', {
-              defaultValue: 'Import from MS Project or Primavera',
+              defaultValue: 'Import a Microsoft Project XML or XER file',
             })}
           </h3>
         </div>
         <p className="mb-3 text-xs text-content-secondary">
           {t('schedule.interchange.vendor_import_desc', {
             defaultValue:
-              'Load a Microsoft Project XML (.xml) or Primavera P6 XER (.xer) file. Its tasks and logic links are added to this schedule, ready for the CPM engine.',
+              'Load a Microsoft Project XML (.xml) or XER (.xer) file. Its tasks and logic links are added to this schedule, ready for the CPM engine.',
           })}
         </p>
 

@@ -111,11 +111,7 @@ def test_predecessor_link_type_and_lag() -> None:
 
 
 def test_relationship_type_codes() -> None:
-    proj = _project(
-        predecessors_by_uid={
-            2: [MspdiPredecessor(predecessor_uid=1, relationship_type="SS")]
-        }
-    )
+    proj = _project(predecessors_by_uid={2: [MspdiPredecessor(predecessor_uid=1, relationship_type="SS")]})
     tasks = _tasks(_parse(build_mspdi_xml(proj)))
     link = tasks[1].find(f"{_NS}PredecessorLink")
     assert link is not None

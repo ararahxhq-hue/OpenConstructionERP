@@ -694,7 +694,7 @@ function unwrapList<T>(res: T[] | { items: T[] }): T[] {
   return Array.isArray(res) ? res : res.items ?? [];
 }
 
-/* ── Vendor interchange: MS Project XML + Primavera XER (#205) ───────────
+/* ── Vendor interchange: MS Project XML + XER (#205) ─────────────────────
    These file routes live on the schedule module router whose decorators are
    prefixed with ``/schedule`` while the module itself mounts at
    ``/api/v1/schedule`` - hence the doubled segment below. Imports are
@@ -883,12 +883,12 @@ export const scheduleApi = {
       body,
     ),
 
-  /* ── MS Project / Primavera files (#205) ─────────────────────────────── */
+  /* ── MS Project / XER files (#205) ───────────────────────────────────── */
 
   /** Import a Microsoft Project XML file into an existing schedule. */
   importMspXml: (scheduleId: string, file: File) =>
     uploadScheduleFile('msp-xml', scheduleId, file),
-  /** Import a Primavera P6 XER file into an existing schedule. */
+  /** Import an XER schedule file into an existing schedule. */
   importXer: (scheduleId: string, file: File) =>
     uploadScheduleFile('xer', scheduleId, file),
   /** Download a schedule as a Microsoft Project XML (MSPDI) file. */

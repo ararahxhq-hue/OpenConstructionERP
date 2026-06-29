@@ -75,9 +75,7 @@ class MspdiProject:
     name: str
     activities: Sequence[MspdiActivity] = field(default_factory=list)
     # successor UID -> its predecessor links.
-    predecessors_by_uid: Mapping[int, Sequence[MspdiPredecessor]] = field(
-        default_factory=dict
-    )
+    predecessors_by_uid: Mapping[int, Sequence[MspdiPredecessor]] = field(default_factory=dict)
 
 
 def _msp_datetime(date_str: str, hour: int) -> str:
@@ -137,19 +135,13 @@ def build_mspdi_xml(project: MspdiProject) -> str:
         if msp_constraint is not None:
             SubElement(task_el, "ConstraintType").text = msp_constraint
             if act.constraint_date:
-                SubElement(task_el, "ConstraintDate").text = _msp_datetime(
-                    act.constraint_date, 8
-                )
+                SubElement(task_el, "ConstraintDate").text = _msp_datetime(act.constraint_date, 8)
 
         for link in project.predecessors_by_uid.get(act.uid, []):
             link_el = SubElement(task_el, "PredecessorLink")
             SubElement(link_el, "PredecessorUID").text = str(link.predecessor_uid)
-            SubElement(link_el, "Type").text = _REL_TO_MSP.get(
-                link.relationship_type, "1"
-            )
-            SubElement(link_el, "LinkLag").text = str(
-                int(link.lag_days) * _TENTHS_PER_DAY
-            )
+            SubElement(link_el, "Type").text = _REL_TO_MSP.get(link.relationship_type, "1")
+            SubElement(link_el, "LinkLag").text = str(int(link.lag_days) * _TENTHS_PER_DAY)
             SubElement(link_el, "LagFormat").text = "7"
 
     body = tostring(root, encoding="unicode")
