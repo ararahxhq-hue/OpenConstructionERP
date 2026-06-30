@@ -249,6 +249,25 @@
       "suggestion": "FIEBDC-3-Format verwenden: alphanumerisch (z. B. E04CM040, 01.02.01, CAP01#)"
     }
   },
+  "mexico": {
+    "apu_completeness": {
+      "fail": "Position {ordinal} hat eine unvollständige APU; fehlende Kostenbestandteile: {missing}",
+      "suggestion": "Ergänzen Sie die fehlenden Bestandteile der direkten Kosten (mano de obra, materiales, maquinaria) in der Einheitspreisanalyse"
+    },
+    "iva_rate_valid": {
+      "fail": "Position {ordinal} hat einen ungültigen IVA-Satz {rate}; der mexikanische IVA beträgt 16, 8 (Grenzregion) oder 0 Prozent",
+      "suggestion": "Setzen Sie den IVA-Satz auf 16 Prozent (Standard), 8 Prozent (Grenzregion) oder 0 Prozent"
+    },
+    "subcontract_retencion": {
+      "fail": "Die Subunternehmer-Position {ordinal} gibt nicht an, ob IVA/ISR-Einbehalte (retenciones) gelten",
+      "suggestion": "Erfassen Sie die IVA- und ISR-Einbehalte für die Subunternehmer-Zeile oder vermerken Sie, dass keine gelten"
+    },
+    "cfdi_rfc_present": {
+      "missing": "Die CFDI-Ausstellerdaten sind für den Angebotsexport unvollständig; fehlend: {missing}",
+      "invalid_rfc": "RFC '{rfc}' ist kein gültiger CFDI-RFC (12 Zeichen für ein Unternehmen, 13 für eine Einzelperson)",
+      "suggestion": "Hinterlegen Sie RFC, regimen fiscal und uso CFDI des Ausstellers im Projektprofil für die CFDI-4.0-Rechnungsstellung"
+    }
+  },
   "pipeline": {
     "side_effecting_requires_gate": {
       "fail": "Schreibende Knoten ohne Gate: {nodes}",

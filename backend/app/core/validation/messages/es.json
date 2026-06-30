@@ -1,0 +1,24 @@
+{
+  "common": {
+    "ok": "OK"
+  },
+  "mexico": {
+    "apu_completeness": {
+      "fail": "La posición {ordinal} tiene un APU incompleto; faltan componentes del costo: {missing}",
+      "suggestion": "Agregue los componentes faltantes del costo directo (mano de obra, materiales, maquinaria) al análisis de precios unitarios"
+    },
+    "iva_rate_valid": {
+      "fail": "La posición {ordinal} tiene una tasa de IVA inválida {rate}; el IVA en México es 16, 8 (región fronteriza) o 0 por ciento",
+      "suggestion": "Establezca la tasa de IVA en 16 por ciento (general), 8 por ciento (región fronteriza) o 0 por ciento"
+    },
+    "subcontract_retencion": {
+      "fail": "La posición de subcontrato {ordinal} no indica si aplican retenciones de IVA/ISR",
+      "suggestion": "Registre las retenciones de IVA e ISR de la línea de subcontrato, o indique que no aplican"
+    },
+    "cfdi_rfc_present": {
+      "missing": "Los datos del emisor CFDI están incompletos para exportar la licitación; faltan: {missing}",
+      "invalid_rfc": "El RFC '{rfc}' no es un RFC válido de CFDI (12 caracteres para persona moral, 13 para persona física)",
+      "suggestion": "Capture el RFC, régimen fiscal y uso CFDI del emisor en el perfil del proyecto para la facturación CFDI 4.0"
+    }
+  }
+}

@@ -3715,6 +3715,401 @@ class BC3ValidCode(ValidationRule):
         return results
 
 
+# ── Mexico Rules (APU, IVA, retenciones, CFDI) ─────────────────────────────
+#
+# Mexican estimating revolves around the analisis de precios unitarios (APU)
+# integrated under the LOPSRM public-works law and its reglamento: a costo
+# directo (mano de obra, materiales, maquinaria) plus indirectos, financiamiento,
+# utilidad and cargos adicionales, with IVA (16 percent, 8 percent in the border
+# region) added to the total. These rules check that a Mexican BOQ carries the
+# pieces a real pilot needs: a complete APU breakdown, a valid IVA rate,
+# retenciones flagged on subcontract lines, and the CFDI 4.0 issuer identifiers
+# (RFC, regimen fiscal, uso CFDI) needed to invoice and export a tender.
+# INFONAVIT/FOVISSSTE/CONAVI (social housing), IMSS, SAT, CFDI and LOPSRM are
+# government bodies, laws and standards - regulatory facts, not product brands.
+
+# Resource-type tokens that map to each APU costo-directo component. The BOQ
+# resource normaliser emits the English tokens; the Spanish aliases let a
+# locally authored APU use its own vocabulary.
+_MX_LABOR_TYPES: frozenset[str] = frozenset({"labor", "labour", "mano_de_obra", "mano de obra", "mo"})
+_MX_MATERIAL_TYPES: frozenset[str] = frozenset({"material", "materials", "materiales"})
+_MX_EQUIPMENT_TYPES: frozenset[str] = frozenset(
+    {"equipment", "machinery", "maquinaria", "equipo", "herramienta", "tool", "tools"}
+)
+_MX_SUBCONTRACT_TYPES: frozenset[str] = frozenset(
+    {"subcontractor", "subcontract", "subcontrato", "subcontratista", "destajo"}
+)
+_MX_COMPONENT_LABELS: dict[str, str] = {
+    "mano_de_obra": "mano de obra",
+    "materiales": "materiales",
+    "maquinaria": "maquinaria",
+}
+# Valid Mexican IVA rates as percentages: 16 standard, 8 border region, 0 zero.
+_MX_VALID_IVA_PCT: tuple[Decimal, ...] = (Decimal("0"), Decimal("8"), Decimal("16"))
+# CFDI 4.0 issuer fields a tender export needs, with display labels.
+_MX_CFDI_FIELDS: dict[str, str] = {
+    "rfc": "RFC",
+    "regimen_fiscal": "regimen fiscal",
+    "uso_cfdi": "uso CFDI",
+}
+
+
+def _mx_resource_kind(res: dict[str, Any]) -> str | None:
+    """Classify one APU resource into a costo-directo component, or None.
+
+    Reads the resource's type from the first of ``type`` / ``resource_type`` /
+    ``category`` / ``kind`` that is set, and maps it to ``mano_de_obra``,
+    ``materiales`` or ``maquinaria``. Returns ``None`` for an unrecognised type.
+    """
+    raw = ""
+    for key in ("type", "resource_type", "category", "kind"):
+        val = res.get(key)
+        if isinstance(val, str) and val.strip():
+            raw = val.strip().lower()
+            break
+    if raw in _MX_LABOR_TYPES:
+        return "mano_de_obra"
+    if raw in _MX_MATERIAL_TYPES:
+        return "materiales"
+    if raw in _MX_EQUIPMENT_TYPES:
+        return "maquinaria"
+    return None
+
+
+def _mx_normalize_pct(value: Any) -> Decimal | None:
+    """Coerce a declared IVA rate to a percentage Decimal, or None if unparseable.
+
+    Accepts percentage forms (``16``, ``"16"``, ``"16 %"``) and fraction forms
+    (``0.16``). A value in ``(0, 1]`` is read as a fraction and scaled by 100, so
+    ``0.16`` becomes ``16`` and ``0`` stays ``0``.
+    """
+    parsed = _to_number(value)
+    if parsed is None or parsed is _NOT_A_NUMBER:
+        return None
+    dec = Decimal(str(parsed))
+    if Decimal("0") < dec <= Decimal("1"):
+        dec = dec * Decimal("100")
+    return dec
+
+
+def _mx_is_subcontract(meta: dict[str, Any]) -> bool:
+    """True when a position's metadata marks it as subcontracted work.
+
+    Detected by an explicit flag (``subcontracted`` / ``is_subcontract`` /
+    ``subcontrato``) or by a resource line whose type is a subcontractor type.
+    """
+    for flag in ("subcontracted", "is_subcontract", "subcontrato", "subcontratado"):
+        if meta.get(flag):
+            return True
+    resources = meta.get("resources")
+    if isinstance(resources, list):
+        for res in resources:
+            if not isinstance(res, dict):
+                continue
+            for key in ("type", "resource_type", "category", "kind"):
+                val = res.get(key)
+                if isinstance(val, str) and val.strip().lower() in _MX_SUBCONTRACT_TYPES:
+                    return True
+    return False
+
+
+def _mx_cfdi_fields(context: ValidationContext) -> dict[str, Any]:
+    """Collect CFDI issuer fields from the context, regardless of shape.
+
+    Looks in ``context.metadata`` (and a nested ``cfdi`` block), then in
+    ``context.data`` when it is a dict (top level, a ``cfdi`` block, and the
+    ``metadata`` / ``metadata_`` blobs). The first non-empty value per field
+    wins. Returns a dict that may carry ``rfc`` / ``regimen_fiscal`` / ``uso_cfdi``.
+    """
+    sources: list[dict[str, Any]] = []
+    meta = getattr(context, "metadata", None)
+    if isinstance(meta, dict):
+        sources.append(meta)
+        if isinstance(meta.get("cfdi"), dict):
+            sources.append(meta["cfdi"])
+    data = context.data
+    if isinstance(data, dict):
+        sources.append(data)
+        if isinstance(data.get("cfdi"), dict):
+            sources.append(data["cfdi"])
+        for meta_key in ("metadata", "metadata_"):
+            blob = data.get(meta_key)
+            if isinstance(blob, dict):
+                sources.append(blob)
+                if isinstance(blob.get("cfdi"), dict):
+                    sources.append(blob["cfdi"])
+    found: dict[str, Any] = {}
+    for field in _MX_CFDI_FIELDS:
+        for src in sources:
+            val = src.get(field)
+            if isinstance(val, str) and val.strip():
+                found[field] = val.strip()
+                break
+    return found
+
+
+class APUCompletenessRule(ValidationRule):
+    """A Mexican APU should integrate at least mano de obra and materiales.
+
+    For each leaf position that carries a ``metadata.resources`` breakdown (the
+    start of an APU), the costo directo should include both mano de obra and
+    materiales; maquinaria is optional since not every concept uses it. A
+    position explicitly flagged ``metadata.apu_supply_only`` (pure material
+    supply) or ``metadata.apu_labor_only`` is skipped so those legitimate
+    single-component concepts do not warn. Positions without a resource
+    breakdown are not assessed. WARNING, never blocks.
+    """
+
+    rule_id = "mexico.apu_completeness"
+    name = "APU Cost Components Complete"
+    standard = "mexico"
+    severity = Severity.WARNING
+    category = RuleCategory.COMPLETENESS
+    description = "A Mexican APU should integrate mano de obra and materiales in its costo directo"
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        results: list[RuleResult] = []
+        for pos in _get_leaf_positions(context):
+            meta = _position_metadata(pos)
+            resources = meta.get("resources")
+            if not isinstance(resources, list) or not resources:
+                continue
+            if meta.get("apu_supply_only") or meta.get("apu_labor_only"):
+                continue
+            present: set[str] = set()
+            for res in resources:
+                if not isinstance(res, dict):
+                    continue
+                kind = _mx_resource_kind(res)
+                if kind:
+                    present.add(kind)
+            required = {"mano_de_obra", "materiales"}
+            missing = required - present
+            passed = not missing
+            if passed:
+                message = _ok(locale)
+                suggestion = None
+            else:
+                missing_labels = ", ".join(
+                    _MX_COMPONENT_LABELS[k] for k in ("mano_de_obra", "materiales", "maquinaria") if k in missing
+                )
+                message = translate(
+                    "mexico.apu_completeness.fail",
+                    locale=locale,
+                    ordinal=pos.get("ordinal", "?"),
+                    missing=missing_labels,
+                )
+                suggestion = translate("mexico.apu_completeness.suggestion", locale=locale)
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=passed,
+                    message=message,
+                    element_ref=pos.get("id"),
+                    details={"present": sorted(present), "missing": sorted(missing)},
+                    suggestion=suggestion,
+                )
+            )
+        return results
+
+
+class IVARateValidityRule(ValidationRule):
+    """A declared IVA rate must be 16 (standard), 8 (border region) or 0.
+
+    Reads a per-position IVA rate from ``iva_rate`` / ``vat_rate`` / ``tax_rate``
+    / ``iva`` (top level or metadata), accepting both percentage (``16``) and
+    fraction (``0.16``) forms. Positions that declare no rate are skipped; an
+    out-of-range or unparseable rate is flagged. WARNING.
+    """
+
+    rule_id = "mexico.iva_rate_valid"
+    name = "Valid Mexican IVA Rate"
+    standard = "mexico"
+    severity = Severity.WARNING
+    category = RuleCategory.COMPLIANCE
+    description = "IVA must be 16 percent (standard), 8 percent (border region) or 0 percent"
+
+    _KEYS = ("iva_rate", "vat_rate", "tax_rate", "iva")
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        results: list[RuleResult] = []
+        for pos in _get_leaf_positions(context):
+            meta = _position_metadata(pos)
+            raw = None
+            for key in self._KEYS:
+                if pos.get(key) is not None:
+                    raw = pos.get(key)
+                    break
+                if meta.get(key) is not None:
+                    raw = meta.get(key)
+                    break
+            if raw is None:
+                continue
+            pct = _mx_normalize_pct(raw)
+            passed = pct is not None and any(abs(pct - allowed) <= Decimal("0.01") for allowed in _MX_VALID_IVA_PCT)
+            if passed:
+                message = _ok(locale)
+                suggestion = None
+            else:
+                if pct is None:
+                    shown = "?"
+                else:
+                    shown = format(pct, "f")
+                    if "." in shown:
+                        shown = shown.rstrip("0").rstrip(".")
+                message = translate(
+                    "mexico.iva_rate_valid.fail",
+                    locale=locale,
+                    ordinal=pos.get("ordinal", "?"),
+                    rate=shown,
+                )
+                suggestion = translate("mexico.iva_rate_valid.suggestion", locale=locale)
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=passed,
+                    message=message,
+                    element_ref=pos.get("id"),
+                    details={"declared_rate": str(raw)},
+                    suggestion=suggestion,
+                )
+            )
+        return results
+
+
+class SubcontractRetencionRule(ValidationRule):
+    """Subcontract lines should flag whether IVA/ISR retenciones apply.
+
+    For positions marked as subcontracted (a ``subcontracted`` flag or a
+    subcontractor resource line), check that the metadata records a retencion
+    decision (``retenciones`` / ``retencion_iva`` / ``retencion_isr`` and the
+    like). Retention applicability depends on the supplier's regime and the
+    contract, so this is an INFO nudge, never a block. Non-subcontract lines
+    are not assessed.
+    """
+
+    rule_id = "mexico.subcontract_retencion"
+    name = "Subcontract Retenciones Flagged"
+    standard = "mexico"
+    severity = Severity.INFO
+    category = RuleCategory.COMPLIANCE
+    description = "Subcontract lines should record whether IVA/ISR retenciones apply"
+
+    _RET_KEYS = (
+        "retenciones",
+        "retencion_iva",
+        "retencion_isr",
+        "retention",
+        "iva_retention",
+        "isr_retention",
+    )
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        results: list[RuleResult] = []
+        for pos in _get_leaf_positions(context):
+            meta = _position_metadata(pos)
+            if not _mx_is_subcontract(meta):
+                continue
+            passed = any(meta.get(key) for key in self._RET_KEYS)
+            if passed:
+                message = _ok(locale)
+                suggestion = None
+            else:
+                message = translate(
+                    "mexico.subcontract_retencion.fail",
+                    locale=locale,
+                    ordinal=pos.get("ordinal", "?"),
+                )
+                suggestion = translate("mexico.subcontract_retencion.suggestion", locale=locale)
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=passed,
+                    message=message,
+                    element_ref=pos.get("id"),
+                    suggestion=suggestion,
+                )
+            )
+        return results
+
+
+class CFDIIssuerDataRule(ValidationRule):
+    """The CFDI 4.0 issuer identifiers must be present for a tender export.
+
+    A single project-level check: the issuer RFC, regimen fiscal and uso CFDI
+    are needed to invoice and to export a tender in Mexico. When the RFC is
+    present it must match the CFDI RFC shape (12 characters for a persona moral,
+    13 for a persona fisica). WARNING, never blocks.
+    """
+
+    rule_id = "mexico.cfdi_rfc_present"
+    name = "CFDI Issuer Data Present"
+    standard = "mexico"
+    severity = Severity.WARNING
+    category = RuleCategory.COMPLIANCE
+    description = "CFDI 4.0 issuer RFC, regimen fiscal and uso CFDI should be set for tender export"
+
+    _RFC = re.compile(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$")
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        fields = _mx_cfdi_fields(context)
+        rfc = str(fields.get("rfc") or "").strip()
+        ref = context.project_id
+
+        if rfc and not self._RFC.match(rfc.upper()):
+            return [
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=False,
+                    message=translate("mexico.cfdi_rfc_present.invalid_rfc", locale=locale, rfc=rfc),
+                    element_ref=ref,
+                    suggestion=translate("mexico.cfdi_rfc_present.suggestion", locale=locale),
+                )
+            ]
+
+        missing = [label for key, label in _MX_CFDI_FIELDS.items() if not fields.get(key)]
+        passed = not missing
+        if passed:
+            message = _ok(locale)
+            suggestion = None
+        else:
+            message = translate(
+                "mexico.cfdi_rfc_present.missing",
+                locale=locale,
+                missing=", ".join(missing),
+            )
+            suggestion = translate("mexico.cfdi_rfc_present.suggestion", locale=locale)
+        return [
+            RuleResult(
+                rule_id=self.rule_id,
+                rule_name=self.name,
+                severity=self.severity,
+                category=self.category,
+                passed=passed,
+                message=message,
+                element_ref=ref,
+                details={"missing": missing},
+                suggestion=suggestion,
+            )
+        ]
+
+
 # ── Universal Additional Rules ──────────────────────────────────────────
 
 
@@ -5893,6 +6288,11 @@ def register_builtin_rules() -> None:
         # BC3 / FIEBDC-3 (Spain + LATAM)
         (BC3CodeRequired(), None),
         (BC3ValidCode(), None),
+        # Mexico (APU, IVA, retenciones, CFDI)
+        (APUCompletenessRule(), None),
+        (IVARateValidityRule(), None),
+        (SubcontractRetencionRule(), None),
+        (CFDIIssuerDataRule(), None),
         # Pipeline Builder - structural graph-validity gate
         (PipelineSideEffectGated(), None),
         # Property Development (task #139)

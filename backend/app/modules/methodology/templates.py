@@ -4,9 +4,10 @@
 
 This module is the data-driven catalogue of methodology templates the platform
 ships with: a neutral international default, core templates for several popular
-countries, the Uzbekistan cascading methodology, and a Railway-infrastructure
-industry template. The service layer (:mod:`app.modules.methodology.service`)
-installs any of these into a project idempotently.
+countries, the Uzbekistan cascading methodology, the Mexican APU cascading
+methodology, and a Railway-infrastructure industry template. The service layer
+(:mod:`app.modules.methodology.service`) installs any of these into a project
+idempotently.
 
 Each template is a plain ``dict`` (see :data:`TEMPLATES`) describing everything
 that distinguishes one estimating tradition from another:
@@ -190,6 +191,18 @@ _CASCADE_BASE_MAPPING: dict[str, list[str]] = {
 }
 _SMR_COMPOSITE: dict[str, list[str]] = {
     "SMR": ["labor", "machinery", "materials"],
+}
+
+# Mexican APU (analisis de precios unitarios) resource split: the costo directo
+# integrates mano de obra (labor), materiales (materials) and maquinaria /
+# herramienta (construction machinery plus installed equipment).
+_APU_BASE_MAPPING: dict[str, list[str]] = {
+    "mano_de_obra": ["labor"],
+    "materiales": ["material"],
+    "maquinaria": ["machinery", "equipment"],
+}
+_APU_COMPOSITE: dict[str, list[str]] = {
+    "costo_directo": ["mano_de_obra", "materiales", "maquinaria"],
 }
 
 
@@ -477,6 +490,88 @@ _UZBEKISTAN_TEMPLATE: dict[str, Any] = {
     "vat_rate": "12",
 }
 
+# The Mexican APU (analisis de precios unitarios) cascading methodology. The
+# costo directo (mano de obra, materiales, maquinaria) carries, in order,
+# indirectos, financiamiento, utilidad and cargos adicionales, then IVA, exactly
+# the integration order the LOPSRM reglamento prescribes for a precio unitario.
+#
+# Indirectos, financiamiento, utilidad and cargos adicionales default to clear,
+# round, editable starting points (the cinco al millar inspection fee is the
+# usual content of cargos adicionales, hence 0.5 percent); IVA is the stable
+# 16 percent standard rate. Every figure is editable in-app once installed.
+_MEXICO_TEMPLATE: dict[str, Any] = {
+    "slug": "mexico",
+    "name": "Mexico (APU)",
+    "description": (
+        "Mexican analisis de precios unitarios. Costo directo (mano de obra, "
+        "materiales, maquinaria) carries indirectos, financiamiento, utilidad "
+        "and cargos adicionales in turn, then IVA, per the LOPSRM reglamento."
+    ),
+    "country_code": "MX",
+    "industry": None,
+    "currency": "MXN",
+    "decimals": 2,
+    "hierarchy_levels": _FLAT_HIERARCHY,
+    "dimensions": [_stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _APU_BASE_MAPPING,
+    "composites": _APU_COMPOSITE,
+    "cascade_steps": [
+        {
+            "key": "indirectos",
+            "label": "Indirectos",
+            "category": "overhead",
+            "kind": "percentage",
+            "rate": "15",
+            "amount": "0",
+            "base": ["costo_directo"],
+        },
+        {
+            "key": "financiamiento",
+            "label": "Financiamiento",
+            "category": "financing",
+            "kind": "percentage",
+            "rate": "1",
+            "amount": "0",
+            "base": ["costo_directo", "indirectos"],
+        },
+        {
+            "key": "utilidad",
+            "label": "Utilidad",
+            "category": "profit",
+            "kind": "percentage",
+            "rate": "10",
+            "amount": "0",
+            "base": ["costo_directo", "indirectos", "financiamiento"],
+        },
+        {
+            "key": "cargos_adicionales",
+            "label": "Cargos adicionales",
+            "category": "additional",
+            "kind": "percentage",
+            "rate": "0.5",
+            "amount": "0",
+            "base": ["costo_directo", "indirectos", "financiamiento", "utilidad"],
+        },
+        {
+            "key": "iva",
+            "label": "IVA",
+            "category": "tax",
+            "kind": "percentage",
+            "rate": "16",
+            "amount": "0",
+            "base": [
+                "costo_directo",
+                "indirectos",
+                "financiamiento",
+                "utilidad",
+                "cargos_adicionales",
+            ],
+        },
+    ],
+    "vat_rate": "16",
+}
+
 # Railway-infrastructure industry template. Country-neutral (currency blank,
 # VAT a placeholder step) but ships the full railway typed hierarchy plus the
 # CBS / section-type / stage dimensions and the SMR-vs-equipment cascade, so an
@@ -550,11 +645,12 @@ _RAILWAY_TEMPLATE: dict[str, Any] = {
 }
 
 
-# Ordered catalogue: international first, then countries, then UZ, then railway.
+# Ordered catalogue: international first, then countries, then UZ, MX, railway.
 TEMPLATES: tuple[dict[str, Any], ...] = (
     _INTERNATIONAL_TEMPLATE,
     *_COUNTRY_TEMPLATES,
     _UZBEKISTAN_TEMPLATE,
+    _MEXICO_TEMPLATE,
     _RAILWAY_TEMPLATE,
 )
 
