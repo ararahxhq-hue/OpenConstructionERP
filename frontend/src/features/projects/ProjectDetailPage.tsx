@@ -1174,7 +1174,7 @@ const INITIAL_PROJECT_EDIT_FORM = { name: '', description: '', region: '', curre
 /**
  * ProjectStatusSelect (#274) - compact dropdown letting an owner/admin set
  * the project's working status. Offers only the curated working statuses
- * (active / waiting / on hold / finished); archiving is a separate action,
+ * (active / on hold / finished); archiving is a separate action,
  * so 'archived' is excluded. If the project currently carries a custom
  * status outside the curated set, that value is shown as a leading option
  * so the control never silently rewrites it on open.

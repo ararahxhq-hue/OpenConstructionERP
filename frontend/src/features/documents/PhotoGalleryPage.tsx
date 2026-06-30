@@ -38,6 +38,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo } from '@/shared/ui/DismissibleInfo';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
+import { hasFieldTag, nextFieldTags } from './FieldImageToggle';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -474,6 +475,15 @@ function EditPhotoModal({
                 </option>
               ))}
             </select>
+            {/* Site photos are field/site evidence by definition; the
+                category classifies WHAT kind of site photo it is. This is
+                the canonical "field" signal the project Photo strip reads. */}
+            <p className="mt-1 text-2xs text-content-quaternary">
+              {t('photos.field_category_hint', {
+                defaultValue:
+                  'Site photos are field evidence - the category sets how it is filed.',
+              })}
+            </p>
           </div>
 
           {/* Tags */}
@@ -494,6 +504,20 @@ function EditPhotoModal({
                 {t('common.add', { defaultValue: 'Add' })}
               </Button>
             </div>
+            {/* Quick-add the shared "field" tag. Harmless on a dedicated
+                site photo (it is already field) but keeps the taxonomy
+                consistent with general images, which rely on this exact
+                tag to opt INTO the site Photo strip. */}
+            {!hasFieldTag(tags) && (
+              <button
+                type="button"
+                onClick={() => setTags((prev) => nextFieldTags(prev, true))}
+                className="mt-2 inline-flex items-center gap-1 rounded-full border border-dashed border-border-light px-2 py-0.5 text-2xs text-content-tertiary hover:border-oe-blue/40 hover:text-oe-blue transition-colors"
+              >
+                <Tag size={10} />
+                {t('photos.quick_tag_field', { defaultValue: '+ field' })}
+              </button>
+            )}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {tags.map((tag) => (

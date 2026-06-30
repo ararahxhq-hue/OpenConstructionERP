@@ -284,6 +284,9 @@ const PortalPage = lazy(() =>
 const PortalPaymentsPage = lazy(() =>
   import('@/features/portal').then((m) => ({ default: m.PortalPaymentsPage }))
 );
+const PortalHomePage = lazy(() =>
+  import('@/features/portal').then((m) => ({ default: m.PortalHomePage }))
+);
 const ResourcesPage = lazy(() =>
   import('@/features/resources').then((m) => ({ default: m.ResourcesPage }))
 );
@@ -832,6 +835,13 @@ export default function App() {
             shell. ?token=<magic-link> deep-links straight to the submit form
             after auth; a return visit reuses the stored session token. */}
         <Route path="/portal/payments" element={<PortalPaymentsPage />} />
+
+        {/* Public generic client / partner portal landing - magic-link
+            session, no app shell. The default landing for every non-payment
+            role; honours an inviter-chosen redirect_path, else shows a
+            role-aware view (projects + progress reports, plus change orders /
+            tickets per role). */}
+        <Route path="/portal/home" element={<PortalHomePage />} />
 
         {/* Field-worker mobile shell — bottom-nav layout, no desktop sidebar.
             `/field/{token}` is the SMS magic-link PIN-redemption screen; it

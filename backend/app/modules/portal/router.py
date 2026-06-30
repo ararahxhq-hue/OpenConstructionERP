@@ -330,7 +330,7 @@ async def portal_consume_magic_link(
     service: PortalService = Depends(_get_service),
 ) -> SessionResponse:
     """Consume a magic link and receive a session token."""
-    user, sess, plain, expires_at = await service.consume_magic_link(
+    user, sess, plain, expires_at, redirect_path = await service.consume_magic_link(
         data.token,
         purpose="login",
         ip_address=_client_ip(request),
@@ -340,6 +340,7 @@ async def portal_consume_magic_link(
         session_token=plain,
         expires_at=expires_at,
         portal_user=PortalUserResponse.model_validate(user),
+        redirect_path=redirect_path,
     )
 
 

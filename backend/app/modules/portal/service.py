@@ -270,14 +270,19 @@ class PortalService:
         purpose: str = "login",
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[PortalUser, PortalSession, str, datetime]:
+    ) -> tuple[PortalUser, PortalSession, str, datetime, str | None]:
         """Consume a one-time magic link and open a portal session.
 
         Raises HTTPException 400 on expired / consumed / wrong-purpose tokens
         and 401 on unknown tokens (no plaintext-token comparison hits the DB
         - only the sha256 hash).
 
-        Returns ``(user, session, plain_session_token, session_expires_at)``.
+        Returns
+        ``(user, session, plain_session_token, session_expires_at, redirect_path)``.
+        ``redirect_path`` is the in-app path the inviter chose for this link
+        (``None`` when none was set); the portal landing page navigates there
+        after sign-in so a client / partner can be dropped straight onto the
+        page meant for them.
         """
         token_h = hash_token(token)
         link = await self.magic_repo.get_by_token_hash(token_h)
@@ -329,6 +334,11 @@ class PortalService:
         link_id = link.id
         user_id = user.id
         user_status = user.status
+        # The inviter-chosen post-login destination. Snapshot it here for the
+        # same reason as the scalars above: the expire_all() chain below
+        # detaches ``link`` and a later read would force an illegal sync
+        # lazy-load. ``None`` when the invite did not set one.
+        redirect_path = link.redirect_path
 
         # Mark link consumed - atomically. The ``link.consumed_at is not None``
         # check above is only a fast-path for the common already-consumed case;
@@ -384,7 +394,7 @@ class PortalService:
             },
             source_module="portal",
         )
-        return user, sess, plain_session, session_expires_at
+        return user, sess, plain_session, session_expires_at, redirect_path
 
     async def verify_session(self, session_token: str) -> PortalUser | None:
         """Validate a session token. Returns the owning user or ``None``.

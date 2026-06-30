@@ -89,6 +89,14 @@ class NotificationService:
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "title_key": title_key,
+                # Mirror the fields the in-app NotificationResponse carries so
+                # connector sinks (Telegram/Slack/Teams/Discord/WhatsApp) can
+                # render the SAME interpolated title + body. Without body_key /
+                # body_context the bridge rendered placeholders raw and dropped
+                # the body entirely.
+                "body_key": body_key,
+                "body_context": body_context or {},
+                "action_url": action_url,
             },
         )
 

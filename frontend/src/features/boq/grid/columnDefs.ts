@@ -11,6 +11,23 @@ import {
 } from './formula';
 import type { Position } from '../api';
 
+/**
+ * How the Material / Labor / Equipment cost-driver split is shown in the BOQ
+ * grid. Driven by one tri-state toolbar button so an estimator who does not
+ * work with the resource breakdown can remove it completely:
+ *  - `pill`    compact inline "55% MAT · 35% LAB · 10% EQU" badge in the
+ *              description cell (default; no extra columns).
+ *  - `columns` three dedicated, sortable percentage columns (the pill is
+ *              hidden so the same figures are not shown twice).
+ *  - `off`     neither pill nor columns.
+ */
+export type ResourceSplitMode = 'pill' | 'columns' | 'off';
+
+/** Toolbar cycle order: pill -> columns -> off -> pill. */
+export function nextResourceSplitMode(mode: ResourceSplitMode): ResourceSplitMode {
+  return mode === 'pill' ? 'columns' : mode === 'columns' ? 'off' : 'pill';
+}
+
 export interface BOQColumnContext {
   currencySymbol: string;
   currencyCode: string;
@@ -52,6 +69,12 @@ export interface BOQColumnContext {
    * ``metadata.resource_breakdown[type].pct`` rollup.
    */
   showResourceSplit?: boolean;
+  /**
+   * Show the compact inline cost-driver split pill in the description cell.
+   * The tri-state toolbar button sets exactly one of `showResourceSplit`
+   * (columns) / `showResourceSplitPill` (pill) / neither (off).
+   */
+  showResourceSplitPill?: boolean;
   /**
    * ── Imperial-units display seam (Issue #285).
    * Carries the measurement-system-aware quantity API (built once by

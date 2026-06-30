@@ -220,13 +220,13 @@ async def list_projects(
     limit: int = Query(default=50, ge=1, le=500),
     status: str | None = Query(
         default=None,
-        pattern=r"^(active|archived|template|waiting|on_hold|finished|all)$",
+        pattern=r"^(active|archived|template|on_hold|finished|all)$",
     ),
 ) -> list[ProjectResponse]:
     """List projects. Admins see all, others see only own projects.
 
-    ``status`` accepts the curated project-status set (active, waiting,
-    on_hold, finished, archived) plus ``template`` and an ``all`` sentinel.
+    ``status`` accepts the curated project-status set (active, on_hold,
+    finished, archived) plus ``template`` and an ``all`` sentinel.
     ``all`` returns every project including archived ones; any other value
     filters to that exact status. Omitting ``status`` keeps the default
     behaviour: archived projects are excluded.

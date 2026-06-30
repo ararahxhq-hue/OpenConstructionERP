@@ -143,6 +143,13 @@ class SessionResponse(BaseModel):
     )
     expires_at: datetime
     portal_user: PortalUserResponse
+    redirect_path: str | None = Field(
+        default=None,
+        description=(
+            "Optional in-app path the inviter chose for this link - the "
+            "landing page navigates here after sign-in when present."
+        ),
+    )
 
 
 # ── Access rules ──────────────────────────────────────────────────────────

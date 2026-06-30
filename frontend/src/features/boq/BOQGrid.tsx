@@ -481,10 +481,12 @@ export interface BOQGridProps {
   /** Custom column definitions from BOQ metadata */
   customColumns?: import('./grid/columnDefs').CustomColumnDef[];
   /**
-   * Show the Material/Labor/Equipment % cost-driver split columns. Toggled
-   * from the BOQ toolbar's Grid Settings menu; off by default.
+   * Show the Material/Labor/Equipment % cost-driver split columns (tri-state
+   * `columns` position). Toggled from the BOQ toolbar; off by default.
    */
   showResourceSplit?: boolean;
+  /** Show the compact inline split pill (tri-state `pill` position). */
+  showResourceSplitPill?: boolean;
   /**
    * BOQ-scoped named variables ($GFA, $LABOR_RATE, …). Used by `calculated`
    * custom columns; safe to omit when no calculated columns are defined.
@@ -574,6 +576,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   onSaveAsAssembly,
   customColumns,
   showResourceSplit,
+  showResourceSplitPill,
   boqVariables,
   bimModelId,
   onHighlightBIMElements,
@@ -1113,10 +1116,11 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       // through the configured rate. Null when the user is on base.
       displayCurrency: displayCurrency ?? null,
       onOpenFxRateSettings,
-      // When the dedicated Material/Labor/Equipment % columns are on, the
-      // description cell suppresses its inline split pill so the figure is
-      // not shown twice.
+      // The tri-state resource-split button drives the grid: `columns` shows
+      // the dedicated % columns, `pill` shows the inline split badge in the
+      // description cell, `off` shows neither. At most one flag is true.
       showResourceSplit: showResourceSplit ?? false,
+      showResourceSplitPill: showResourceSplitPill ?? false,
       locale,
       fmt,
       t,
@@ -1181,7 +1185,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
      onDeletePosition, onSaveToDatabase, onAddComment,
      onDuplicatePosition, showContextMenu, anomalyMap, onApplyAnomalySuggestion, bimModelId,
      onUpdatePosition, onHighlightBIMElements, onDeleteSection, onReorderSections, onFormulaApplied,
-     positions, customColumns, showResourceSplit, renderInlineCopilot, displayQuantity],
+     positions, customColumns, showResourceSplit, showResourceSplitPill, renderInlineCopilot, displayQuantity],
   );
 
   /* ── Column defs (standard + custom) ─────────────────────────────── */

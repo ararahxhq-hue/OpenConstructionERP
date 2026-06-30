@@ -218,6 +218,24 @@ def render(key: str | None, context: dict[str, Any] | None = None) -> str:
         return template
 
 
+def combine_title_body(title: str | None, body: str | None) -> str:
+    """Fold a notification title and body into one line for positional sinks.
+
+    Some delivery channels (e.g. a WhatsApp message template) take a single
+    positional parameter, so the title and body must be combined into one
+    string. Several notification events set ``body_default == title_default``;
+    naively formatting ``f"{title} - {body}"`` then prints "Title - Title".
+    This returns ``"<title> - <body>"`` only when the body adds information,
+    otherwise just the title (or just the body when there is no title). Never
+    raises.
+    """
+    t = (title or "").strip()
+    b = (body or "").strip()
+    if t and b and t != b:
+        return f"{t} - {b}"
+    return t or b
+
+
 def icon_category_for(notification_type: str | None) -> str:
     """‌⁠‍Map a backend ``notification_type`` to a frontend icon category.
 

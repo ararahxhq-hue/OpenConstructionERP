@@ -32,7 +32,7 @@ import {
   type CopilotResource,
   DEFAULT_MAX_NESTING_DEPTH,
 } from './api';
-import { resourceSplitMoneyTotals } from './grid/columnDefs';
+import { resourceSplitMoneyTotals, nextResourceSplitMode, type ResourceSplitMode } from './grid/columnDefs';
 import { ApiError } from '@/shared/lib/api';
 import { projectsApi, type Project, type ProjectFxRate } from '@/features/projects/api';
 import { fetchBIMModels } from '@/features/bim/api';
@@ -2240,24 +2240,34 @@ export function BOQEditorPage() {
    *  keeps their chosen layout across BOQs. Off by default - the three
    *  percentage columns only appear once the user enables them from the
    *  toolbar's Grid Settings menu. */
-  const RESOURCE_SPLIT_KEY = 'oe_boq_show_resource_split';
-  const [showResourceSplit, setShowResourceSplit] = useState<boolean>(() => {
+  const RESOURCE_SPLIT_KEY = 'oe_boq_resource_split_mode';
+  const LEGACY_RESOURCE_SPLIT_KEY = 'oe_boq_show_resource_split';
+  const [resourceSplitMode, setResourceSplitMode] = useState<ResourceSplitMode>(() => {
     try {
-      return localStorage.getItem(RESOURCE_SPLIT_KEY) === '1';
+      const v = localStorage.getItem(RESOURCE_SPLIT_KEY);
+      if (v === 'pill' || v === 'columns' || v === 'off') return v;
+      // Migrate the old boolean preference: "on" meant the % columns.
+      if (localStorage.getItem(LEGACY_RESOURCE_SPLIT_KEY) === '1') return 'columns';
+      return 'pill';
     } catch {
-      return false;
+      return 'pill';
     }
   });
-  const toggleResourceSplit = useCallback(() => {
-    setShowResourceSplit((prev) => {
-      const next = !prev;
+  const cycleResourceSplit = useCallback(() => {
+    setResourceSplitMode((prev) => {
+      const next = nextResourceSplitMode(prev);
       try {
-        if (next) localStorage.setItem(RESOURCE_SPLIT_KEY, '1');
-        else localStorage.removeItem(RESOURCE_SPLIT_KEY);
+        localStorage.setItem(RESOURCE_SPLIT_KEY, next);
+        localStorage.removeItem(LEGACY_RESOURCE_SPLIT_KEY);
       } catch { /* localStorage unavailable / quota — silently ignore */ }
       return next;
     });
   }, []);
+  // Derived view flags: the grid reads `showResourceSplit` (columns) and the
+  // description cell reads `showResourceSplitPill` (inline badge). At most one
+  // is true; both false when the user cycled the button to `off`.
+  const showResourceSplit = resourceSplitMode === 'columns';
+  const showResourceSplitPill = resourceSplitMode === 'pill';
 
   const displayCurrencyMeta = useMemo(() => {
     if (!displayCurrency) return null;
@@ -4682,8 +4692,8 @@ export function BOQEditorPage() {
           onAcceptAllAnomalies={anomalyMap.size > 0 ? handleAcceptAllAnomalies : undefined}
           onManageColumns={() => setCustomColumnsOpen(true)}
           customColumnCount={boqCustomColumns.length}
-          showResourceSplit={showResourceSplit}
-          onToggleResourceSplit={toggleResourceSplit}
+          resourceSplitMode={resourceSplitMode}
+          onCycleResourceSplit={cycleResourceSplit}
           onManageVariables={() => setVariablesOpen(true)}
           onRenumber={handleRenumber}
           isRenumbering={renumberMutation.isPending}
@@ -4806,6 +4816,7 @@ export function BOQEditorPage() {
           onSaveAsAssembly={handleSaveAsAssembly}
           customColumns={boqCustomColumns}
           showResourceSplit={showResourceSplit}
+          showResourceSplitPill={showResourceSplitPill}
           boqVariables={boqVariables}
           bimModelId={bimModelId}
           onHighlightBIMElements={(elementIds) => {

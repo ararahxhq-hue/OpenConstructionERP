@@ -58,6 +58,7 @@ import {
 } from './api';
 import { ProgressReportsTab } from './ProgressReportsTab';
 import { portalGuide } from './portalGuide';
+import { buildMagicLinkUrl, resolveLandingPath } from './portalLanding';
 
 type Tab = 'users' | 'access_rules' | 'audit_log' | 'progress_reports';
 
@@ -165,6 +166,12 @@ export function PortalPage() {
     token: string;
     expires_at: string;
     email: string;
+    // Role + inviter-chosen redirect drive which landing the generated magic
+    // URL points at (generic /portal/home vs the subcontractor /portal/payments
+    // vs an explicit redirect_path). Without these the URL was hard-coded to
+    // the payment portal for every role.
+    portal_role: PortalRole | string;
+    redirect_path: string | null;
   } | null>(null);
 
   const usersQ = useQuery({
@@ -311,6 +318,8 @@ export function PortalPage() {
           email={lastInviteLink.email}
           token={lastInviteLink.token}
           expiresAt={lastInviteLink.expires_at}
+          portalRole={lastInviteLink.portal_role}
+          redirectPath={lastInviteLink.redirect_path}
           onDismiss={() => setLastInviteLink(null)}
         />
       )}
@@ -458,6 +467,11 @@ export function PortalPage() {
               email: selectedUser.email,
               token: link.token,
               expires_at: link.expires_at,
+              // Resend keeps the user's existing role; it does not carry an
+              // explicit redirect, so the banner falls back to the role
+              // default.
+              portal_role: selectedUser.portal_role,
+              redirect_path: null,
             });
           }}
         />
@@ -471,8 +485,14 @@ export function PortalPage() {
             setInviteOpen(false);
             setInvitePrefill(null);
           }}
-          onInvited={(email, token, expires_at) => {
-            setLastInviteLink({ email, token, expires_at });
+          onInvited={(email, token, expires_at, portal_role, redirect_path) => {
+            setLastInviteLink({
+              email,
+              token,
+              expires_at,
+              portal_role,
+              redirect_path,
+            });
           }}
         />
       )}
@@ -494,11 +514,15 @@ function MagicLinkBanner({
   email,
   token,
   expiresAt,
+  portalRole,
+  redirectPath,
   onDismiss,
 }: {
   email: string;
   token: string;
   expiresAt: string;
+  portalRole: PortalRole | string;
+  redirectPath: string | null;
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
@@ -506,9 +530,12 @@ function MagicLinkBanner({
   // Build the full, ready-to-send sign-in URL from the one-time token. The
   // backend returns only the token (it cannot know the public origin behind a
   // reverse proxy), so the admin's current origin is the correct base for a
-  // self-hosted deployment. ``/portal/payments`` is the portal-session landing
-  // that consumes the token, opens the session, then strips it from the URL.
-  const magicUrl = `${window.location.origin}/portal/payments?token=${encodeURIComponent(token)}`;
+  // self-hosted deployment. The URL targets the role's consume-capable landing
+  // (/portal/home or /portal/payments); the inviter's redirect_path is NOT in
+  // the URL - only those landings consume the one-time token, so a deep path
+  // would bounce to /login. The redirect_path is stored with the invite and the
+  // landing forwards the signed-in user there (shown below for the admin).
+  const magicUrl = buildMagicLinkUrl(window.location.origin, token, portalRole);
   const copy = async () => {
     try {
       await copyToClipboard(magicUrl);
@@ -541,6 +568,12 @@ function MagicLinkBanner({
             {t('portal.expires_at', { defaultValue: 'Expires' })}{' '}
             <DateDisplay value={expiresAt} />
           </p>
+          {redirectPath?.trim() ? (
+            <p className="mt-0.5 text-xs text-content-tertiary">
+              {t('portal.magic_link_opens', { defaultValue: 'After sign-in, opens:' })}{' '}
+              <span className="font-mono">{resolveLandingPath(portalRole, redirectPath)}</span>
+            </p>
+          ) : null}
           <code className="mt-2 block w-full truncate rounded bg-surface-secondary px-2 py-1.5 font-mono text-xs">
             {magicUrl}
           </code>
@@ -1099,7 +1132,13 @@ function InviteModal({
 }: {
   initial?: { email?: string; full_name?: string; portal_role?: PortalRole };
   onClose: () => void;
-  onInvited: (email: string, token: string, expires_at: string) => void;
+  onInvited: (
+    email: string,
+    token: string,
+    expires_at: string,
+    portal_role: PortalRole,
+    redirect_path: string | null,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -1135,7 +1174,13 @@ function InviteModal({
         type: 'success',
         title: t('portal.invited_ok', { defaultValue: 'User invited' }),
       });
-      onInvited(form.email, data.magic_link_token, data.magic_link_expires_at);
+      onInvited(
+        form.email,
+        data.magic_link_token,
+        data.magic_link_expires_at,
+        form.portal_role,
+        form.redirect_path || null,
+      );
       qc.invalidateQueries({ queryKey: ['portal', 'users'] });
       onClose();
     },

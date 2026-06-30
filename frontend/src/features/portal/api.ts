@@ -490,10 +490,123 @@ export async function fetchMyProgressReportHtml(
   return res.text();
 }
 
+export interface PortalConsumeResult {
+  session_token: string;
+  expires_at: string;
+  /**
+   * Inviter-chosen in-app path to open after sign-in. ``null`` when the
+   * invite did not set one, in which case the caller falls back to a
+   * role-appropriate landing. Optional in the type so an older backend that
+   * does not yet return the field degrades cleanly.
+   */
+  redirect_path?: string | null;
+}
+
+/* ── Portal-user-facing (session-token) profile ────────────────────────────
+ *
+ * The signed-in portal user's own profile (role drives which landing tabs the
+ * generic /portal/home shows). Rides the session token, never the internal JWT.
+ */
+
+export interface PortalProfile {
+  id: string;
+  email: string;
+  full_name: string;
+  portal_role: PortalRole | string;
+  language: string;
+  timezone: string;
+  status: string;
+}
+
+/** Return the signed-in portal user's own profile. */
+export function getMyPortalProfile(): Promise<PortalProfile> {
+  return portalFetch<PortalProfile>(`${PORTAL_ME_BASE}`);
+}
+
+/* ── Portal-user-facing (session-token) change orders ──────────────────────
+ *
+ * Read-only buyer view of executed change orders the caller can see, either by
+ * a per-CO grant or via a `project` grant. RLS is server-side; the response is
+ * the redacted projection (no internal notes / markup / submission trail).
+ */
+
+export interface PortalChangeOrder {
+  id: string;
+  code: string;
+  title: string;
+  description: string;
+  status: string;
+  approved_amount: string | null;
+  approved_time_days: number | null;
+  currency: string;
+  approved_at: string | null;
+}
+
+export interface PortalChangeOrderList {
+  items: PortalChangeOrder[];
+  total: number;
+}
+
+/** List the executed change orders the portal caller can see. */
+export function listMyChangeOrders(params?: {
+  project_id?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<PortalChangeOrderList> {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return portalFetch<PortalChangeOrderList>(
+    `${PORTAL_ME_BASE}/change-orders${q ? `?${q}` : ''}`,
+  );
+}
+
+/* ── Portal-user-facing (session-token) service tickets ────────────────────
+ *
+ * The tickets the portal caller filed (source="portal", reported_by=self) on
+ * any service contract they still hold access to. List-only here; the file-a-
+ * ticket flow is its own surface.
+ */
+
+export interface PortalTicket {
+  id: string;
+  contract_id: string;
+  ticket_number: string;
+  title: string;
+  description: string;
+  priority: string;
+  status: string;
+  reported_at: string;
+  sla_due_at: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+}
+
+export interface PortalTicketList {
+  items: PortalTicket[];
+  total: number;
+}
+
+/** List the service tickets the portal caller filed. */
+export function listMyTickets(params?: {
+  offset?: number;
+  limit?: number;
+}): Promise<PortalTicketList> {
+  const qs = new URLSearchParams();
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return portalFetch<PortalTicketList>(
+    `${PORTAL_ME_BASE}/tickets${q ? `?${q}` : ''}`,
+  );
+}
+
 /** Consume a magic-link token, persist the session, and return it. */
 export async function consumePortalMagicLink(
   token: string,
-): Promise<{ session_token: string; expires_at: string }> {
+): Promise<PortalConsumeResult> {
   const res = await fetch('/api/v1/portal/auth/consume', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -505,7 +618,7 @@ export async function consumePortalMagicLink(
       typeof body.detail === 'string' ? body.detail : `Sign-in failed (${res.status})`;
     throw new Error(detail);
   }
-  const data = (await res.json()) as { session_token: string; expires_at: string };
+  const data = (await res.json()) as PortalConsumeResult;
   setPortalSessionToken(data.session_token);
   return data;
 }

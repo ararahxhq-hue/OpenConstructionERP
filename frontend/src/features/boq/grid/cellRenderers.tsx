@@ -550,6 +550,9 @@ export type FullGridContext = ActionsContext & ResourceGridContext & SectionGrou
    *  description cell hides its inline cost-driver split pill to avoid
    *  showing the same figures twice. */
   showResourceSplit?: boolean;
+  /** Show the compact inline cost-driver split pill in the description cell.
+   *  Set by the toolbar's tri-state button only in its `pill` position. */
+  showResourceSplitPill?: boolean;
   /**
    * Render the inline AI copilot panel for a position id. Supplied by the host
    * (BOQEditorPage) so this renderer stays decoupled from the copilot
@@ -1057,7 +1060,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
     }
   }
   const breakdownPill =
-    breakdownEntries.length > 0 && !ctx?.showResourceSplit ? (
+    breakdownEntries.length > 0 && ctx?.showResourceSplitPill ? (
       <span
         className="shrink-0 inline-flex items-center gap-0.5 rounded text-[10px] font-medium px-1 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 cursor-help"
         title={t('boq.resource_breakdown_tip', {

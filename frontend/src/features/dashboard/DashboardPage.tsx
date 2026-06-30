@@ -97,6 +97,22 @@ function deriveGreetingName(email: string | null | undefined): string | undefine
   return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
 }
 
+/**
+ * Pick a friendly first name from a user's profile ``full_name``.
+ *
+ * Greetings read most naturally with a single given name ("Good morning,
+ * Artem"), so we take the first whitespace-separated token of the real name.
+ * Returns ``undefined`` for an empty / whitespace-only name so the caller can
+ * fall back to {@link deriveGreetingName}. The casing of the stored name is
+ * preserved (it is a real name, not a guessed email token).
+ */
+function firstNameFromFullName(fullName: string | null | undefined): string | undefined {
+  const trimmed = (fullName ?? '').trim();
+  if (!trimmed) return undefined;
+  const first = trimmed.split(/\s+/)[0];
+  return first && first.length > 0 ? first : undefined;
+}
+
 /* ── Types ────────────────────────────────────────────────────────────── */
 
 interface ProjectSummary {
@@ -1902,14 +1918,29 @@ function DashboardPageInner() {
     [widgetOrder],
   );
 
-  // Friendly display name for the greeting. The auth store only carries the
-  // signed-in user's email, so derive a presentable first name from the
-  // local-part (everything before "@"): split on the usual separators,
-  // title-case each token, and join. We deliberately never surface a raw
-  // email (with "@") or an "undefined" — if nothing usable comes out, the
-  // greeting renders name-less.
+  // Friendly display name for the greeting. We prefer the user's REAL profile
+  // name (their ``full_name``; there is no separate display_name field) and
+  // only fall back to a name guessed from the email local-part when no real
+  // name is known. The authoritative source is the live ``/v1/users/me/``
+  // profile; the auth store carries a cached name (hydrated on load, refreshed
+  // by syncRoleFromServer) so the greeting shows the real name on first paint
+  // even before this query resolves. We never surface a raw email or
+  // "undefined" - if nothing usable remains, the greeting renders name-less.
   const userEmail = useAuthStore((s) => s.userEmail);
-  const greetingName = useMemo(() => deriveGreetingName(userEmail), [userEmail]);
+  const cachedFullName = useAuthStore((s) => s.userFullName);
+  const { data: profile } = useQuery({
+    queryKey: ['me'],
+    queryFn: () => apiGet<{ full_name?: string; email?: string }>('/v1/users/me/').catch(() => null),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const greetingName = useMemo(
+    () =>
+      firstNameFromFullName(profile?.full_name) ??
+      firstNameFromFullName(cachedFullName) ??
+      deriveGreetingName(profile?.email ?? userEmail),
+    [profile?.full_name, profile?.email, cachedFullName, userEmail],
+  );
 
   // Pull the server-side layout once at mount so a user who customised on
   // another browser sees the same dashboard here. Idempotent: only the

@@ -33,6 +33,15 @@ interface AuthState {
   isAuthenticated: boolean;
   userEmail: string | null;
   /**
+   * The signed-in user's display name (== their profile ``full_name``; there
+   * is no separate display_name field). Populated from the live
+   * ``/v1/users/me/`` response by {@link AuthState.syncRoleFromServer} and
+   * persisted alongside the email so a reload renders the real name
+   * immediately instead of guessing it from the email local-part. ``null``
+   * until known.
+   */
+  userFullName: string | null;
+  /**
    * The authoritative role for the current user, sourced from the live
    * `/v1/users/me/` response after login / page load.
    *
@@ -44,7 +53,10 @@ interface AuthState {
   setTokens: (access: string, refresh: string, remember?: boolean, email?: string) => void;
   logout: () => void;
   loadFromStorage: () => void;
-  /** Fetch `/v1/users/me/` and overwrite `userRole` with the live DB value. */
+  /**
+   * Fetch `/v1/users/me/` and overwrite `userRole` (and `userFullName`) with
+   * the live DB values.
+   */
   syncRoleFromServer: () => Promise<void>;
   /**
    * Exchange the stored refresh token for a fresh access/refresh pair.
@@ -65,6 +77,7 @@ const KEY_ACCESS = 'oe_access_token';
 const KEY_REFRESH = 'oe_refresh_token';
 const KEY_REMEMBER = 'oe_remember';
 const KEY_EMAIL = 'oe_user_email';
+const KEY_FULL_NAME = 'oe_user_full_name';
 
 /** Read the stored refresh token from either storage tier. */
 function getStoredRefreshToken(): string | null {
@@ -83,6 +96,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   accessToken: null,
   isAuthenticated: false,
   userEmail: null,
+  userFullName: null,
   userRole: null,
 
   setTokens: (access, refresh, remember = false, email) => {
@@ -100,10 +114,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       sessionStorage.setItem(KEY_REFRESH, refresh);
     }
     if (email) localStorage.setItem(KEY_EMAIL, email);
+    // The login response carries only the email; the display name arrives via
+    // syncRoleFromServer(). Clear any persisted name from a previous session
+    // so a different user's name never briefly leaks into the greeting.
+    localStorage.removeItem(KEY_FULL_NAME);
     set({
       accessToken: access,
       isAuthenticated: true,
       userEmail: email ?? null,
+      userFullName: null,
       userRole: decodeRoleFromToken(access),
     });
   },
@@ -113,6 +132,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.removeItem(KEY_REFRESH);
     localStorage.removeItem(KEY_REMEMBER);
     localStorage.removeItem(KEY_EMAIL);
+    localStorage.removeItem(KEY_FULL_NAME);
     sessionStorage.removeItem(KEY_ACCESS);
     sessionStorage.removeItem(KEY_REFRESH);
     // Desktop builds auto-bootstrap a local owner on /login. A deliberate
@@ -124,17 +144,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // sessionStorage unavailable -- ignore.
     }
-    set({ accessToken: null, isAuthenticated: false, userEmail: null, userRole: null });
+    set({
+      accessToken: null,
+      isAuthenticated: false,
+      userEmail: null,
+      userFullName: null,
+      userRole: null,
+    });
   },
 
   loadFromStorage: () => {
     const token =
       localStorage.getItem(KEY_ACCESS) || sessionStorage.getItem(KEY_ACCESS);
     const email = localStorage.getItem(KEY_EMAIL);
+    const fullName = localStorage.getItem(KEY_FULL_NAME);
     set({
       accessToken: token,
       isAuthenticated: Boolean(token),
       userEmail: email,
+      // Hydrate the cached display name so the greeting shows the real name on
+      // first paint after a reload; syncRoleFromServer refreshes it from the DB.
+      userFullName: fullName,
       // Pre-populate from JWT so the UI renders immediately; syncRoleFromServer
       // will overwrite with the authoritative DB value shortly after.
       userRole: decodeRoleFromToken(token),
@@ -149,9 +179,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!res.ok) return; // 401 handled by the app's global error boundary
-      const data = (await res.json()) as { role?: string; email?: string };
+      const data = (await res.json()) as {
+        role?: string;
+        email?: string;
+        full_name?: string;
+      };
       if (typeof data.role === 'string') {
         set({ userRole: data.role });
+      }
+      // Cache the real display name (== full_name) for the greeting and any
+      // other surface; persist it so a reload paints the name without waiting
+      // on this round-trip. Ignore an empty/whitespace name.
+      const fullName = (data.full_name ?? '').trim();
+      if (fullName) {
+        try {
+          localStorage.setItem(KEY_FULL_NAME, fullName);
+        } catch {
+          // storage unavailable -- the in-memory value below still applies.
+        }
+        set({ userFullName: fullName });
       }
     } catch {
       // Network failure — keep the JWT-decoded role as best-effort fallback.

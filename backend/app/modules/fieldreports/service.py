@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.i18n import get_locale
 from app.core.json_merge import merge_metadata
+from app.core.pdf_branding import branded_cover_brand
 from app.core.validation.messages import translate
 from app.modules.fieldreports.builtin_templates import (
     BUILTIN_TEMPLATES,
@@ -610,6 +611,8 @@ class FieldReportService:
         report = await self.get_report(report_id)
 
         lines: list[str] = []
+        # Workspace brand title line (issue #284); falls back to the default name.
+        lines.append(branded_cover_brand())
         lines.append("FIELD REPORT")
         lines.append(f"Project: {report.project_id}")
         lines.append(f"Date: {report.report_date}")

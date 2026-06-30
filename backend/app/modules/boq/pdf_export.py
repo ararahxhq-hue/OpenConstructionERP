@@ -46,6 +46,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.pdf_branding import branded_cover_brand, branded_doc_metadata, branded_header_logo
 from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
 from app.core.unit_conversion import convert as convert_units
 from app.core.unit_conversion import display_rate
@@ -279,11 +280,12 @@ def _make_header_footer(
     ``func(canvas, doc)``.
     """
 
-    def _header(canvas: Any, _doc: Any) -> None:
+    def _header(canvas: Any, doc: Any) -> None:
         canvas.saveState()
         canvas.setFont(BODY_FONT, 8)
         canvas.setFillColor(colors.HexColor("#666666"))
-        text = f"{project_name}  \u2014  {boq_name}"
+        # Plain hyphen separator (never an em dash) per the project text rule.
+        text = f"{project_name}  -  {boq_name}"
         canvas.drawString(MARGIN_LEFT, PAGE_HEIGHT - 15 * mm, text)
         # Thin line under header
         canvas.setStrokeColor(colors.HexColor("#cccccc"))
@@ -291,13 +293,15 @@ def _make_header_footer(
         line_y = PAGE_HEIGHT - 17 * mm
         canvas.line(MARGIN_LEFT, line_y, PAGE_WIDTH - MARGIN_RIGHT, line_y)
         canvas.restoreState()
+        # White-label logo (if configured) top-right, clearing the header title.
+        branded_header_logo(canvas, doc)
 
     def _footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        # Left side: brand
+        # Left side: brand (follows the workspace white-label, issue #284)
         canvas.setFont(BODY_FONT, 7)
         canvas.setFillColor(colors.HexColor("#999999"))
-        canvas.drawString(MARGIN_LEFT, 10 * mm, f"OpenConstructionERP  |  Generated: {generated_date}")
+        canvas.drawString(MARGIN_LEFT, 10 * mm, f"{branded_cover_brand()}  |  Generated: {generated_date}")
         # Right side: page number
         if getattr(doc, "page_count", 0) > 0:
             page_text = f"Page {doc.page} of {doc.page_count}"
@@ -342,8 +346,8 @@ def _build_cover_page(
     # Top spacing
     elements.append(Spacer(1, 30 * mm))
 
-    # Brand
-    elements.append(Paragraph("OpenConstructionERP", styles["brand"]))
+    # Brand (workspace white-label name, falls back to the default; issue #284)
+    elements.append(_safe_para(branded_cover_brand(), styles["brand"]))
     elements.append(Spacer(1, 10 * mm))
 
     # Decorative line
@@ -894,11 +898,11 @@ def generate_boq_pdf(
         topMargin=MARGIN_TOP,
         bottomMargin=MARGIN_BOTTOM,
         title=f"Cost Estimate - {boq_data.name}",
-        author="OpenConstructionERP",
-        subject="Bill of Quantities · DDC-CWICR-OE",
-        creator="OpenConstructionERP · DataDrivenConstruction",
-        producer="OpenConstructionERP / reportlab · datadrivenconstruction.io",
-        keywords="DDC-CWICR-OE-2026,OpenConstructionERP,BOQ,DataDrivenConstruction",
+        author=branded_doc_metadata()["author"],
+        subject="Bill of Quantities",
+        creator=branded_doc_metadata()["creator"],
+        producer=branded_doc_metadata()["producer"],
+        keywords=branded_doc_metadata()["keywords"],
     )
     doc.addPageTemplates([cover_template, table_template])
 
@@ -931,11 +935,11 @@ def generate_boq_pdf(
         topMargin=MARGIN_TOP,
         bottomMargin=MARGIN_BOTTOM,
         title=f"Cost Estimate - {boq_data.name}",
-        author="OpenConstructionERP",
-        subject="Bill of Quantities · DDC-CWICR-OE",
-        creator="OpenConstructionERP · DataDrivenConstruction",
-        producer="OpenConstructionERP / reportlab · datadrivenconstruction.io",
-        keywords="DDC-CWICR-OE-2026,OpenConstructionERP,BOQ,DataDrivenConstruction",
+        author=branded_doc_metadata()["author"],
+        subject="Bill of Quantities",
+        creator=branded_doc_metadata()["creator"],
+        producer=branded_doc_metadata()["producer"],
+        keywords=branded_doc_metadata()["keywords"],
     )
     doc2.page_count = total_pages
     doc2.addPageTemplates([cover_template, table_template])
@@ -1049,11 +1053,11 @@ def generate_boq_pdf_simple(
         topMargin=MARGIN_TOP,
         bottomMargin=MARGIN_BOTTOM,
         title=f"Cost Estimate - {boq_data.name} (Summary)",
-        author="OpenConstructionERP",
-        subject="Bill of Quantities · DDC-CWICR-OE",
-        creator="OpenConstructionERP · DataDrivenConstruction",
-        producer="OpenConstructionERP / reportlab · datadrivenconstruction.io",
-        keywords="DDC-CWICR-OE-2026,OpenConstructionERP,BOQ,DataDrivenConstruction",
+        author=branded_doc_metadata()["author"],
+        subject="Bill of Quantities",
+        creator=branded_doc_metadata()["creator"],
+        producer=branded_doc_metadata()["producer"],
+        keywords=branded_doc_metadata()["keywords"],
     )
     doc.addPageTemplates([cover_template, table_template])
 

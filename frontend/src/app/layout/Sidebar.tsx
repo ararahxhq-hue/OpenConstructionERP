@@ -347,11 +347,15 @@ const navGroups: NavGroup[] = [
     labelKey: 'sidebar.group.commercial',
     defaultLabel: 'Commercial',
     defaultOpen: true,
-    hideInSimple: true,
+    // Visible in Simple mode too. A user reported "there is no contracts
+    // module" because this whole group was hidden outside Advanced mode
+    // (hideInSimple). The group now shows with Contracts always visible;
+    // CRM and Subcontractors stay advanced-only so Simple mode surfaces
+    // just the core commercial entry point without extra clutter.
     items: [
-      { labelKey: 'nav.crm', to: '/crm', icon: Briefcase },
+      { labelKey: 'nav.crm', to: '/crm', icon: Briefcase, advancedOnly: true },
       { labelKey: 'nav.contracts', to: '/contracts', icon: FileSignature },
-      { labelKey: 'nav.subcontractors', to: '/subcontractors', icon: HardHat },
+      { labelKey: 'nav.subcontractors', to: '/subcontractors', icon: HardHat, advancedOnly: true },
     ],
   },
   // ── 10. PROCUREMENT ────────────────────────────────────────────────
@@ -362,9 +366,6 @@ const navGroups: NavGroup[] = [
     id: 'grp_procurement',
     labelKey: 'sidebar.group.procurement',
     defaultLabel: 'Procurement',
-    descriptionKey: 'sidebar.group.procurement_desc',
-    defaultDescription:
-      'Three ways to buy. RFQ for quick quotes, Bid Management for formal competitive bids, Tendering when pricing from a bill of quantities.',
     defaultOpen: true,
     hideInSimple: true,
     items: [
@@ -403,15 +404,16 @@ const navGroups: NavGroup[] = [
       },
     ],
   },
-  // ── 10b. CHANGE & RECORDS ──────────────────────────────────────────
-  // Variations / MoC / change orders, the change-intelligence analytics
-  // they feed, and the capture surfaces (phone log, connectors, inbound,
-  // reconciliation, find). Split out of the old "Procurement & Change"
-  // group so procurement reads clean (#280).
+  // ── 10b. CHANGE ────────────────────────────────────────────────────
+  // The change-management workflow (variations, MoC, change orders) and
+  // the analytics it feeds (change-intelligence, value). Split out of the
+  // old "Procurement & Change" group so procurement reads clean (#280),
+  // then split again from the capture/records surfaces (now "Records &
+  // Capture" below) so neither group carries too many items.
   {
     id: 'grp_change',
     labelKey: 'sidebar.group.change',
-    defaultLabel: 'Change & Records',
+    defaultLabel: 'Change',
     defaultOpen: true,
     hideInSimple: true,
     items: [
@@ -420,6 +422,19 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
       { labelKey: 'nav.change_intelligence', to: '/change-intelligence', icon: BrainCircuit, advancedOnly: true },
       { labelKey: 'nav.value', to: '/value', icon: TrendingUp, advancedOnly: true },
+    ],
+  },
+  // ── 10c. RECORDS & CAPTURE ──────────────────────────────────────────
+  // The surfaces that capture project record (phone log, connectors,
+  // reconciliation, inbound) plus cross-record search. Kept distinct from
+  // "Change" above so each group stays short and scannable.
+  {
+    id: 'grp_records',
+    labelKey: 'sidebar.group.records',
+    defaultLabel: 'Records & Capture',
+    defaultOpen: true,
+    hideInSimple: true,
+    items: [
       { labelKey: 'nav.phone_log', to: '/phone-log', icon: Phone, advancedOnly: true },
       { labelKey: 'nav.connectors', to: '/connectors', icon: HardDrive, advancedOnly: true },
       { labelKey: 'nav.reconciliation', to: '/reconciliation', icon: Link2, advancedOnly: true },
