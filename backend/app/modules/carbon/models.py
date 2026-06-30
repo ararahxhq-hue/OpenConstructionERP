@@ -155,6 +155,13 @@ class EmbodiedCarbonEntry(Base):
         index=True,
     )
     element_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Optional link to a BIM element (oe_bim_element.id). A plain GUID with NO
+    # SQLAlchemy ForeignKey, matching the cross-module-ref convention used by
+    # MaterialCarbonFactor.cost_item_id: refs into OTHER modules stay plain
+    # GUID() columns so migration ordering across modules stays safe. When set,
+    # the entry's quantity is derived from the model geometry rather than free
+    # text. element_ref is kept for back-compat / display.
+    element_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     quantity: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
     unit: Mapped[str] = mapped_column(String(20), nullable=False, default="kg")
@@ -167,6 +174,18 @@ class EmbodiedCarbonEntry(Base):
     factor_value_used: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
     carbon_kg: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
     stage: Mapped[str] = mapped_column(String(8), nullable=False, default="a1a3", index=True)
+    # How this entry came to exist: 'manual' (typed in), 'auto_enriched'
+    # (matched from a BIM element by auto_enrich_inventory_from_bim) or
+    # 'boq_derived' (assigned from a BOQ position).
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="manual",
+        server_default="manual",
+    )
+    # Confidence band of the auto-matched carbon factor (high|medium|low).
+    # NULL for manually entered rows.
+    match_confidence: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",

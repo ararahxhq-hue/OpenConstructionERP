@@ -10,6 +10,12 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 
 export type EPDSource = 'oekobaudat' | 'ice' | 'ec3' | 'custom';
 export type Stage = 'a1a3' | 'a4' | 'a5' | 'b' | 'c' | 'd';
+
+/** How an embodied-carbon entry got into the inventory.
+ *  - `manual`: keyed in by a user.
+ *  - `auto_enriched`: proposed by the BIM auto-enrich pass (6D).
+ *  - `boq_derived`: created from a priced BOQ position. */
+export type EmbodiedSource = 'manual' | 'auto_enriched' | 'boq_derived';
 export type InventoryStatus = 'draft' | 'baseline' | 'current' | 'archived';
 export type TargetStatus = 'active' | 'met' | 'missed' | 'abandoned';
 export type Framework = 'ghg_protocol' | 'gri' | 'issb' | 'custom';
@@ -69,7 +75,16 @@ export interface CarbonInventory {
 export interface EmbodiedEntry {
   id: string;
   inventory_id: string;
+  /** Free-text human label for the element (name/type), e.g. "Wall - C30/37".
+   *  Carried for every entry regardless of source. */
   element_ref?: string | null;
+  /** Plain GUID link to the BIM element this entry was enriched from, when it
+   *  came from a BIM model. `null` for manual / BOQ-derived entries. */
+  element_id?: string | null;
+  /** Provenance of the entry. Absent on legacy rows (treated as manual). */
+  source?: EmbodiedSource | null;
+  /** Confidence of the material -> factor match for auto-enriched entries. */
+  match_confidence?: 'high' | 'medium' | 'low' | null;
   description: string;
   quantity: number | string;
   unit: string;
@@ -599,5 +614,48 @@ export function assignBoqPosition(
   return apiPost<AssignBoqPositionResult>(
     `/v1/carbon/inventories/${inventoryId}/assign-boq-position`,
     payload,
+  );
+}
+
+/* ── BIM auto-enrich (6D) ───────────────────────────────────────────────── */
+
+/**
+ * Result of an auto-enrich pass over a BIM model.
+ *
+ * `entries` carries the embodied entries: when `dry_run` is true they are
+ * proposals (nothing was written), otherwise they are the persisted rows.
+ * The three counters always describe what the pass considered:
+ * `created` matched and (would be) added, `skipped_no_match` had no material
+ * factor, `skipped_no_quantity` had no usable geometry quantity.
+ */
+export interface AutoEnrichBimResult {
+  created: number;
+  skipped_no_match: number;
+  skipped_no_quantity: number;
+  /** Elements skipped because this inventory already has an auto-enriched
+   *  entry for them (idempotency: re-running never duplicates rows). */
+  skipped_existing?: number;
+  entries: EmbodiedEntry[];
+}
+
+/**
+ * Match a BIM model's element materials to carbon factors and propose (or
+ * persist) embodied entries. Always preview with `dry_run: true` first, then
+ * confirm with `dry_run: false` - AI proposes, the user confirms.
+ *
+ * Wires POST /carbon/inventories/{id}/auto-enrich-bim?model_id=&dry_run=.
+ * Marked long-running: matching scans every element in the model.
+ */
+export function autoEnrichFromBim(
+  inventoryId: string,
+  params: { model_id: string; dry_run: boolean },
+): Promise<AutoEnrichBimResult> {
+  const qs = new URLSearchParams();
+  qs.set('model_id', params.model_id);
+  qs.set('dry_run', String(params.dry_run));
+  return apiPost<AutoEnrichBimResult>(
+    `/v1/carbon/inventories/${inventoryId}/auto-enrich-bim?${qs.toString()}`,
+    {},
+    { longRunning: true },
   );
 }

@@ -206,6 +206,7 @@ class EmbodiedCarbonEntryCreate(BaseModel):
 
     inventory_id: UUID
     element_ref: str | None = Field(default=None, max_length=255)
+    element_id: UUID | None = None
     description: str = Field(default="", max_length=10000)
     quantity: Decimal = Field(default=Decimal("0"))
     unit: str = Field(default="kg", max_length=20)
@@ -213,6 +214,8 @@ class EmbodiedCarbonEntryCreate(BaseModel):
     factor_value_used: Decimal = Field(default=Decimal("0"))
     carbon_kg: Decimal = Field(default=Decimal("0"))
     stage: str = Field(default="a1a3", pattern=r"^(a1a3|a4|a5|b|c|d)$")
+    source: str = Field(default="manual", pattern=r"^(manual|auto_enriched|boq_derived)$")
+    match_confidence: str | None = Field(default=None, pattern=r"^(high|medium|low)$")
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -220,6 +223,7 @@ class EmbodiedCarbonEntryUpdate(BaseModel):
     """Partial update of an embodied-carbon entry."""
 
     element_ref: str | None = Field(default=None, max_length=255)
+    element_id: UUID | None = None
     description: str | None = Field(default=None, max_length=10000)
     quantity: Decimal | None = None
     unit: str | None = Field(default=None, max_length=20)
@@ -227,6 +231,8 @@ class EmbodiedCarbonEntryUpdate(BaseModel):
     factor_value_used: Decimal | None = None
     carbon_kg: Decimal | None = None
     stage: str | None = Field(default=None, pattern=r"^(a1a3|a4|a5|b|c|d)$")
+    source: str | None = Field(default=None, pattern=r"^(manual|auto_enriched|boq_derived)$")
+    match_confidence: str | None = Field(default=None, pattern=r"^(high|medium|low)$")
     metadata: dict[str, Any] | None = None
 
 
@@ -238,6 +244,7 @@ class EmbodiedCarbonEntryResponse(BaseModel):
     id: UUID
     inventory_id: UUID
     element_ref: str | None = None
+    element_id: UUID | None = None
     description: str
     quantity: Decimal
     unit: str
@@ -245,6 +252,8 @@ class EmbodiedCarbonEntryResponse(BaseModel):
     factor_value_used: Decimal
     carbon_kg: Decimal
     stage: str
+    source: str = "manual"
+    match_confidence: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime

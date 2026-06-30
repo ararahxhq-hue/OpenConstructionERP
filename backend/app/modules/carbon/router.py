@@ -948,6 +948,42 @@ async def assign_boq_position(
     }
 
 
+# ── 6D auto-enrichment from BIM elements ─────────────────────────────────
+
+
+@router.post("/inventories/{inventory_id}/auto-enrich-bim")
+async def auto_enrich_bim(
+    inventory_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    model_id: uuid.UUID | None = Query(default=None),
+    dry_run: bool = Query(default=False),
+    _perm: None = Depends(RequirePermission("carbon.create")),
+    service: CarbonService = Depends(_get_service),
+) -> dict:
+    """Auto-extract embodied carbon (EN 15978 A1-A3) from the project's BIM.
+
+    For each BIM element in the inventory's project, match its material / type
+    to the best EPD-backed carbon factor, take the matching SI quantity from
+    the model geometry, and create a draft embodied-carbon entry linked to the
+    element (``element_id`` + ``source='auto_enriched'`` + ``match_confidence``).
+    The inventory is not finalised - AI suggests, a human confirms.
+
+    Query:
+        model_id: optional - limit enrichment to a single BIM model.
+        dry_run: when true, compute and return suggestions without persisting.
+    """
+    # IDOR gate: enrichment writes into the inventory, so the caller must own
+    # the inventory's project - mirror the assign-boq-position endpoint.
+    project_id = await service.get_inventory_project_id(inventory_id)
+    await verify_project_access(project_id, user_id, session)
+    return await service.auto_enrich_inventory_from_bim(
+        inventory_id,
+        model_id=model_id,
+        dry_run=dry_run,
+    )
+
+
 # ── TCFD / ISSB structured report ────────────────────────────────────────
 
 

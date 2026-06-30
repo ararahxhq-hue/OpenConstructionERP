@@ -20,17 +20,20 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.json_merge import merge_metadata
+from app.modules.bim_hub.models import BIMElement, BIMModel
 from app.modules.carbon.models import (
     CarbonInventory,
     CarbonTarget,
@@ -393,6 +396,225 @@ def match_cost_item_to_epd(
         return candidates[0]
 
     return None
+
+
+# ── 6D BIM auto-enrichment pure helpers ───────────────────────────────────
+# All DB-free so they are unit-testable without a database. The orchestration
+# (CarbonService.auto_enrich_inventory_from_bim) loads the BIM elements and
+# candidate factors, then leans on these to match, pick a quantity, and
+# compute carbon with Decimal. Confidence follows the AI-augmented /
+# human-confirmed principle: nothing is auto-finalised.
+
+# Property keys a converted BIM element may carry its material under
+# (canonical "material"/"Material", plus a few common variants).
+_BIM_MATERIAL_KEYS: tuple[str, ...] = (
+    "material",
+    "Material",
+    "material_class",
+    "MaterialClass",
+    "material_name",
+)
+# Property keys that may carry a bulk density (kg / m3) for m3 <-> kg.
+_BIM_DENSITY_KEYS: tuple[str, ...] = (
+    "density_kg_per_m3",
+    "density",
+    "bulk_density",
+    "Density",
+)
+# Minimum material-match score below which an element is treated as unmatched.
+_MATCH_MIN_SCORE: float = 0.3
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def extract_element_material(properties: dict[str, Any] | None) -> str:
+    """Pure: pull a material name from a BIM element's properties.
+
+    Looks at the canonical ``material`` / ``Material`` keys first, then a few
+    common variants. A layered-material value (dict) falls back to its
+    ``name`` / ``material`` field. Returns ``""`` when no material is present
+    (the caller may then fall back to ``element_type``).
+    """
+    if not isinstance(properties, dict):
+        return ""
+    for key in _BIM_MATERIAL_KEYS:
+        value = properties.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            name = value.get("name") or value.get("material")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    return ""
+
+
+def _element_density(properties: dict[str, Any] | None) -> Decimal | None:
+    """Pure: read a positive bulk density (kg/m3) from element properties."""
+    if not isinstance(properties, dict):
+        return None
+    for key in _BIM_DENSITY_KEYS:
+        value = properties.get(key)
+        if value is None:
+            continue
+        try:
+            dens = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        if dens > 0:
+            return dens
+    return None
+
+
+def _tokens(text: str | None) -> set[str]:
+    """Pure: lowercase alphanumeric tokens (length >= 2) of ``text``."""
+    return {t for t in _TOKEN_RE.findall((text or "").lower()) if len(t) >= 2}
+
+
+def material_match_score(
+    material: str | None,
+    element_type: str | None,
+    candidate_class: str | None,
+) -> float:
+    """Pure: 0.0-1.0 similarity of an element's material to an EPD class.
+
+    Exact (normalised) equality scores 1.0; substring containment 0.85;
+    otherwise a token-overlap fraction (material tokens weighted above
+    element-type tokens). Returns 0.0 when nothing overlaps.
+    """
+    cls = (candidate_class or "").strip().lower()
+    mat = (material or "").strip().lower()
+    if not cls:
+        return 0.0
+    if mat:
+        if mat == cls:
+            return 1.0
+        if cls in mat or mat in cls:
+            return 0.85
+    cls_tokens = _tokens(cls)
+    mat_tokens = _tokens(mat)
+    if cls_tokens and mat_tokens:
+        overlap = len(cls_tokens & mat_tokens)
+        if overlap:
+            return 0.6 * (overlap / min(len(cls_tokens), len(mat_tokens)))
+    type_tokens = _tokens(element_type)
+    if cls_tokens and type_tokens:
+        overlap = len(cls_tokens & type_tokens)
+        if overlap:
+            return 0.45 * (overlap / min(len(cls_tokens), len(type_tokens)))
+    return 0.0
+
+
+def _confidence_for(score: float, region_match: bool, has_region: bool) -> str:
+    """Pure: map a match score + region agreement to a confidence band."""
+    if score >= 0.999:
+        return "high" if (region_match or not has_region) else "medium"
+    if score >= 0.6:
+        return "medium" if (region_match or not has_region) else "low"
+    return "low"
+
+
+def _best_factor_for_element(
+    material: str | None,
+    element_type: str | None,
+    region: str | None,
+    candidates: Iterable[dict[str, Any]],
+) -> tuple[dict[str, Any], str] | None:
+    """Pure: pick the best candidate factor for one BIM element.
+
+    Each candidate is a dict with at least ``material_class`` and ``region``.
+    Selection is by descending material-match score, with a same-region
+    candidate winning ties. Returns ``(candidate, confidence)`` or ``None``
+    when no candidate clears ``_MATCH_MIN_SCORE``.
+    """
+    el_region = (region or "").strip().lower()
+    best: dict[str, Any] | None = None
+    best_score = 0.0
+    best_region_match = False
+    for cand in candidates:
+        cls = cand.get("material_class")
+        if not cls:
+            continue
+        score = material_match_score(material, element_type, cls)
+        if score <= 0:
+            continue
+        cand_region = (cand.get("region") or "").strip().lower()
+        region_match = bool(el_region and cand_region == el_region)
+        is_better = score > best_score + 1e-9 or (
+            abs(score - best_score) <= 1e-9 and region_match and not best_region_match
+        )
+        if best is None or is_better:
+            best = cand
+            best_score = score
+            best_region_match = region_match
+    if best is None or best_score < _MATCH_MIN_SCORE:
+        return None
+    return best, _confidence_for(best_score, best_region_match, bool(el_region))
+
+
+def select_quantity_for_unit(
+    quantities: dict[str, Any] | None,
+    declared_unit: str,
+) -> tuple[Decimal, str] | None:
+    """Pure: pick the canonical SI quantity matching a factor's unit dimension.
+
+    The factor's ``declared_unit`` dictates which quantity to read:
+
+        kg / t / m3  -> volume (returned as m3, converted to mass via density)
+        m2           -> area
+        m            -> length
+        pcs          -> count (defaults to 1 per element)
+
+    Returns ``(quantity, si_unit)`` or ``None`` when no positive quantity of
+    the required dimension is present.
+    """
+    if not isinstance(quantities, dict):
+        return None
+    dst = _canon_unit(declared_unit)
+
+    def _first_positive(keys: tuple[str, ...]) -> Decimal | None:
+        for key in keys:
+            value = quantities.get(key)
+            if value is None:
+                continue
+            try:
+                dec = Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+            if dec > 0:
+                return dec
+        return None
+
+    if dst in ("kg", "t", "m3"):
+        vol = _first_positive(
+            ("net_volume", "volume_m3", "volume", "net_volume_m3", "Volume", "NetVolume"),
+        )
+        return (vol, "m3") if vol is not None else None
+    if dst == "m2":
+        area = _first_positive(("area_m2", "area", "net_area", "Area", "NetArea"))
+        return (area, "m2") if area is not None else None
+    if dst == "m":
+        length = _first_positive(("length_m", "length", "Length"))
+        return (length, "m") if length is not None else None
+    if dst == "pcs":
+        count = _first_positive(("count", "pcs", "pieces", "quantity"))
+        return (count if count is not None else Decimal("1")), "pcs"
+    return None
+
+
+def _carbon_from_quantity(
+    quantity: Decimal | float | int | str,
+    unit: str,
+    factor_value: Decimal | float | int | str,
+    declared_unit: str,
+    density: Decimal | float | int | None = None,
+) -> Decimal:
+    """Pure: kgCO2e for one element.
+
+    Thin wrapper over :func:`compute_embodied_entry_carbon` so the auto-enrich
+    path uses the exact same unit-normalisation + Decimal multiplication that
+    ``assign_boq_position_carbon`` relies on.
+    """
+    return compute_embodied_entry_carbon(quantity, unit, factor_value, declared_unit, density)
 
 
 def _stage_bucket(stage: str) -> str:
@@ -1897,6 +2119,7 @@ class CarbonService:
             factor_value_used=factor_value,
             carbon_kg=carbon_kg,
             stage=stage_norm,
+            source="boq_derived",
         )
         entry.metadata_ = {
             "boq_position_id": str(boq_position_id),
@@ -1915,6 +2138,226 @@ class CarbonService:
             source_module="carbon",
         )
         return created
+
+    # ── 6D auto-enrichment from BIM (EN 15978 A1-A3) ─────────────────────
+
+    async def _load_project_bim_elements(
+        self,
+        project_id: uuid.UUID,
+        *,
+        model_id: uuid.UUID | None = None,
+    ) -> list[BIMElement]:
+        """Load BIM elements for a project (optionally one model).
+
+        Joins ``BIMElement`` to ``BIMModel`` so ownership is scoped by
+        ``BIMModel.project_id`` - the carbon module never trusts a raw
+        ``model_id`` without confirming it belongs to the project.
+        """
+        stmt = (
+            select(BIMElement)
+            .join(BIMModel, BIMElement.model_id == BIMModel.id)
+            .where(BIMModel.project_id == project_id)
+        )
+        if model_id is not None:
+            stmt = stmt.where(BIMElement.model_id == model_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _bim_factor_candidates(self) -> list[dict[str, Any]]:
+        """Build the match candidate list from EPDs + material factors.
+
+        Each candidate carries the material_class / region to match on, the
+        factor value to apply (manual override beats EPD-derived A1-A3 GWP,
+        mirroring ``assign_boq_position_carbon``), the unit that value is
+        declared in, and the linkable ``factor_id`` (NULL when no material
+        factor references the EPD - the entry then stores the value only).
+        """
+        epds, _ = await self.epd_repo.list_filtered(limit=100000)
+        factors, _ = await self.factor_repo.list_filtered(limit=100000)
+        factor_by_epd: dict[uuid.UUID, MaterialCarbonFactor] = {}
+        for fac in factors:
+            if fac.epd_id is not None and fac.epd_id not in factor_by_epd:
+                factor_by_epd[fac.epd_id] = fac
+        candidates: list[dict[str, Any]] = []
+        for epd in epds:
+            fac = factor_by_epd.get(epd.id)
+            if fac is not None and fac.manual_override_factor is not None:
+                factor_value = Decimal(str(fac.manual_override_factor))
+                declared_unit = fac.unit_for_factor or epd.declared_unit or "kg"
+                region = fac.region or epd.region or ""
+                factor_id = fac.id
+            else:
+                factor_value = Decimal(str(epd.gwp_a1a3 or 0))
+                declared_unit = epd.declared_unit or "kg"
+                region = epd.region or ""
+                factor_id = fac.id if fac is not None else None
+            candidates.append(
+                {
+                    "material_class": epd.material_class,
+                    "region": region,
+                    "declared_unit": declared_unit,
+                    "factor_value": factor_value,
+                    "factor_id": factor_id,
+                    "epd_id": epd.id,
+                },
+            )
+        return candidates
+
+    async def auto_enrich_inventory_from_bim(
+        self,
+        inventory_id: uuid.UUID,
+        *,
+        model_id: uuid.UUID | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Auto-extract embodied carbon (A1-A3) from a project's BIM elements.
+
+        For every BIM element in the inventory's project (optionally limited to
+        one ``model_id``) this matches the element's material / type to the
+        best EPD-backed carbon factor, reads the matching SI quantity from the
+        model geometry, converts it into the factor's unit (the same helper
+        ``assign_boq_position_carbon`` uses) and computes ``carbon_kg`` with
+        Decimal.
+
+        Human-confirmed: entries are created as normal draft rows linked to the
+        BIM element (``element_id`` + ``source='auto_enriched'`` +
+        ``match_confidence``); the inventory is NOT finalised. With
+        ``dry_run=True`` nothing is persisted - the same suggestions are
+        returned for review.
+
+        Returns ``{inventory_id, model_id, dry_run, created, skipped_no_match,
+        skipped_no_quantity, skipped_existing, entries}``.
+        """
+        inv = await self.get_inventory(inventory_id)
+        elements = await self._load_project_bim_elements(inv.project_id, model_id=model_id)
+        candidates = await self._bim_factor_candidates()
+
+        created_models: list[EmbodiedCarbonEntry] = []
+        suggestions: list[dict[str, Any]] = []
+        skipped_no_match = 0
+        skipped_no_quantity = 0
+        skipped_existing = 0
+
+        # Idempotency: never link an element that already carries an
+        # auto_enriched entry in this inventory. Re-running enrichment (or a
+        # model re-upload) must not duplicate rows and double-count carbon.
+        existing_rows = await self.session.execute(
+            select(EmbodiedCarbonEntry.element_id).where(
+                EmbodiedCarbonEntry.inventory_id == inventory_id,
+                EmbodiedCarbonEntry.source == "auto_enriched",
+                EmbodiedCarbonEntry.element_id.is_not(None),
+            ),
+        )
+        already_linked: set[uuid.UUID] = {row[0] for row in existing_rows.all()}
+
+        for element in elements:
+            if element.id in already_linked:
+                skipped_existing += 1
+                continue
+            props = element.properties if isinstance(element.properties, dict) else {}
+            material = extract_element_material(props)
+            element_type = element.element_type or ""
+            if not material and not element_type.strip():
+                skipped_no_match += 1
+                continue
+            el_region = ""
+            region_value = props.get("region") or props.get("Region")
+            if isinstance(region_value, str):
+                el_region = region_value
+            match = _best_factor_for_element(material, element_type, el_region, candidates)
+            if match is None:
+                skipped_no_match += 1
+                continue
+            candidate, confidence = match
+            picked = select_quantity_for_unit(element.quantities or {}, candidate["declared_unit"])
+            if picked is None:
+                skipped_no_quantity += 1
+                continue
+            quantity, si_unit = picked
+            density = _element_density(props)
+            try:
+                carbon_kg = _carbon_from_quantity(
+                    quantity,
+                    si_unit,
+                    candidate["factor_value"],
+                    candidate["declared_unit"],
+                    density,
+                )
+            except UnitMismatchError:
+                # Quantity exists but cannot be expressed in the factor's unit
+                # (e.g. volume in m3 with a per-kg factor and no density).
+                skipped_no_quantity += 1
+                continue
+
+            element_ref = element.name or element.stable_id or str(element.id)
+            factor_id = candidate["factor_id"]
+            suggestions.append(
+                {
+                    "element_id": str(element.id),
+                    "element_ref": element_ref,
+                    "material": material or element_type,
+                    "matched_material_class": candidate["material_class"],
+                    "quantity": str(quantity),
+                    "unit": si_unit,
+                    "factor_id": (str(factor_id) if factor_id is not None else None),
+                    "factor_value_used": str(candidate["factor_value"]),
+                    "carbon_kg": str(carbon_kg),
+                    "stage": "a1a3",
+                    "match_confidence": confidence,
+                    "source": "auto_enriched",
+                },
+            )
+
+            if not dry_run:
+                entry = EmbodiedCarbonEntry(
+                    inventory_id=inventory_id,
+                    element_id=element.id,
+                    element_ref=element_ref,
+                    description=f"Auto-enriched from BIM element {element_ref}",
+                    quantity=quantity,
+                    unit=si_unit,
+                    factor_id=factor_id,
+                    factor_value_used=candidate["factor_value"],
+                    carbon_kg=carbon_kg,
+                    stage="a1a3",
+                    source="auto_enriched",
+                    match_confidence=confidence,
+                )
+                entry.metadata_ = {
+                    "auto_enriched": True,
+                    "matched_material_class": candidate["material_class"],
+                    "matched_epd_id": str(candidate["epd_id"]),
+                    "match_confidence": confidence,
+                    "density_kg_per_m3": (str(density) if density is not None else None),
+                }
+                created_models.append(entry)
+
+        created = 0
+        if not dry_run and created_models:
+            self.session.add_all(created_models)
+            await self.session.flush()
+            created = len(created_models)
+            event_bus.publish_detached(
+                "carbon.inventory.auto_enriched",
+                {
+                    "project_id": str(inv.project_id),
+                    "inventory_id": str(inventory_id),
+                    "model_id": (str(model_id) if model_id is not None else None),
+                    "created": created,
+                },
+                source_module="carbon",
+            )
+
+        return {
+            "inventory_id": str(inventory_id),
+            "model_id": (str(model_id) if model_id is not None else None),
+            "dry_run": dry_run,
+            "created": created,
+            "skipped_no_match": skipped_no_match,
+            "skipped_no_quantity": skipped_no_quantity,
+            "skipped_existing": skipped_existing,
+            "entries": suggestions,
+        }
 
     # ── Grid factor lookup ──────────────────────────────────────────────
 
