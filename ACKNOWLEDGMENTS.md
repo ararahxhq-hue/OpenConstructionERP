@@ -50,6 +50,7 @@ while making sure community input is recognized.
 | [Tigercatman](https://github.com/Tigercatman) | [#279](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/279) |
 | [arvildev](https://github.com/arvildev) | [#281](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/281) |
 | [arvildev](https://github.com/arvildev) | [#282](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/282) |
+| [arvildev](https://github.com/arvildev) | [#285](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/285) |
 | [AliK](https://github.com/alikhalilx) | [#280](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/280) |
 | [Mohammed Shousha](https://github.com/mohandshamada) | [#205](https://github.com/datadrivenconstruction/OpenConstructionERP/discussions/205) |
 | [Nebulasunrise-OG](https://github.com/Nebulasunrise-OG) | [#246](https://github.com/datadrivenconstruction/OpenConstructionERP/discussions/246) |

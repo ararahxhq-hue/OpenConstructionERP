@@ -20,6 +20,9 @@ import {
   toDisplayQuantity,
   displayUnitFor,
   fromDisplayQuantity,
+  conversionFactorFor,
+  toDisplayRate,
+  fromDisplayRate,
   type DisplayQuantity,
 } from '@/shared/lib/unitConversion';
 
@@ -32,6 +35,16 @@ export interface DisplayQuantityApi {
   unitFor: (metricUnit: string) => string;
   /** Reverse a value a user typed in the display system back to metric storage. */
   toMetric: (value: number, metricUnit: string) => number;
+  /**
+   * Re-express a per-unit rate (money / metric unit) against the displayed
+   * unit so a converted line reconciles (50/m -> 15.24/ft). The line total is
+   * invariant; only the per-unit basis changes.
+   */
+  convertRate: (rate: number, metricUnit: string) => number;
+  /** Reverse a rate typed against the displayed unit back to metric storage. */
+  toMetricRate: (rate: number, metricUnit: string) => number;
+  /** The scalar a metric unit scales by (1 for metric / unmapped units). */
+  factorFor: (metricUnit: string) => number;
 }
 
 export function useDisplayQuantity(): DisplayQuantityApi {
@@ -44,6 +57,11 @@ export function useDisplayQuantity(): DisplayQuantityApi {
       unitFor: (metricUnit: string) => displayUnitFor(metricUnit, system),
       toMetric: (value: number, metricUnit: string) =>
         fromDisplayQuantity(value, metricUnit, system),
+      convertRate: (rate: number, metricUnit: string) =>
+        toDisplayRate(rate, metricUnit, system),
+      toMetricRate: (rate: number, metricUnit: string) =>
+        fromDisplayRate(rate, metricUnit, system),
+      factorFor: (metricUnit: string) => conversionFactorFor(metricUnit, system),
     }),
     [system],
   );

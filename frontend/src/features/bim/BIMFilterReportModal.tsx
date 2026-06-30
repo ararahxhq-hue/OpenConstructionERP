@@ -15,6 +15,7 @@ import type { BIMElementData } from '@/shared/ui/BIMViewer';
 import { Button } from '@/shared/ui';
 import { WideModal } from '@/shared/ui/WideModal';
 import { useToastStore } from '@/stores/useToastStore';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 import { summariseBimQuantities, QUANTITY_FIELDS, type QuantitySummary } from './boqSummary';
 import { buildReportHtml } from './printReport';
 import { exportBoqXlsx } from './api';
@@ -33,7 +34,15 @@ interface BIMFilterReportModalProps {
 
 function SummaryTable({ summary, groupHeader }: { summary: QuantitySummary; groupHeader: string }) {
   const { t } = useTranslation();
+  // Display-only metric->imperial conversion (#285). The summary is
+  // metric-canonical; here we restate each quantity column + its header unit
+  // into the user's measurement system. Unmapped units pass through. The
+  // Excel export downloads the canonical (metric) BOQ from the backend
+  // separately, so this on-screen restatement never touches stored data.
+  const dq = useDisplayQuantity();
   const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  const conv = (value: number, i: number) =>
+    dq.convert(value, QUANTITY_FIELDS[i]?.unit ?? '').value;
   return (
     <table className="w-full text-[11px] border-collapse">
       <thead>
@@ -44,7 +53,7 @@ function SummaryTable({ summary, groupHeader }: { summary: QuantitySummary; grou
           </th>
           {QUANTITY_FIELDS.map((f) => (
             <th key={f.key} className="border border-border-light px-2 py-1 text-right">
-              {f.label} ({f.unit})
+              {f.label} ({dq.unitFor(f.unit)})
             </th>
           ))}
         </tr>
@@ -56,7 +65,7 @@ function SummaryTable({ summary, groupHeader }: { summary: QuantitySummary; grou
             <td className="border border-border-light px-2 py-1 text-right tabular-nums">{fmt(r.count)}</td>
             {r.quantities.map((q, i) => (
               <td key={i} className="border border-border-light px-2 py-1 text-right tabular-nums">
-                {fmt(q)}
+                {fmt(conv(q, i))}
               </td>
             ))}
           </tr>
@@ -72,7 +81,7 @@ function SummaryTable({ summary, groupHeader }: { summary: QuantitySummary; grou
           </td>
           {summary.totals.quantities.map((q, i) => (
             <td key={i} className="border border-border-light px-2 py-1 text-right tabular-nums">
-              {fmt(q)}
+              {fmt(conv(q, i))}
             </td>
           ))}
         </tr>
@@ -90,6 +99,7 @@ export default function BIMFilterReportModal({
   elements,
 }: BIMFilterReportModalProps) {
   const { t } = useTranslation();
+  const dq = useDisplayQuantity();
   const [exporting, setExporting] = useState(false);
 
   const byType = useMemo(() => summariseBimQuantities(elements, 'element_type'), [elements]);
@@ -110,6 +120,10 @@ export default function BIMFilterReportModal({
       // No Date.now() in callers that must be deterministic, but this is a
       // user-initiated print so a live timestamp is correct here.
       generatedOn: new Date().toLocaleString(),
+      // Restate quantity columns into the user's measurement system so the
+      // printed PDF matches the on-screen report (#285). Money/totals are
+      // unaffected - these are quantity columns only.
+      system: dq.system,
       sections: [
         {
           heading: t('bim.report.by_type', { defaultValue: 'By element type' }),

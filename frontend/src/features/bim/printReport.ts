@@ -7,6 +7,7 @@
  * it unit-testable and keeps the escaping in one audited place.
  */
 import { QUANTITY_FIELDS, type QuantitySummary } from './boqSummary';
+import { toDisplayQuantity, displayUnitFor } from '@/shared/lib/unitConversion';
 
 export function escapeHtml(value: string): string {
   return value
@@ -33,6 +34,11 @@ export interface BuildReportHtmlParams {
   scopeLabel: string;
   generatedOn: string;
   sections: ReportSection[];
+  /** The user's measurement system. The summaries are metric-canonical; when
+   *  `imperial` the quantity values + their fallback header units are restated
+   *  for display (totals/money are unaffected - these are quantity columns).
+   *  Defaults to `metric` so existing callers stay byte-identical. */
+  system?: 'metric' | 'imperial';
   /** Localised column labels in QUANTITY_FIELDS order, plus the leading
    *  group + count headers. Falls back to the English defaults. */
   labels?: {
@@ -43,17 +49,31 @@ export interface BuildReportHtmlParams {
   };
 }
 
-function sectionTable(section: ReportSection, labels: Required<BuildReportHtmlParams>['labels']): string {
+function sectionTable(
+  section: ReportSection,
+  labels: Required<BuildReportHtmlParams>['labels'],
+  system: 'metric' | 'imperial',
+): string {
+  // Restate each metric-canonical quantity column into the display system.
+  // `conv(value, i)` converts by the column's metric unit; the fallback
+  // header unit is relabelled the same way. Unmapped units pass through.
+  const conv = (value: number, i: number) =>
+    toDisplayQuantity(value, QUANTITY_FIELDS[i]?.unit ?? '', system).value;
   const qtyHeaders = QUANTITY_FIELDS.map(
-    (f, i) => `<th class="num">${escapeHtml(labels.quantities?.[i] ?? `${f.label} (${f.unit})`)}</th>`,
+    (f, i) =>
+      `<th class="num">${escapeHtml(
+        labels.quantities?.[i] ?? `${f.label} (${displayUnitFor(f.unit, system)})`,
+      )}</th>`,
   ).join('');
   const rows = section.summary.rows
     .map((r) => {
-      const qcells = r.quantities.map((q) => `<td class="num">${fmt(q)}</td>`).join('');
+      const qcells = r.quantities.map((q, i) => `<td class="num">${fmt(conv(q, i))}</td>`).join('');
       return `<tr><td>${escapeHtml(r.key)}</td><td class="num">${fmt(r.count)}</td>${qcells}</tr>`;
     })
     .join('');
-  const totalQ = section.summary.totals.quantities.map((q) => `<td class="num">${fmt(q)}</td>`).join('');
+  const totalQ = section.summary.totals.quantities
+    .map((q, i) => `<td class="num">${fmt(conv(q, i))}</td>`)
+    .join('');
   return `
     <h2>${escapeHtml(section.heading)}</h2>
     <table>
@@ -69,7 +89,8 @@ function sectionTable(section: ReportSection, labels: Required<BuildReportHtmlPa
 
 export function buildReportHtml(params: BuildReportHtmlParams): string {
   const labels = params.labels ?? {};
-  const body = params.sections.map((s) => sectionTable(s, labels)).join('\n');
+  const system = params.system ?? 'metric';
+  const body = params.sections.map((s) => sectionTable(s, labels, system)).join('\n');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

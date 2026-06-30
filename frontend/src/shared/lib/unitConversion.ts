@@ -33,6 +33,18 @@ const METRIC_TO_IMPERIAL: Record<string, ConversionEntry> = {
   mm: { factor: 0.0393701, unit: 'in', display: 'in' },
   t: { factor: 1.10231, unit: 'ton', display: 'ton' },
   lm: { factor: 3.28084, unit: 'lft', display: 'l.ft' },
+  // Extended BoQ area / land / liquid coverage. Small areas relabel to
+  // square inches, decimetre-squared to square feet, hectares to acres and
+  // litres to US gallons. Superscript variants mirror the m2/m3 handling
+  // above so a "cm²" stored on the takeoff layer converts the same as "cm2".
+  mm2: { factor: 0.0015500031, unit: 'in2', display: 'sq in' },
+  cm2: { factor: 0.15500031, unit: 'in2', display: 'sq in' },
+  dm2: { factor: 0.107639104, unit: 'ft2', display: 'sq ft' },
+  'mm²': { factor: 0.0015500031, unit: 'in2', display: 'in²' },
+  'cm²': { factor: 0.15500031, unit: 'in2', display: 'in²' },
+  'dm²': { factor: 0.107639104, unit: 'ft2', display: 'ft²' },
+  ha: { factor: 2.4710538, unit: 'ac', display: 'ac' },
+  l: { factor: 0.264172052, unit: 'gal', display: 'gal' },
 };
 
 const IMPERIAL_TO_METRIC: Record<string, ConversionEntry> = {
@@ -46,6 +58,8 @@ const IMPERIAL_TO_METRIC: Record<string, ConversionEntry> = {
   lft: { factor: 0.3048, unit: 'lm', display: 'l.m' },
   'sq ft': { factor: 0.092903, unit: 'm2', display: 'm\u00B2' },
   'cu ft': { factor: 0.0283168, unit: 'm3', display: 'm\u00B3' },
+  ac: { factor: 0.404685642, unit: 'ha', display: 'ha' },
+  gal: { factor: 3.785411784, unit: 'l', display: 'l' },
 };
 
 /** Display-friendly labels for common metric units. */
@@ -63,6 +77,14 @@ const METRIC_DISPLAY: Record<string, string> = {
   mm: 'mm',
   t: 't',
   lm: 'l.m',
+  mm2: 'mm²',
+  cm2: 'cm²',
+  dm2: 'dm²',
+  'mm²': 'mm²',
+  'cm²': 'cm²',
+  'dm²': 'dm²',
+  ha: 'ha',
+  l: 'l',
 };
 
 /** Display-friendly labels for common imperial units. */
@@ -73,8 +95,11 @@ const IMPERIAL_DISPLAY: Record<string, string> = {
   lb: 'lb',
   mi: 'mi',
   in: 'in',
+  in2: 'sq in',
   ton: 'ton',
   lft: 'l.ft',
+  ac: 'ac',
+  gal: 'gal',
 };
 
 /**
@@ -210,4 +235,55 @@ export function fromDisplayQuantity(
     METRIC_TO_IMPERIAL[metricUnit.toLowerCase().trim()];
   if (!entry || !entry.factor) return value;
   return value / entry.factor;
+}
+
+/**
+ * The scalar a metric unit scales by in the target system: the number `f`
+ * such that `displayValue = metricValue * f`. Returns `1` for the metric
+ * system and for any unit with no imperial mapping, so callers can multiply
+ * or divide unconditionally. This is the single source of the reciprocal used
+ * to re-express a per-unit rate against a converted quantity.
+ */
+export function conversionFactorFor(
+  metricUnit: string,
+  system: 'metric' | 'imperial',
+): number {
+  if (system !== 'imperial') return 1;
+  const entry =
+    METRIC_TO_IMPERIAL[metricUnit.trim()] ??
+    METRIC_TO_IMPERIAL[metricUnit.toLowerCase().trim()];
+  return entry && entry.factor ? entry.factor : 1;
+}
+
+/**
+ * Re-express a per-unit rate so it pairs with a quantity shown in `system`.
+ *
+ * A rate is money per ONE metric unit (50 currency / m). When the paired
+ * quantity is displayed converted (2.31 m -> 7.58 ft) the rate has to be shown
+ * against the SAME displayed unit or the line stops reconciling: 7.58 ft is
+ * priced at 50 / 3.28084 = 15.24 / ft so that qty * rate still equals the
+ * (invariant) line total. The money total never changes - only the per-unit
+ * basis is restated. Units with no mapping return the rate unchanged.
+ */
+export function toDisplayRate(
+  rate: number,
+  metricUnit: string,
+  system: 'metric' | 'imperial',
+): number {
+  const factor = conversionFactorFor(metricUnit, system);
+  return factor ? rate / factor : rate;
+}
+
+/**
+ * Reverse of {@link toDisplayRate}: take a rate a user typed against a
+ * displayed (imperial) unit and return the metric-canonical rate to store
+ * (15.24 / ft -> 50 / m). Storage stays metric so re-import and the canonical
+ * exports are unaffected. Units with no mapping pass through unchanged.
+ */
+export function fromDisplayRate(
+  rate: number,
+  metricUnit: string,
+  system: 'metric' | 'imperial',
+): number {
+  return rate * conversionFactorFor(metricUnit, system);
 }

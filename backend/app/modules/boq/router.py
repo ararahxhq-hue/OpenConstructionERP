@@ -4058,7 +4058,9 @@ async def export_boq_pdf(
             "Measurement system for the PRINTED quantity column. ``metric`` "
             "(default) keeps canonical units; ``imperial`` converts each "
             "position's physical quantity + unit label (m -> ft, m² -> ft² "
-            "...). Money (unit rate, totals) is never converted. This is a "
+            "...) and restates the paired per-unit rate reciprocally (50 / m "
+            "-> 15.24 / ft) so a converted line still reconciles. Line and "
+            "project totals are never converted or recomputed. This is a "
             "human-facing report option only; the CSV / Excel / GAEB exports "
             "stay canonical metric and ignore this parameter."
         ),
@@ -4075,8 +4077,10 @@ async def export_boq_pdf(
     to avoid memory issues and connection resets on Windows.
 
     Passing ``?measurement_system=imperial`` converts the printed quantity
-    column to imperial (GitHub #270); monetary columns are always left in the
-    project currency, and the data-interchange exports are unaffected.
+    column to imperial (GitHub #270) and restates each line's per-unit rate
+    reciprocally so a converted line reconciles; line and project totals are
+    left invariant in the project currency, and the data-interchange exports
+    are unaffected.
     """
     from app.modules.boq.pdf_export import (
         LARGE_BOQ_THRESHOLD,

@@ -70,6 +70,7 @@ import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 import { useDwgUploadStore } from '@/stores/useDwgUploadStore';
 import { apiGet } from '@/shared/lib/api';
 import { boqApi, normalizePositions, type Position } from '@/features/boq/api';
@@ -649,6 +650,11 @@ export function DwgTakeoffPage() {
   // boundary). Storage stays metric-canonical; the export helper converts the
   // headers + values to imperial when this preference is "imperial".
   const measurementSystem = usePreferencesStore((s) => s.measurementSystem);
+  // Measurement-system seam for the read-only summary surfaces + the
+  // CSV/PDF summary exports. Every quantity these render/write is metric-
+  // canonical; ``q.convert``/``q.unitFor`` relabel (and, for imperial, scale)
+  // them at the display boundary. Storage / BOQ-link values are never touched.
+  const q = useDisplayQuantity();
   const navigate = useNavigate();
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
   const setActiveProject = useProjectContextStore((s) => s.setActiveProject);
@@ -2176,24 +2182,30 @@ export function DwgTakeoffPage() {
     [filteredEntities, effectiveScale],
   );
 
-  /** CSV export of the summary (entity-type breakdown + totals). */
+  /** CSV export of the summary (entity-type breakdown + totals).
+   *  Human-facing download (not re-imported): the totals, the per-layer
+   *  area/length values and the unit-bearing column headers are restated in
+   *  the user's measurement system so the sheet is internally consistent.
+   *  Storage stays metric-canonical. */
   const handleExportSummaryCsv = useCallback(() => {
+    const areaUnit = q.unitFor('m²');
+    const lengthUnit = q.unitFor('m');
     const lines: string[] = [
       '# DWG Summary Measurements',
       `# Entities: ${filteredEntities.length}`,
-      `# Total area (m2): ${summaryAggregate.area.toFixed(3)}`,
-      `# Total perimeter (m): ${summaryAggregate.perimeter.toFixed(3)}`,
-      `# Total length (m): ${summaryAggregate.length.toFixed(3)}`,
+      `# Total area (${areaUnit}): ${q.convert(summaryAggregate.area, 'm²').value.toFixed(3)}`,
+      `# Total perimeter (${lengthUnit}): ${q.convert(summaryAggregate.perimeter, 'm').value.toFixed(3)}`,
+      `# Total length (${lengthUnit}): ${q.convert(summaryAggregate.length, 'm').value.toFixed(3)}`,
       '',
-      'scope,key,count,area_m2,length_m',
+      `scope,key,count,area_${areaUnit},length_${lengthUnit}`,
     ];
     for (const row of summaryByLayer) {
       lines.push([
         'layer',
         JSON.stringify(row.layer),
         row.count,
-        row.area.toFixed(3),
-        row.length.toFixed(3),
+        q.convert(row.area, 'm²').value.toFixed(3),
+        q.convert(row.length, 'm').value.toFixed(3),
       ].join(','));
     }
     for (const row of summaryByType) {
@@ -2222,6 +2234,7 @@ export function DwgTakeoffPage() {
     summaryByLayer,
     summaryByType,
     selectedDrawingId,
+    q,
     addToast,
     t,
   ]);
@@ -2248,11 +2261,15 @@ export function DwgTakeoffPage() {
     y += 5;
     doc.text(`Entities: ${filteredEntities.length}`, margin, y);
     y += 5;
-    doc.text(`Σ area: ${summaryAggregate.area.toFixed(2)} m²`, margin, y);
+    // Totals restated in the user's measurement system (storage stays metric).
+    const sumArea = q.convert(summaryAggregate.area, 'm²');
+    const sumPerimeter = q.convert(summaryAggregate.perimeter, 'm');
+    const sumLength = q.convert(summaryAggregate.length, 'm');
+    doc.text(`Σ area: ${sumArea.value.toFixed(2)} ${sumArea.unit}`, margin, y);
     y += 5;
-    doc.text(`Σ perimeter: ${summaryAggregate.perimeter.toFixed(2)} m`, margin, y);
+    doc.text(`Σ perimeter: ${sumPerimeter.value.toFixed(2)} ${sumPerimeter.unit}`, margin, y);
     y += 5;
-    doc.text(`Σ length: ${summaryAggregate.length.toFixed(2)} m`, margin, y);
+    doc.text(`Σ length: ${sumLength.value.toFixed(2)} ${sumLength.unit}`, margin, y);
     y += 8;
 
     doc.setFont('helvetica', 'bold');
@@ -2265,9 +2282,11 @@ export function DwgTakeoffPage() {
         doc.addPage();
         y = margin;
       }
+      const rowArea = q.convert(row.area, 'm²');
+      const rowLength = q.convert(row.length, 'm');
       doc.text(
         `${row.layer.slice(0, 40).padEnd(42)} × ${String(row.count).padStart(4)}  ` +
-          `area ${row.area.toFixed(2)} m²  length ${row.length.toFixed(2)} m`,
+          `area ${rowArea.value.toFixed(2)} ${rowArea.unit}  length ${rowLength.value.toFixed(2)} ${rowLength.unit}`,
         margin,
         y,
       );
@@ -2303,6 +2322,7 @@ export function DwgTakeoffPage() {
     summaryByType,
     drawings,
     selectedDrawingId,
+    q,
     addToast,
     t,
   ]);
@@ -4063,10 +4083,11 @@ export function DwgTakeoffPage() {
                       className="font-semibold text-content-primary tabular-nums"
                       data-testid="dwg-group-area"
                     >
-                      {selectionAggregate.area > 0 ? selectionAggregate.area.toFixed(2) : '—'}
+                      {selectionAggregate.area > 0
+                        ? q.convert(selectionAggregate.area, 'm²').value.toFixed(2) : '—'}
                     </div>
                     <div className="text-content-tertiary text-[9px] uppercase">
-                      {t('dwg_takeoff.area', 'Area')} m²
+                      {t('dwg_takeoff.area', 'Area')} {q.unitFor('m²')}
                     </div>
                   </div>
                   <div>
@@ -4075,10 +4096,10 @@ export function DwgTakeoffPage() {
                       data-testid="dwg-group-perimeter"
                     >
                       {selectionAggregate.perimeter > 0
-                        ? selectionAggregate.perimeter.toFixed(2) : '—'}
+                        ? q.convert(selectionAggregate.perimeter, 'm').value.toFixed(2) : '—'}
                     </div>
                     <div className="text-content-tertiary text-[9px] uppercase">
-                      {t('dwg_takeoff.perimeter', 'Perimeter')} m
+                      {t('dwg_takeoff.perimeter', 'Perimeter')} {q.unitFor('m')}
                     </div>
                   </div>
                   <div>
@@ -4087,10 +4108,10 @@ export function DwgTakeoffPage() {
                       data-testid="dwg-group-length"
                     >
                       {selectionAggregate.length > 0
-                        ? selectionAggregate.length.toFixed(2) : '—'}
+                        ? q.convert(selectionAggregate.length, 'm').value.toFixed(2) : '—'}
                     </div>
                     <div className="text-content-tertiary text-[9px] uppercase">
-                      {t('dwg_takeoff.length', 'Length')} m
+                      {t('dwg_takeoff.length', 'Length')} {q.unitFor('m')}
                     </div>
                   </div>
                 </div>
@@ -4210,12 +4231,12 @@ export function DwgTakeoffPage() {
                       <div className="text-content-tertiary text-[9px] uppercase">{t('dwg_takeoff.entities', 'Entities')}</div>
                     </div>
                     <div>
-                      <div className="font-semibold text-content-primary tabular-nums">{areaSum > 0 ? areaSum.toFixed(1) : '—'}</div>
-                      <div className="text-content-tertiary text-[9px] uppercase">m²</div>
+                      <div className="font-semibold text-content-primary tabular-nums">{areaSum > 0 ? q.convert(areaSum, 'm²').value.toFixed(1) : '—'}</div>
+                      <div className="text-content-tertiary text-[9px] uppercase">{q.unitFor('m²')}</div>
                     </div>
                     <div>
-                      <div className="font-semibold text-content-primary tabular-nums">{distSum > 0 ? distSum.toFixed(1) : '—'}</div>
-                      <div className="text-content-tertiary text-[9px] uppercase">m</div>
+                      <div className="font-semibold text-content-primary tabular-nums">{distSum > 0 ? q.convert(distSum, 'm').value.toFixed(1) : '—'}</div>
+                      <div className="text-content-tertiary text-[9px] uppercase">{q.unitFor('m')}</div>
                     </div>
                   </div>
                 </div>
@@ -4313,11 +4334,18 @@ export function DwgTakeoffPage() {
                         <div className="flex-1 truncate">
                           <span className="font-medium capitalize">{ann.type.replace('_', ' ')}</span>
                           {ann.text && <span className="ml-1 text-muted-foreground">- {ann.text}</span>}
-                          {ann.measurement_value != null && (
-                            <span className="ml-1 text-muted-foreground">
-                              ({ann.measurement_value.toFixed(2)} {ann.measurement_unit ?? 'm'})
-                            </span>
-                          )}
+                          {ann.measurement_value != null && (() => {
+                            // Restate the stored metric-canonical value + unit
+                            // in the user's measurement system (metric is a
+                            // pass-through; imperial scales + relabels). Storage
+                            // is untouched - this is display only.
+                            const dq = q.convert(ann.measurement_value, ann.measurement_unit ?? 'm');
+                            return (
+                              <span className="ml-1 text-muted-foreground">
+                                ({dq.value.toFixed(2)} {dq.unit})
+                              </span>
+                            );
+                          })()}
                         </div>
                         <button
                           onClick={async (e) => {
@@ -5613,6 +5641,10 @@ function SummaryTab({
   onExportPdf,
 }: SummaryTabProps) {
   const { t } = useTranslation();
+  // Measurement-system seam for the KPI cards + auto-quantify totals/rows.
+  // Every value below is metric-canonical (m / m² / count); ``q`` relabels
+  // and, for imperial, scales them at the display boundary.
+  const q = useDisplayQuantity();
 
   // Per-layer override of the auto-selected headline measure. The user can,
   // e.g., switch a layer from "area" to "length" when they want the running
@@ -5722,20 +5754,20 @@ function SummaryTab({
         />
         <SummaryKpiCard
           label={t('dwg_takeoff.kpi_total_area', { defaultValue: 'Σ Area' })}
-          value={aggregate.area > 0 ? aggregate.area.toFixed(2) : '—'}
-          unit={aggregate.area > 0 ? 'm²' : undefined}
+          value={aggregate.area > 0 ? q.convert(aggregate.area, 'm²').value.toFixed(2) : '—'}
+          unit={aggregate.area > 0 ? q.unitFor('m²') : undefined}
           accent="emerald"
         />
         <SummaryKpiCard
           label={t('dwg_takeoff.kpi_total_perimeter', { defaultValue: 'Σ Perimeter' })}
-          value={aggregate.perimeter > 0 ? aggregate.perimeter.toFixed(2) : '—'}
-          unit={aggregate.perimeter > 0 ? 'm' : undefined}
+          value={aggregate.perimeter > 0 ? q.convert(aggregate.perimeter, 'm').value.toFixed(2) : '—'}
+          unit={aggregate.perimeter > 0 ? q.unitFor('m') : undefined}
           accent="amber"
         />
         <SummaryKpiCard
           label={t('dwg_takeoff.kpi_total_length', { defaultValue: 'Σ Length' })}
-          value={aggregate.length > 0 ? aggregate.length.toFixed(2) : '—'}
-          unit={aggregate.length > 0 ? 'm' : undefined}
+          value={aggregate.length > 0 ? q.convert(aggregate.length, 'm').value.toFixed(2) : '—'}
+          unit={aggregate.length > 0 ? q.unitFor('m') : undefined}
           accent="violet"
         />
       </div>
@@ -5784,9 +5816,9 @@ function SummaryTab({
             </div>
             <div className="text-[11px] font-bold tabular-nums text-emerald-300">
               {quantifyTotals.area > 0
-                ? quantifyTotals.area.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                ? q.convert(quantifyTotals.area, 'm²').value.toLocaleString(undefined, { maximumFractionDigits: 2 })
                 : '-'}
-              <span className="text-[9px] font-medium opacity-70"> m²</span>
+              <span className="text-[9px] font-medium opacity-70"> {q.unitFor('m²')}</span>
             </div>
           </div>
           <div className="rounded-md bg-violet-500/10 border border-violet-500/20 px-2 py-1.5">
@@ -5795,9 +5827,9 @@ function SummaryTab({
             </div>
             <div className="text-[11px] font-bold tabular-nums text-violet-300">
               {quantifyTotals.length > 0
-                ? quantifyTotals.length.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                ? q.convert(quantifyTotals.length, 'm').value.toLocaleString(undefined, { maximumFractionDigits: 2 })
                 : '-'}
-              <span className="text-[9px] font-medium opacity-70"> m</span>
+              <span className="text-[9px] font-medium opacity-70"> {q.unitFor('m')}</span>
             </div>
           </div>
           <div className="rounded-md bg-sky-500/10 border border-sky-500/20 px-2 py-1.5">
@@ -5817,6 +5849,10 @@ function SummaryTab({
             const measure = layerMeasure[row.layer] ?? row.primary;
             const quantity = quantityFor(row, measure);
             const unit = unitForMeasure(measure);
+            // Display pair in the user's measurement system. ``count``/``nr``
+            // has no imperial mapping so it passes through. The share bar uses
+            // the metric ``quantity`` (ratio is factor-invariant either way).
+            const display = q.convert(quantity, unit);
             const max = maxByMeasure[measure] || 0;
             const share = max > 0 ? (quantity / max) * 100 : 0;
             const barColor =
@@ -5854,10 +5890,10 @@ function SummaryTab({
                     className="text-[13px] font-bold tabular-nums text-content-primary"
                     data-testid="dwg-quantify-value"
                   >
-                    {quantity.toLocaleString(undefined, {
+                    {display.value.toLocaleString(undefined, {
                       maximumFractionDigits: measure === 'count' ? 0 : 2,
                     })}
-                    <span className="text-[10px] font-medium text-content-tertiary"> {unit}</span>
+                    <span className="text-[10px] font-medium text-content-tertiary"> {display.unit}</span>
                   </span>
                   {/* Measure toggle - only the measures this layer actually has. */}
                   {row.available.length > 1 && (

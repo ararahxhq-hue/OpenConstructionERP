@@ -21,7 +21,13 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.unit_conversion import ConversionResult, convert, display_unit_for
+from app.core.unit_conversion import (
+    ConversionResult,
+    conversion_factor,
+    convert,
+    display_rate,
+    display_unit_for,
+)
 
 # ── Imperial conversion factors (mirror unitConversion.ts) ────────────────
 
@@ -142,3 +148,78 @@ def test_case_insensitive_unit_lookup() -> None:
     """Unit lookup tolerates surrounding whitespace and upper-case spelling."""
     assert convert(Decimal("1"), "  M2 ", "imperial").display_unit == "sq ft"
     assert display_unit_for("KG", "imperial") == "lb"
+
+
+# ── conversion_factor (the reciprocal source) ─────────────────────────────
+
+
+def test_conversion_factor_metric_is_one() -> None:
+    """Metric (and unmapped) units have a factor of exactly 1."""
+    assert conversion_factor("m", "metric") == Decimal(1)
+    assert conversion_factor("m²", "metric") == Decimal(1)
+    assert conversion_factor("pcs", "imperial") == Decimal(1)
+    assert conversion_factor(None, "imperial") == Decimal(1)
+
+
+def test_conversion_factor_imperial_matches_table() -> None:
+    """The factor equals the metric -> imperial scale for mapped units."""
+    assert conversion_factor("m", "imperial") == Decimal("3.2808399")
+    assert conversion_factor("m²", "imperial") == Decimal("10.7639")
+
+
+# ── display_rate (reciprocal per-unit rate) ───────────────────────────────
+
+
+def test_display_rate_metric_is_unchanged() -> None:
+    """A rate is never restated in metric mode."""
+    assert display_rate(Decimal("50"), "m", "metric") == Decimal("50")
+
+
+def test_display_rate_restates_against_displayed_unit() -> None:
+    """50 / m is restated as ~15.24 / ft so a converted line reconciles."""
+    rate = display_rate(Decimal("50"), "m", "imperial")
+    assert rate == Decimal("50") / Decimal("3.2808399")
+    assert round(rate, 2) == Decimal("15.24")
+
+
+def test_display_rate_unmapped_unit_unchanged() -> None:
+    """A rate against a countable / unmapped unit passes through."""
+    assert display_rate(Decimal("50"), "pcs", "imperial") == Decimal("50")
+
+
+def test_priced_line_reconciles_in_imperial() -> None:
+    """The headline #285 fix: converted qty * restated rate == invariant total.
+
+    2.31 m @ 50 / m = 115.50. Shown as ~7.58 ft, the rate MUST restate to
+    ~15.24 / ft so the printed line still multiplies out to 115.50 - converting
+    the quantity while leaving the rate raw was the bug (7.58 * 50 = 379).
+    """
+    qty_metric = Decimal("2.31")
+    rate_metric = Decimal("50")
+    total = qty_metric * rate_metric  # 115.50, canonical / invariant
+
+    qty_shown = convert(qty_metric, "m", "imperial").value
+    rate_shown = display_rate(rate_metric, "m", "imperial")
+
+    assert (qty_shown * rate_shown) == total
+
+
+# ── Extended unit coverage (#285) ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("metric_unit", "factor", "display_unit"),
+    [
+        ("mm2", "0.0015500031", "sq in"),
+        ("cm2", "0.15500031", "sq in"),
+        ("dm2", "0.107639104", "sq ft"),
+        ("cm²", "0.15500031", "in²"),
+        ("ha", "2.4710538", "ac"),
+        ("l", "0.264172052", "gal"),
+    ],
+)
+def test_extended_units_match_frontend(metric_unit: str, factor: str, display_unit: str) -> None:
+    """The added area / land / liquid units convert with the documented factor."""
+    result = convert(Decimal("10"), metric_unit, "imperial")
+    assert result.value == Decimal("10") * Decimal(factor)
+    assert result.display_unit == display_unit

@@ -73,4 +73,43 @@ describe('printReport helpers', () => {
     expect(html).toContain('65'); // total area appears in the TOTAL row
     expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
   });
+
+  it('defaults to metric: canonical values + metric unit headers (#285)', () => {
+    const summary = summariseBimQuantities(els, 'element_type');
+    const html = buildReportHtml({
+      title: 'Q',
+      scopeLabel: 'Whole model',
+      generatedOn: 'now',
+      sections: [{ heading: 'By element type', groupLabel: 'Element type', summary }],
+    });
+    // Metric labels are normalised to their display form (m2 -> m²).
+    expect(html).toContain(`Area (m${'²'})`);
+    expect(html).toContain(`Volume (m${'³'})`);
+    expect(html).toContain('65'); // area total passes through unconverted
+    expect(html).not.toContain('sq ft');
+  });
+
+  it('restates quantity columns + headers for imperial (#285)', () => {
+    const summary = summariseBimQuantities(els, 'element_type');
+    const html = buildReportHtml({
+      title: 'Q',
+      scopeLabel: 'Whole model',
+      generatedOn: 'now',
+      system: 'imperial',
+      sections: [{ heading: 'By element type', groupLabel: 'Element type', summary }],
+    });
+    // Headers relabel to the imperial units.
+    expect(html).toContain('Area (sq ft)');
+    expect(html).toContain('Volume (cu ft)');
+    expect(html).toContain('Weight (lb)');
+    // 65 m2 -> 65 * 10.7639 = 699.6535 -> "699.654" in the TOTAL row.
+    expect(html).toContain('699.654');
+    // 8 m length -> 8 * 3.2808399 = 26.2467... -> "26.247".
+    expect(html).toContain('26.247');
+    // The canonical metric area total must NOT leak into the imperial doc as
+    // a standalone cell, and the metric header must be gone.
+    expect(html).not.toContain(`Area (m${'²'})`);
+    // Count is not a quantity column - it is invariant across systems.
+    expect(html).toContain('<td class="num">5</td>');
+  });
 });

@@ -6,7 +6,7 @@ import {
   type Position,
 } from './api';
 import { resourceAwareTotalInBase } from './boqHelpers';
-import { toDisplayQuantity } from '@/shared/lib/unitConversion';
+import { toDisplayQuantity, toDisplayRate } from '@/shared/lib/unitConversion';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -407,7 +407,10 @@ function renderBOQTables(
         p.description,
         pDq.unit,
         formatNumber(pDq.value, locale),
-        formatCurrency(p.unit_rate, options.currency, locale),
+        // Issue #270 - when the quantity is shown converted, the per-unit rate
+        // must be restated against the SAME displayed unit so the line still
+        // reconciles (qty * rate == Total). The money Total is invariant.
+        formatCurrency(toDisplayRate(p.unit_rate, p.unit, measurementSystem), options.currency, locale),
         // Issue #150 — Total converted to base currency (mirrors grid).
         formatCurrency(positionTotalForPdf(p, fxOpts), options.currency, locale),
       ]);
@@ -424,7 +427,8 @@ function renderBOQTables(
           `  \u2514 ${r.name}`,
           rDq.unit,
           formatNumber(rDq.value, locale),
-          formatCurrency(r.unit_rate, options.currency, locale),
+          // Reciprocal rate so the resource sub-row reconciles too (see above).
+          formatCurrency(toDisplayRate(r.unit_rate, r.unit, measurementSystem), options.currency, locale),
           formatCurrency(rTotal, options.currency, locale),
         ]);
       }

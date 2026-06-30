@@ -14,10 +14,16 @@ never call this module.
 What is and is not converted:
 
 * Physical quantities and their unit labels ARE converted when the caller
-  asks for ``system="imperial"``.
-* Money (unit rates, totals, markups, VAT) is NEVER touched - it is a
-  per-unit price in the project currency, not a measurement, and converting
-  it would silently corrupt the figures.
+  asks for ``system="imperial"`` (see :func:`convert`).
+* Line / project totals, markups and VAT are NEVER recomputed - a total is an
+  amount in the project currency, invariant to the unit a quantity is shown in.
+* A per-unit RATE is the one nuance: it is money per one metric unit, so when
+  the paired quantity is displayed converted (2.31 m -> 7.58 ft) the rate must
+  be restated against the same displayed unit (50 / m -> 15.24 / ft) or the
+  printed line no longer reconciles. :func:`display_rate` does exactly that
+  reciprocal restatement; it changes only the per-unit basis, and the total it
+  pairs with is unchanged. Callers that print a rate next to a converted
+  quantity MUST use it.
 
 Units with no imperial mapping (``pcs``, ``%``, ``lump``, ``hr`` ...) pass
 through unchanged in both systems, which is the correct behaviour for
@@ -40,6 +46,8 @@ from typing import Final, NamedTuple
 __all__ = [
     "ConversionResult",
     "convert",
+    "conversion_factor",
+    "display_rate",
     "display_unit_for",
 ]
 
@@ -71,6 +79,18 @@ _METRIC_TO_IMPERIAL: Final[dict[str, _Entry]] = {
     "mm": _Entry("0.0393701", "in", "in"),
     "t": _Entry("1.10231", "ton", "ton"),
     "lm": _Entry("3.28084", "lft", "l.ft"),
+    # Extended BoQ area / land / liquid coverage, mirroring the additions in
+    # unitConversion.ts. Small areas relabel to square inches, dm2 to square
+    # feet, hectares to acres, litres to US gallons. Superscript variants are
+    # mapped like the m2/m3 pair above.
+    "mm2": _Entry("0.0015500031", "in2", "sq in"),
+    "cm2": _Entry("0.15500031", "in2", "sq in"),
+    "dm2": _Entry("0.107639104", "ft2", "sq ft"),
+    "mm²": _Entry("0.0015500031", "in2", "in²"),
+    "cm²": _Entry("0.15500031", "in2", "in²"),
+    "dm²": _Entry("0.107639104", "ft2", "ft²"),
+    "ha": _Entry("2.4710538", "ac", "ac"),
+    "l": _Entry("0.264172052", "gal", "gal"),
 }
 
 
@@ -91,6 +111,14 @@ _METRIC_DISPLAY: Final[dict[str, str]] = {
     "mm": "mm",
     "t": "t",
     "lm": "l.m",
+    "mm2": "mm²",
+    "cm2": "cm²",
+    "dm2": "dm²",
+    "mm²": "mm²",
+    "cm²": "cm²",
+    "dm²": "dm²",
+    "ha": "ha",
+    "l": "l",
 }
 
 
@@ -170,3 +198,44 @@ def convert(
     # Metric (or unmapped under imperial): value passes through unchanged,
     # only the label is tidied.
     return ConversionResult(amount, display_unit_for(key, system))
+
+
+def conversion_factor(metric_unit: str | None, system: str = "metric") -> Decimal:
+    """Return the scalar a metric unit scales by in ``system``.
+
+    The Decimal ``f`` such that ``display_value = metric_value * f``. Returns
+    ``Decimal(1)`` for metric and for any unit with no imperial mapping, so
+    callers can multiply / divide unconditionally. This is the single source of
+    the reciprocal used to restate a per-unit rate against a converted quantity.
+    """
+    if system == "imperial":
+        key = _normalise_key(metric_unit)
+        entry = _METRIC_TO_IMPERIAL.get(key) or _METRIC_TO_IMPERIAL.get(key.lower())
+        if entry is not None:
+            return Decimal(entry.factor)
+    return Decimal(1)
+
+
+def display_rate(
+    rate: Decimal | float | int | str,
+    metric_unit: str | None,
+    system: str = "metric",
+) -> Decimal:
+    """Restate a per-unit rate so it pairs with a quantity shown in ``system``.
+
+    A rate is money per ONE metric unit (50 / m). When the paired quantity is
+    displayed converted (2.31 m -> 7.58 ft) the rate must be shown against the
+    SAME displayed unit or the printed line stops reconciling: 7.58 ft is
+    priced at ``50 / 3.2808399 = 15.24 / ft`` so ``qty * rate`` still equals the
+    (invariant) line total. The line total is never recomputed from this value -
+    it stays canonical; only the displayed per-unit basis is restated. Units
+    with no imperial mapping return the rate unchanged.
+
+    This is the one place the module deliberately touches a money figure, and
+    it changes only the per-unit *basis*, never a total.
+    """
+    factor = conversion_factor(metric_unit, system)
+    amount = _to_decimal(rate)
+    if factor == 0:
+        return amount
+    return amount / factor

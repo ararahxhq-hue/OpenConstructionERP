@@ -692,6 +692,11 @@ function SaveToBOQDialog({ open, onClose, onSave, saving, enrichedMatches = 0, e
 
 function ResultsTable({ result, selectedCurrency, enrichResult }: { result: EstimateJobResponse; selectedCurrency?: string; enrichResult?: EnrichResult | null }) {
   const { t } = useTranslation();
+  // Issue #270: show the physical quantity + unit in the user's measurement
+  // system. Scoped to qty + unit here (the rate/total columns carry the
+  // AI-vs-matched-rate comparison, including foreign-currency matches, and the
+  // canonical CSV export handles the reciprocal-rate conversion).
+  const displayQty = useDisplayQuantity();
   // Resolved estimate currency - explicit selection wins, else the currency
   // the AI actually priced in. Never fall back to a hard-coded 'EUR': when it
   // is unknown we render plain numbers (no misleading ISO symbol).
@@ -786,20 +791,31 @@ function ResultsTable({ result, selectedCurrency, enrichResult }: { result: Esti
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-content-secondary">{item.unit}</td>
+                  <td className="px-4 py-3 text-content-secondary">
+                    {item.unit ? displayQty.unitFor(item.unit) : item.unit}
+                  </td>
                   <td className="px-4 py-3 text-right font-mono text-content-primary">
-                    {formatNumber(item.quantity)}
+                    {formatNumber(displayQty.convert(item.quantity, item.unit || '').value)}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-content-secondary">
                     {bestMatch ? (
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="line-through text-content-quaternary text-xs">
-                          {formatNumber(item.unit_rate, currencyArg)}
+                          {/* Issue #270: the AI rate is money / metric unit in the
+                              estimate currency, so restate it reciprocally against
+                              the converted qty (qty * rate == total). */}
+                          {formatNumber(displayQty.convertRate(item.unit_rate, item.unit || ''), currencyArg)}
                         </span>
                         <span className="text-emerald-600 font-semibold" title={`CWICR: ${bestMatch.code} (${Math.round(bestMatch.score * 100)}% match)`}>
                           {/* Show the matched rate in ITS OWN currency so we never
-                              imply a foreign rate is in the estimate currency. */}
-                          {formatNumber(bestMatch.rate, (bestMatch.currency || currency) || undefined)}
+                              imply a foreign rate is in the estimate currency.
+                              Issue #270: only when it is in the estimate currency
+                              (folded into the total) is it the line's effective
+                              per-metric-unit rate, so reciprocate it then; a
+                              foreign-currency comparison rate is shown verbatim. */}
+                          {matchAppliesToTotal(bestMatch)
+                            ? formatNumber(displayQty.convertRate(bestMatch.rate, item.unit || ''), currencyArg)
+                            : formatNumber(bestMatch.rate, (bestMatch.currency || currency) || undefined)}
                         </span>
                         <span className="text-[10px] text-emerald-600/70 font-normal">
                           {bestMatch.code}
@@ -820,7 +836,8 @@ function ResultsTable({ result, selectedCurrency, enrichResult }: { result: Esti
                         )}
                       </div>
                     ) : (
-                      formatNumber(item.unit_rate, currencyArg)
+                      // Issue #270: reciprocal rate so qty * rate == total.
+                      formatNumber(displayQty.convertRate(item.unit_rate, item.unit || ''), currencyArg)
                     )}
                   </td>
                   <td className="px-4 py-3 text-right font-mono font-medium text-content-primary">

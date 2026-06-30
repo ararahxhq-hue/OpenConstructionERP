@@ -2187,17 +2187,25 @@ function RecordBidModal({
 
   // One editable unit-price per scope line. The submission total is derived
   // from the priced lines so leveling reads consistent figures (audit #1).
+  //
+  // Issue #270: the field holds the price AS TYPED in the displayed system
+  // (e.g. per ft2 for an imperial user against a converted ft2 qty), so the
+  // unit-price and the quantity column reconcile. Storage stays metric -
+  // every consumer (computedTotal, the line total, the submitted payload)
+  // converts the typed value back to the canonical per-metric-unit rate via
+  // q.toMetricRate before it is multiplied by the canonical li.quantity.
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
   const computedTotal = useMemo(() => {
     return lineItems.reduce((acc, li) => {
-      const unitPrice = Number(prices[li.id] ?? '');
-      if (!Number.isFinite(unitPrice) || unitPrice <= 0) return acc;
+      const typed = Number(prices[li.id] ?? '');
+      if (!Number.isFinite(typed) || typed <= 0) return acc;
+      const unitPrice = q.toMetricRate(typed, li.unit || '');
       return acc + unitPrice * (Number(li.quantity) || 0);
     }, 0);
-  }, [lineItems, prices]);
+  }, [lineItems, prices, q]);
 
   const submit = async () => {
     if (!invitation.bidder_ref_id) {
@@ -2219,11 +2227,13 @@ function RecordBidModal({
         currency: currency || '',
         notes_to_owner: notes.trim(),
       });
-      // 2) Bulk-create one priced line per scope line that has a price.
+      // 2) Bulk-create one priced line per scope line that has a price. The
+      // typed price is in the displayed system; convert back to the canonical
+      // per-metric-unit rate so storage and leveling stay metric (#270).
       const items = lineItems
         .map((li) => ({
           line_item_id: li.id,
-          unit_price: Number(prices[li.id] ?? '') || 0,
+          unit_price: q.toMetricRate(Number(prices[li.id] ?? '') || 0, li.unit || ''),
           quantity_priced: Number(li.quantity) || 0,
           inclusion_status: 'included',
         }))
@@ -2311,11 +2321,15 @@ function RecordBidModal({
               </thead>
               <tbody>
                 {lineItems.map((li) => {
-                  const unitPrice = Number(prices[li.id] ?? '');
-                  const lineTotal =
-                    Number.isFinite(unitPrice) && unitPrice > 0
-                      ? unitPrice * (Number(li.quantity) || 0)
+                  const typedPrice = Number(prices[li.id] ?? '');
+                  // The line total is invariant money: convert the typed
+                  // (displayed-system) price back to the canonical per-metric-
+                  // unit rate, then multiply by the canonical quantity (#270).
+                  const unitPrice =
+                    Number.isFinite(typedPrice) && typedPrice > 0
+                      ? q.toMetricRate(typedPrice, li.unit || '')
                       : 0;
+                  const lineTotal = unitPrice > 0 ? unitPrice * (Number(li.quantity) || 0) : 0;
                   return (
                     <tr key={li.id} className="border-t border-border-light">
                       <td className="px-3 py-1.5">

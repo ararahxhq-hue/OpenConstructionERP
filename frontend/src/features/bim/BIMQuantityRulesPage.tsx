@@ -1321,6 +1321,12 @@ interface PreviewModalProps {
 
 function PreviewModal({ open, onClose, result, loading }: PreviewModalProps) {
   const { t } = useTranslation();
+  // Display-only metric->imperial conversion for the dry-run sample (#285).
+  // Each row carries its own declared unit, so quantity + unit are converted
+  // per row; unmapped units (pcs / custom property units) pass through
+  // unchanged. Nothing here is persisted - the canonical apply ran server-side
+  // on the metric quantities; this only restates what the user sees.
+  const q = useDisplayQuantity();
   if (!open) return null;
   const sample = result?.results.slice(0, 20) ?? [];
   return (
@@ -1426,12 +1432,12 @@ function PreviewModal({ open, onClose, result, loading }: PreviewModalProps) {
                           {item.quantity_source}
                         </td>
                         <td className="px-2 py-1 text-right tabular-nums">
-                          {item.raw_quantity.toFixed(3)}
+                          {q.convert(item.raw_quantity, item.unit).value.toFixed(3)}
                         </td>
                         <td className="px-2 py-1 text-right tabular-nums">
-                          {item.adjusted_quantity.toFixed(3)}
+                          {q.convert(item.adjusted_quantity, item.unit).value.toFixed(3)}
                         </td>
-                        <td className="px-2 py-1">{item.unit}</td>
+                        <td className="px-2 py-1">{q.unitFor(item.unit)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3137,6 +3143,10 @@ export function BIMQuantityRulesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  // Display-only metric->imperial unit relabel for the saved-rules table (#285).
+  // The rule's `unit` is stored metric-canonical; the apply still runs on the
+  // canonical value server-side. Unmapped / free units pass through unchanged.
+  const q = useDisplayQuantity();
 
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
   const activeProjectName = useProjectContextStore((s) => s.activeProjectName);
@@ -3886,7 +3896,7 @@ export function BIMQuantityRulesPage() {
                           )}
                       </td>
                       <td className="px-4 py-2 font-mono text-[11px]">{rule.quantity_source}</td>
-                      <td className="px-4 py-2">{rule.unit}</td>
+                      <td className="px-4 py-2">{q.unitFor(rule.unit)}</td>
                       <td className="px-4 py-2">
                         {rule.boq_target?.position_id ? (
                           <Badge variant="neutral">

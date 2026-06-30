@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.4.0] - 2026-06-30
+
+An end-to-end Imperial release. The measurement-system preference now follows the whole estimating workflow, including the editable Bill of Quantities grid, and a display rule that earlier releases applied unevenly is now applied everywhere: when a quantity is shown converted to Imperial, the paired per-unit rate is restated against the same unit so the line reconciles. Line and project totals stay invariant, and the machine-readable exports stay canonical metric so no stored figure is ever changed by a display unit.
+
+### Added
+
+- The editable Bill of Quantities grid is now Imperial-aware. The quantity, unit and unit rate, and the per-resource quantity and rate, display in the selected measurement system, while editing a converted cell converts the value back to metric before it is stored. Storage and the Excel, CSV and GAEB exports stay canonical metric.
+- The unit map now also covers square millimetres, square centimetres, square decimetres, hectares and litres, alongside the existing metre, square and cubic metre, kilogram, millimetre, centimetre and tonne coverage. The frontend and backend conversion tables are kept identical.
+
+### Changed
+
+- Whenever a quantity is displayed in Imperial next to a per-unit rate, the rate is now restated reciprocally (for example 50 per metre is shown as 15.24 per foot) so the displayed line reconciles. Line and project totals are invariant and are never recomputed from converted figures.
+- The Imperial preference is now honoured on the surfaces the previous release did not reach: the DWG takeoff summary cards, selection chips, quantify totals, annotation list and built-in summary and CSV; the BIM quantity-rule apply and sample tables, saved-rule labels and filter report (the on-screen modal and its printable); and the bid-management scope and pricing, the assembly-library component preview, the match-elements apply preview, the tendering leveling reference and the AI quick-estimate result.
+
+### Fixed
+
+- The priced Bill of Quantities PDF now reconciles in Imperial. Previously the quantity was converted to feet while the rate was printed unchanged, so quantity times rate no longer matched the line total; the rate is now restated against the displayed unit on both the server-rendered and client-rendered PDF.
+
 ## [9.3.0] - 2026-06-29
 
 A measurement-system and portal-polish release. The Imperial preference now follows you out of the Takeoff canvas into every read-only display and printed report, while machine-readable exports stay canonical so no stored figure is ever changed by a display unit. A run of community-reported rough edges across Project Files, Finance, GeoHub and the project list are smoothed out.

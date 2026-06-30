@@ -15,6 +15,9 @@ import {
   toDisplayQuantity,
   displayUnitFor,
   fromDisplayQuantity,
+  conversionFactorFor,
+  toDisplayRate,
+  fromDisplayRate,
 } from './unitConversion';
 
 describe('convertUnit - metric to imperial', () => {
@@ -190,5 +193,76 @@ describe('fromDisplayQuantity (editable-cell reverse)', () => {
 
   it('passes unmapped units through unchanged', () => {
     expect(fromDisplayQuantity(7, 'pcs', 'imperial')).toBe(7);
+  });
+});
+
+describe('conversionFactorFor', () => {
+  it('is 1 for metric regardless of unit', () => {
+    expect(conversionFactorFor('m', 'metric')).toBe(1);
+    expect(conversionFactorFor('m²', 'metric')).toBe(1);
+    expect(conversionFactorFor('pcs', 'metric')).toBe(1);
+  });
+
+  it('returns the metric->imperial scale for imperial', () => {
+    expect(conversionFactorFor('m', 'imperial')).toBeCloseTo(3.2808399, 6);
+    expect(conversionFactorFor('m²', 'imperial')).toBeCloseTo(10.7639, 4);
+  });
+
+  it('is 1 for unmapped units so callers can divide unconditionally', () => {
+    expect(conversionFactorFor('pcs', 'imperial')).toBe(1);
+    expect(conversionFactorFor('lsum', 'imperial')).toBe(1);
+  });
+});
+
+describe('toDisplayRate / fromDisplayRate (reciprocal rate)', () => {
+  it('is the identity for metric', () => {
+    expect(toDisplayRate(50, 'm', 'metric')).toBe(50);
+    expect(fromDisplayRate(50, 'm', 'metric')).toBe(50);
+  });
+
+  it('restates a per-metre rate against feet (50/m -> 15.24/ft)', () => {
+    expect(toDisplayRate(50, 'm', 'imperial')).toBeCloseTo(15.24, 2);
+  });
+
+  it('reverses a typed imperial rate back to metric storage', () => {
+    const shown = toDisplayRate(50, 'm', 'imperial');
+    expect(fromDisplayRate(shown, 'm', 'imperial')).toBeCloseTo(50, 6);
+  });
+
+  it('passes unmapped units through unchanged', () => {
+    expect(toDisplayRate(50, 'pcs', 'imperial')).toBe(50);
+    expect(fromDisplayRate(50, 'pcs', 'imperial')).toBe(50);
+  });
+
+  it('keeps the line total invariant: displayed qty * displayed rate == metric qty * metric rate', () => {
+    // A line: 2.31 m at 50 currency / m = 115.50 total (canonical).
+    const qtyMetric = 2.31;
+    const rateMetric = 50;
+    const totalMetric = qtyMetric * rateMetric;
+    const qtyShown = toDisplayQuantity(qtyMetric, 'm', 'imperial').value; // ~7.58 ft
+    const rateShown = toDisplayRate(rateMetric, 'm', 'imperial'); // ~15.24 / ft
+    // The reciprocal pair reconciles to the same (invariant) total, unlike a
+    // converted qty against a raw rate (7.58 * 50 = 379, the bug this fixes).
+    expect(qtyShown * rateShown).toBeCloseTo(totalMetric, 6);
+  });
+});
+
+describe('extended unit coverage (#285)', () => {
+  it('converts small areas to square inches', () => {
+    expect(toDisplayQuantity(1, 'cm2', 'imperial').unit).toBe('sq in');
+    expect(toDisplayQuantity(1, 'cm2', 'imperial').value).toBeCloseTo(0.15500031, 6);
+    expect(toDisplayQuantity(1, 'mm²', 'imperial').unit).toBe('in²');
+  });
+
+  it('converts hectares to acres and litres to gallons', () => {
+    expect(toDisplayQuantity(1, 'ha', 'imperial').unit).toBe('ac');
+    expect(toDisplayQuantity(1, 'ha', 'imperial').value).toBeCloseTo(2.4710538, 5);
+    expect(toDisplayQuantity(1, 'l', 'imperial').unit).toBe('gal');
+    expect(toDisplayQuantity(1, 'l', 'imperial').value).toBeCloseTo(0.264172052, 6);
+  });
+
+  it('round-trips an extended unit back to metric storage', () => {
+    const shown = toDisplayQuantity(3.5, 'ha', 'imperial');
+    expect(fromDisplayQuantity(shown.value, 'ha', 'imperial')).toBeCloseTo(3.5, 6);
   });
 });

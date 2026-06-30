@@ -48,6 +48,7 @@ from reportlab.platypus import (
 
 from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
 from app.core.unit_conversion import convert as convert_units
+from app.core.unit_conversion import display_rate
 
 # Register the bundled Unicode (DejaVu) faces with reportlab. Idempotent and
 # safe at import time because reportlab is imported at module level here.
@@ -535,10 +536,14 @@ def _build_boq_table(
     - Conditional page break before each major section (60mm threshold)
     - Grand total block wrapped in KeepTogether
 
-    ``measurement_system`` controls the physical quantity column only: when
+    ``measurement_system`` controls the physical quantity column: when
     ``"imperial"`` each ``pos.quantity`` is scaled and its unit relabelled
-    (m -> ft, m² -> ft² ...). Money columns (rate / total / subtotals /
-    markups / VAT) are NEVER converted - they are prices, not measurements.
+    (m -> ft, m² -> ft² ...). The paired per-unit RATE is then restated
+    reciprocally against the same displayed unit (50 / m -> 15.24 / ft) so a
+    converted line still reconciles (qty_shown * rate_shown == line total).
+    Line / project totals (total / subtotals / markups / VAT) are NEVER
+    converted or recomputed - they are invariant amounts in the project
+    currency, not measurements.
     """
     elements: list[Any] = []
 
@@ -555,10 +560,24 @@ def _build_boq_table(
         Honours ``measurement_system``: the quantity is converted and the unit
         relabelled for imperial; metric tidies the label only. The numeric
         value is formatted with the same locale-aware helper as before so
-        thousands / decimal separators stay consistent. Money is untouched.
+        thousands / decimal separators stay consistent.
         """
         result = convert_units(pos.quantity, pos.unit, measurement_system)
         return _fv(result.value), result.display_unit
+
+    def _rate_cell(pos: Any) -> str:
+        """Return the per-unit rate text for a position row.
+
+        The rate is money per ONE metric unit. When ``_qty_cell`` shows the
+        quantity converted (m -> ft ...) the rate is restated reciprocally
+        against the SAME displayed unit (50 / m -> 15.24 / ft) via
+        :func:`display_rate`, so ``qty_shown * rate_shown`` reconciles to the
+        invariant line total. Metric and unmapped units return the rate
+        unchanged. The line total is never recomputed from this - only the
+        printed per-unit basis is restated.
+        """
+        rate = display_rate(pos.unit_rate, pos.unit, measurement_system)
+        return _fv(rate)
 
     # Table header row
     header_row = [
@@ -600,7 +619,7 @@ def _build_boq_table(
                     _safe_para(pos.description, styles["cell"]),
                     _safe_para(unit_label, styles["cell"]),
                     Paragraph(qty_text, styles["cell_right"]),
-                    Paragraph(_fv(pos.unit_rate), styles["cell_right"]),
+                    Paragraph(_rate_cell(pos), styles["cell_right"]),
                     Paragraph(_fv(pos.total), styles["cell_right"]),
                 ]
             )
@@ -645,7 +664,7 @@ def _build_boq_table(
                     _safe_para(pos.description, styles["cell"]),
                     _safe_para(unit_label, styles["cell"]),
                     Paragraph(qty_text, styles["cell_right"]),
-                    Paragraph(_fv(pos.unit_rate), styles["cell_right"]),
+                    Paragraph(_rate_cell(pos), styles["cell_right"]),
                     Paragraph(_fv(pos.total), styles["cell_right"]),
                 ]
             )
@@ -824,8 +843,9 @@ def generate_boq_pdf(
         prepared_by: Full name of the person who prepared the estimate.
         measurement_system: ``"metric"`` (default) renders quantities
             canonical; ``"imperial"`` converts the physical quantity column +
-            its unit label only (m -> ft, m² -> ft² ...). Money is never
-            converted.
+            its unit label (m -> ft, m² -> ft² ...) and restates the paired
+            per-unit rate reciprocally so each converted line still reconciles.
+            Line / project totals are never converted or recomputed.
 
     Returns:
         PDF file contents as bytes.

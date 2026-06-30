@@ -44,4 +44,20 @@ describe('useDisplayQuantity', () => {
     const shown = result.current.convert(20, 'm²');
     expect(result.current.toMetric(shown.value, 'm²')).toBeCloseTo(20, 6);
   });
+
+  it('restates a per-unit rate reciprocally and reverses it for storage', () => {
+    setSystem('imperial');
+    const { result } = renderHook(() => useDisplayQuantity());
+    const shownRate = result.current.convertRate(50, 'm'); // ~15.24 / ft
+    expect(shownRate).toBeCloseTo(15.24, 2);
+    expect(result.current.toMetricRate(shownRate, 'm')).toBeCloseTo(50, 6);
+    expect(result.current.factorFor('m')).toBeCloseTo(3.2808399, 6);
+  });
+
+  it('keeps rates untouched in metric', () => {
+    setSystem('metric');
+    const { result } = renderHook(() => useDisplayQuantity());
+    expect(result.current.convertRate(50, 'm')).toBe(50);
+    expect(result.current.factorFor('m')).toBe(1);
+  });
 });

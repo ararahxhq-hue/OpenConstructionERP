@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle2, ChevronRight, Loader2, AlertCircle, XCircle } from 'lucide-react';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 import { AITrustNote } from '@/shared/ui';
 import {
   matchElementsApi,
@@ -49,6 +50,10 @@ function ConfidencePill({ band, score }: { band: ConfidenceBand; score: number }
 
 export function MatchDetailPanel({ sessionId, group, projectId, onClose }: Props) {
   const { t } = useTranslation();
+  // Issue #270: the apply-preview shows quantities x rates; convert each
+  // quantity to the user's system and restate the paired rate reciprocally so
+  // the line reconciles. Money line totals + the grand total are invariant.
+  const q = useDisplayQuantity();
   const qc = useQueryClient();
   const [tab, setTab] = useState<DetailTabKey>('methods');
   const onTabKeyDown = useTabKeyboardNav<DetailTabKey>({
@@ -427,18 +432,26 @@ export function MatchDetailPanel({ sessionId, group, projectId, onClose }: Props
                   <div className="text-xs text-slate-500 mb-1">{p.section_path.join(' → ')}</div>
                   <div className="font-medium text-sm">{p.description}</div>
                   <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                    {Number(p.quantity).toFixed(2)} {p.unit} × {Number(p.unit_rate).toFixed(2)} {p.currency} ={' '}
+                    {(() => {
+                      const dq = q.convert(Number(p.quantity), p.unit || '');
+                      const dr = q.convertRate(Number(p.unit_rate), p.unit || '');
+                      return `${dq.value.toFixed(2)} ${p.unit ? dq.unit : ''}`.trim()
+                        + ` × ${dr.toFixed(2)} ${p.currency}`;
+                    })()}{' '}={' '}
                     <strong className="tabular-nums">{Number(p.line_total).toFixed(2)} {p.currency}</strong>
                   </div>
                   {p.resources.length > 0 && (
                     <div className="mt-2 pl-3 border-l-2 border-slate-200 dark:border-slate-700">
                       <div className="text-xs text-slate-500 mb-1">{t('match_elements.detail.auto_loaded_resources', 'Auto-loaded resources:')}</div>
-                      {p.resources.map((r, i) => (
-                        <div key={i} className="text-xs flex justify-between text-slate-600 dark:text-slate-300">
-                          <span>{r.description} (×{r.factor})</span>
-                          <span className="tabular-nums">{Number(r.quantity).toFixed(2)} {r.unit}</span>
-                        </div>
-                      ))}
+                      {p.resources.map((r, i) => {
+                        const dr = q.convert(Number(r.quantity), r.unit || '');
+                        return (
+                          <div key={i} className="text-xs flex justify-between text-slate-600 dark:text-slate-300">
+                            <span>{r.description} (×{r.factor})</span>
+                            <span className="tabular-nums">{`${dr.value.toFixed(2)} ${r.unit ? dr.unit : ''}`.trim()}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
