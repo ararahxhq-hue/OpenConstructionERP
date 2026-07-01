@@ -556,3 +556,132 @@ class NoticeRegisterOut(BaseModel):
     due_soon_days: int
     clocks: list[NoticeClockOut]
     summary: NoticeRegisterSummaryOut
+
+
+# --- Cross-source commitment / action register -----------------------------
+
+
+class CommitmentOut(BaseModel):
+    """One open commitment in the consolidated register."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source: str
+    ref_id: str
+    code: str
+    title: str
+    owner: str
+    due_date: str | None
+    overdue: bool
+    days_overdue: float
+    age_days: float | None
+
+
+class OwnerLoadOut(BaseModel):
+    """How many open commitments sit with one owner, and how many are overdue."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    owner: str
+    open_count: int
+    overdue_count: int
+
+
+class CommitmentRegisterOut(BaseModel):
+    """Project-wide, owner-ranked, overdue-first open-commitment register."""
+
+    project_id: str
+    generated_at: str
+    total_open: int
+    overdue_count: int
+    by_owner: list[OwnerLoadOut]
+    by_source: dict[str, int]
+    items: list[CommitmentOut]
+
+
+# --- Change-driver Pareto analytics ----------------------------------------
+# Cost is carried as a string (the signed Decimal rendered losslessly) per the
+# platform money-as-string convention, so these rows are built explicitly in the
+# router rather than validated straight off the engine dataclasses.
+
+
+class ParetoRowOut(BaseModel):
+    """One driver's ranked contribution with its running cumulative percentage."""
+
+    key: str
+    count: int
+    cost: str
+    cost_pct: float
+    cumulative_pct: float
+
+
+class DriverCurrencyOut(BaseModel):
+    """Signed change-cost total carried by one currency (never blended)."""
+
+    currency: str
+    count: int
+    cost: str
+
+
+class DriverTrendPointOut(BaseModel):
+    """Change count and signed cost for one ``YYYY-MM`` month."""
+
+    month: str
+    count: int
+    cost: str
+
+
+class ChangeDriverAnalyticsOut(BaseModel):
+    """Pareto (by cause and by responsible party) + monthly trend of change."""
+
+    project_id: str
+    total_count: int
+    total_cost: str
+    primary_currency: str
+    by_cause: list[ParetoRowOut]
+    by_party: list[ParetoRowOut]
+    by_currency: list[DriverCurrencyOut]
+    trend: list[DriverTrendPointOut]
+
+
+# --- Change run-rate / cumulative change curve -----------------------------
+# Every money / percentage figure is serialized as a string so the signed
+# Decimal round-trips losslessly on the wire.
+
+
+class RunRatePointOut(BaseModel):
+    """Cumulative change value through one ``YYYY-MM`` month."""
+
+    month: str
+    approved_value: str
+    pending_value: str
+    cumulative_value: str
+    change_pct: str | None
+
+
+class RunRateForecastOut(BaseModel):
+    """Simple linear burn-rate forecast of change at completion."""
+
+    method: str
+    elapsed_days: int
+    total_days: int
+    rate_per_day: str
+    final_change_value: str
+    final_change_pct: str | None
+    at_date: str
+
+
+class ChangeRunRateOut(BaseModel):
+    """Change run-rate: cumulative curve vs contract, intake rate and forecast."""
+
+    project_id: str
+    original_contract_value: str | None
+    currency: str
+    change_count: int
+    approved_value: str
+    pending_value: str
+    total_change_value: str
+    current_change_pct: str | None
+    intake_rate_per_month: float
+    points: list[RunRatePointOut]
+    forecast: RunRateForecastOut | None

@@ -22,9 +22,13 @@ from app.dependencies import (
     verify_project_access,
 )
 from app.modules.change_intelligence.schemas import (
+    ChangeDriverAnalyticsOut,
+    ChangeRunRateOut,
     ChangeWatchOut,
     ClarifiedRequestOut,
     ClarifyIn,
+    CommitmentOut,
+    CommitmentRegisterOut,
     CommsDigestOut,
     CoordinationPlanOut,
     CoordinationStepOut,
@@ -40,6 +44,8 @@ from app.modules.change_intelligence.schemas import (
     DisputeExposureSummaryOut,
     DisputeRiskBoardOut,
     DisputeRiskItemOut,
+    DriverCurrencyOut,
+    DriverTrendPointOut,
     ImpactProjectionOut,
     IntakeDraftOut,
     IntakePreviewIn,
@@ -51,11 +57,15 @@ from app.modules.change_intelligence.schemas import (
     NoticeClockOut,
     NoticeRegisterOut,
     NoticeRegisterSummaryOut,
+    OwnerLoadOut,
     OwnershipChainOut,
     OwnershipSegmentOut,
+    ParetoRowOut,
     PartyDwellOut,
     PartyLoadOut,
     RiskFactorOut,
+    RunRateForecastOut,
+    RunRatePointOut,
     ScopeAmbiguityLineOut,
     ScopeAmbiguityReportOut,
     ThreadDigestOut,
@@ -63,7 +73,10 @@ from app.modules.change_intelligence.schemas import (
 )
 from app.modules.change_intelligence.scope_service import assess_project_scope
 from app.modules.change_intelligence.service import (
+    build_change_drivers,
+    build_change_run_rate,
     build_change_watch,
+    build_commitment_register,
     build_comms_digest_for_project,
     build_coordination_plan,
     build_decision_impact,
@@ -668,4 +681,146 @@ async def get_notice_register(
             overdue=register.summary.overdue,
             due_soon=register.summary.due_soon,
         ),
+    )
+
+
+@router.get(
+    "/projects/{project_id}/commitments",
+    response_model=CommitmentRegisterOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
+async def get_commitment_register(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> CommitmentRegisterOut:
+    """Owner-ranked, overdue-first register of open commitments across sources.
+
+    Consolidates meeting action items, risk mitigation actions, open change
+    orders, and RFIs / submittals awaiting a response into one owe-list, ranked
+    overdue-first, with per-owner load and per-source counts.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    register = await build_commitment_register(session, project_id)
+    return CommitmentRegisterOut(
+        project_id=str(project_id),
+        generated_at=register.generated_at,
+        total_open=register.total_open,
+        overdue_count=register.overdue_count,
+        by_owner=[OwnerLoadOut.model_validate(o) for o in register.by_owner],
+        by_source=register.by_source,
+        items=[CommitmentOut.model_validate(c) for c in register.items],
+    )
+
+
+@router.get(
+    "/projects/{project_id}/change-drivers",
+    response_model=ChangeDriverAnalyticsOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
+async def get_change_drivers(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> ChangeDriverAnalyticsOut:
+    """Pareto of change cost and count by originating cause and responsible party.
+
+    Aggregates the project's change orders (by reason category), disruption and
+    extension-of-time claims (by root cause) and risk-register entries (by
+    category) into a cost-ranked Pareto with a running cumulative percentage,
+    the same rolled up by responsible party, a per-currency split, and a
+    month-over-month trend. Money is a string; currencies are never blended.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    analytics = await build_change_drivers(session, project_id)
+    return ChangeDriverAnalyticsOut(
+        project_id=str(project_id),
+        total_count=analytics.total_count,
+        total_cost=str(analytics.total_cost),
+        primary_currency=analytics.primary_currency,
+        by_cause=[
+            ParetoRowOut(
+                key=r.key,
+                count=r.count,
+                cost=str(r.cost),
+                cost_pct=r.cost_pct,
+                cumulative_pct=r.cumulative_pct,
+            )
+            for r in analytics.by_cause
+        ],
+        by_party=[
+            ParetoRowOut(
+                key=r.key,
+                count=r.count,
+                cost=str(r.cost),
+                cost_pct=r.cost_pct,
+                cumulative_pct=r.cumulative_pct,
+            )
+            for r in analytics.by_party
+        ],
+        by_currency=[
+            DriverCurrencyOut(currency=c.currency, count=c.count, cost=str(c.cost)) for c in analytics.by_currency
+        ],
+        trend=[DriverTrendPointOut(month=t.month, count=t.count, cost=str(t.cost)) for t in analytics.trend],
+    )
+
+
+@router.get(
+    "/projects/{project_id}/run-rate",
+    response_model=ChangeRunRateOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
+async def get_change_run_rate(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> ChangeRunRateOut:
+    """Cumulative change value over time vs contract, intake rate and forecast.
+
+    Places every change order and variation on the timeline, tracks the
+    cumulative approved-plus-pending change value month by month against the
+    original contract value, reports the intake rate (changes per month) and a
+    simple linear burn-rate forecast of the final change percentage at
+    completion. Every money and percentage figure is a string.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    run_rate = await build_change_run_rate(session, project_id)
+    forecast = None
+    if run_rate.forecast is not None:
+        fc = run_rate.forecast
+        forecast = RunRateForecastOut(
+            method=fc.method,
+            elapsed_days=fc.elapsed_days,
+            total_days=fc.total_days,
+            rate_per_day=str(fc.rate_per_day),
+            final_change_value=str(fc.final_change_value),
+            final_change_pct=str(fc.final_change_pct) if fc.final_change_pct is not None else None,
+            at_date=fc.at_date,
+        )
+    return ChangeRunRateOut(
+        project_id=str(project_id),
+        original_contract_value=(
+            str(run_rate.original_contract_value) if run_rate.original_contract_value is not None else None
+        ),
+        currency=run_rate.currency,
+        change_count=run_rate.change_count,
+        approved_value=str(run_rate.approved_value),
+        pending_value=str(run_rate.pending_value),
+        total_change_value=str(run_rate.total_change_value),
+        current_change_pct=str(run_rate.current_change_pct) if run_rate.current_change_pct is not None else None,
+        intake_rate_per_month=run_rate.intake_rate_per_month,
+        points=[
+            RunRatePointOut(
+                month=p.month,
+                approved_value=str(p.approved_value),
+                pending_value=str(p.pending_value),
+                cumulative_value=str(p.cumulative_value),
+                change_pct=str(p.change_pct) if p.change_pct is not None else None,
+            )
+            for p in run_rate.points
+        ],
+        forecast=forecast,
     )
