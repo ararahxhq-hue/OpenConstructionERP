@@ -48,6 +48,9 @@ from app.modules.change_intelligence.schemas import (
     IntakeProfilesOut,
     ItemAgingOut,
     KindImpactOut,
+    NoticeClockOut,
+    NoticeRegisterOut,
+    NoticeRegisterSummaryOut,
     OwnershipChainOut,
     OwnershipSegmentOut,
     PartyDwellOut,
@@ -74,6 +77,8 @@ from app.modules.change_intelligence.service import (
     list_intake_profiles,
     preview_intake,
 )
+from app.modules.change_intelligence.time_bar import DEFAULT_DUE_SOON_DAYS
+from app.modules.change_intelligence.time_bar_service import build_notice_register
 
 router = APIRouter(tags=["Change Intelligence"])
 
@@ -590,4 +595,77 @@ async def get_scope_ambiguity(
         counts_by_band=report.counts_by_band,
         top_reasons=list(report.top_reasons),
         lines=[ScopeAmbiguityLineOut.model_validate(line) for line in report.lines],
+    )
+
+
+@router.get(
+    "/projects/{project_id}/notice-register",
+    response_model=NoticeRegisterOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
+async def get_notice_register(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    standard: str | None = None,
+    due_soon_days: int = DEFAULT_DUE_SOON_DAYS,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> NoticeRegisterOut:
+    """Contractual notice and time-bar register for a project's open changes.
+
+    Derives every open notice / response clock from the event date already on
+    each change order, variation notice / request, and extension-of-time claim,
+    adds the notice period for the project's contract standard (an optional
+    ``standard`` override wins), and classifies each clock met / upcoming /
+    due-soon / overdue. Required notices (a claim notice, an EOT notice) are
+    checked against correspondence for proof on file; a required notice with none
+    on file, or a lapsed bar, is flagged so an entitlement is not quietly lost.
+    Read-only and worst-first. ``due_soon_days`` sets the amber window (clamped to
+    1..90).
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    window = max(1, min(due_soon_days, 90))
+    register = await build_notice_register(
+        session,
+        project_id,
+        standard_override=standard,
+        due_soon_days=window,
+    )
+    return NoticeRegisterOut(
+        project_id=register.project_id,
+        contract_standard=register.contract_standard,
+        generated_at=register.generated_at.isoformat(),
+        due_soon_days=register.due_soon_days,
+        clocks=[
+            NoticeClockOut(
+                source_kind=c.source_kind,
+                source_id=c.source_id,
+                source_ref=c.source_ref,
+                title=c.title,
+                standard=c.standard,
+                notice_type=c.notice_type,
+                clause_ref=c.clause_ref,
+                trigger_date=c.trigger_date.isoformat() if c.trigger_date is not None else None,
+                period_days=c.period_days,
+                deadline=c.deadline.isoformat() if c.deadline is not None else None,
+                days_remaining=c.days_remaining,
+                status=c.status,
+                requires_notice=c.requires_notice,
+                proof_on_file=c.proof_on_file,
+                satisfied_at=c.satisfied_at.isoformat() if c.satisfied_at is not None else None,
+                served_late=c.served_late,
+                entitlement_at_risk=c.entitlement_at_risk,
+                is_open=c.is_open,
+            )
+            for c in register.clocks
+        ],
+        summary=NoticeRegisterSummaryOut(
+            total=register.summary.total,
+            open_total=register.summary.open_total,
+            counts_by_status=register.summary.counts_by_status,
+            at_risk=register.summary.at_risk,
+            proof_missing=register.summary.proof_missing,
+            overdue=register.summary.overdue,
+            due_soon=register.summary.due_soon,
+        ),
     )

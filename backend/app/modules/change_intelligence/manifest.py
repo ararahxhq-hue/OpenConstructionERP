@@ -17,7 +17,16 @@ manifest = ModuleManifest(
     ),
     author="OpenConstructionERP Core Team",
     category="controls",
-    depends=["oe_users", "oe_projects", "oe_changeorders", "oe_variations", "oe_moc"],
+    depends=[
+        "oe_users",
+        "oe_projects",
+        "oe_changeorders",
+        "oe_variations",
+        "oe_moc",
+        "oe_contracts",
+        "oe_correspondence",
+        "oe_notifications",
+    ],
     auto_install=True,
     enabled=True,
 )

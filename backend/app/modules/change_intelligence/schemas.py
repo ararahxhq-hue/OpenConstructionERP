@@ -498,3 +498,61 @@ class ScopeAmbiguityReportOut(BaseModel):
     counts_by_band: dict[str, int]
     top_reasons: list[str]
     lines: list[ScopeAmbiguityLineOut]
+
+
+# --- Contractual notice and time-bar clock ---------------------------------
+# Dates are serialized as ISO-8601 strings (or null); days_remaining is signed
+# (negative once a clock is overdue). The register is computed on read from the
+# event dates already on the change / variation / EOT records - it owns no table.
+
+
+class NoticeClockOut(BaseModel):
+    """One derived notice / response clock in the project register."""
+
+    source_kind: str
+    source_id: str
+    source_ref: str
+    title: str
+    standard: str
+    notice_type: str
+    clause_ref: str
+    trigger_date: str | None
+    period_days: int | None
+    deadline: str | None
+    days_remaining: float | None
+    status: str
+    requires_notice: bool
+    proof_on_file: bool
+    satisfied_at: str | None
+    served_late: bool
+    entitlement_at_risk: bool
+    is_open: bool
+
+
+class NoticeRegisterSummaryOut(BaseModel):
+    """Roll-up over the clocks in the register."""
+
+    total: int
+    open_total: int
+    counts_by_status: dict[str, int]
+    at_risk: int
+    proof_missing: int
+    overdue: int
+    due_soon: int
+
+
+class NoticeRegisterOut(BaseModel):
+    """The project notice register: resolved standard, clocks, and roll-up.
+
+    ``contract_standard`` is the standard the periods were resolved against
+    (``UNKNOWN`` when none could be determined, in which case standard-neutral
+    fallback periods were used). ``clocks`` are ordered worst-first so overdue
+    and at-risk deadlines surface at the top.
+    """
+
+    project_id: str
+    contract_standard: str
+    generated_at: str
+    due_soon_days: int
+    clocks: list[NoticeClockOut]
+    summary: NoticeRegisterSummaryOut
