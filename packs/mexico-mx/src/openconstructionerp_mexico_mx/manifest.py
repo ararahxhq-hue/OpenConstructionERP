@@ -61,8 +61,10 @@ MANIFEST = PartnerPackManifest(
     # being listed here; listing modules here would hide every other module.
     default_modules=[],
     hidden_modules=[],
-    # No bundled Mexican demo project yet: an empty list keeps the default
-    # flagship plus country-fill behaviour rather than seeding a fabricated one.
+    # The pack ships two Mexican demo projects (a Ciudad de Mexico mixed-use
+    # tower flagship and a Monterrey residential complex). An empty list keeps
+    # the default flagship plus country-fill behaviour, which lands both MX
+    # projects, rather than pinning them explicitly here.
     demo_template_ids=[],
     branding=PartnerBranding(
         primary_color="#006847",  # Mexican flag green
