@@ -963,7 +963,22 @@ async def get_linked_documents(
 
     from app.modules.documents.models import Document
 
-    stmt = select(Document).where(Document.id.in_([uuid.UUID(d) for d in doc_ids]))
+    parsed_ids: list[uuid.UUID] = []
+    for d in doc_ids:
+        try:
+            parsed_ids.append(uuid.UUID(str(d)))
+        except (ValueError, AttributeError):
+            continue
+    if not parsed_ids:
+        return []
+
+    # Scope to the report's own project as defense in depth: even a
+    # document_id linked before the write-side guard existed cannot leak
+    # another project's metadata through this endpoint.
+    stmt = select(Document).where(
+        Document.id.in_(parsed_ids),
+        Document.project_id == report.project_id,
+    )
     result = await session.execute(stmt)
     docs = result.scalars().all()
 
