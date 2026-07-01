@@ -483,8 +483,12 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         if (Array.isArray(res) && res.length > 0) return false;
         return true;
       },
-      cellEditor: 'agNumberCellEditor',
-      cellEditorParams: { min: 0, precision: 2 },
+      // Issue #287: a display-aware editor so the field OPENS on the same
+      // reciprocal rate the cell shows. The stock number editor opened on the
+      // raw metric rate while the valueParser below converted display->metric
+      // on commit, so opening + committing a cell unchanged double-converted
+      // and corrupted the stored rate for imperial users.
+      cellEditor: 'rateCellEditor',
       // Issue #285: the rate cell DISPLAYS a reciprocal per-unit rate when
       // the quantity is shown converted (50/m -> 15.24/ft) so the line
       // reconciles. A value typed here is therefore against the displayed

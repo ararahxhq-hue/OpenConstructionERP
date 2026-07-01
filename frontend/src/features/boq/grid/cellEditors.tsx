@@ -96,6 +96,22 @@ function toMetricQty(params: ICellEditorParams, displayValue: number): number {
   return dq.toMetric(displayValue, unit);
 }
 
+/**
+ * Issue #287: the reverse of ``toMetricQty``, converting a metric-canonical Qty
+ * into the DISPLAYED measurement system so the editor opens on the value the
+ * user actually sees. Without it the editor seeds from the raw metric value
+ * while the commit path (``toMetricQty``) converts display→metric, so opening
+ * and committing a cell unchanged double-converts and silently corrupts
+ * storage. Identity for the metric system and for units with no imperial
+ * mapping, so this never changes what a metric user sees.
+ */
+function toDisplayQty(params: ICellEditorParams, metricValue: number): number {
+  const dq = (params.context as { displayQuantity?: DisplayQuantityApi } | undefined)?.displayQuantity;
+  if (!dq) return metricValue;
+  const unit = (params.data?.unit as string | undefined) ?? '';
+  return dq.convert(metricValue, unit).value;
+}
+
 /** Check whether an input string looks like a formula (Excel-style `=` prefix,
  * any math operator, named constant, or function call). Pure numbers like
  * "12.5" are NOT formulas — they go through the normal numeric path. */
@@ -139,9 +155,18 @@ export const FormulaCellEditor = forwardRef(
     // Pre-fill with the previously-saved formula if there is one — this
     // means re-editing a "formula" cell takes the user back to the source
     // expression, not just the resolved number (Issue #90 round-trip UX).
-    const [value, setValue] = useState<string>(
-      formula ? String(formula) : String(props.value ?? ''),
-    );
+    const [value, setValue] = useState<string>(() => {
+      if (formula) return String(formula);
+      // Issue #287: seed the numeric branch with the value in the DISPLAYED
+      // measurement system. The commit path (toMetricQty) converts
+      // display→metric, so without this an open+commit with no change would
+      // double-convert and corrupt the stored quantity. Identity for metric /
+      // unmapped units, so metric users see exactly the value as before.
+      const raw = props.value;
+      return typeof raw === 'number' && isFinite(raw)
+        ? String(toDisplayQty(props, raw))
+        : String(raw ?? '');
+    });
     const [showHelp, setShowHelp] = useState(false);
     // Single source of truth — what numeric value we will hand back to AG
     // Grid. Updated only by commitFromInput / getValue so the formula
@@ -468,6 +493,73 @@ export const FormulaCellEditor = forwardRef(
   },
 );
 FormulaCellEditor.displayName = 'FormulaCellEditor';
+
+/* ── Rate Cell Editor (Issue #287) ────────────────────────────────── */
+
+/**
+ * Display-aware editor for the Unit Rate column.
+ *
+ * The rate cell DISPLAYS a reciprocal per-unit rate when the quantity is shown
+ * converted (a 50/m rate reads 15.24/ft) so the line total reconciles. The
+ * stock ``agNumberCellEditor`` opens on the RAW METRIC rate while the column
+ * ``valueParser`` (``toMetricRate``) converts display→metric on commit, so
+ * opening and committing a cell unchanged multiplied the stored rate by the
+ * unit factor and silently corrupted storage (Issue #287).
+ *
+ * This editor OPENS on the displayed rate (``convertRate``) and returns the
+ * typed display value; the column ``valueParser`` reverses it back to
+ * metric-canonical storage. Both conversions are identity for the metric
+ * system and for units with no imperial mapping, so metric users are
+ * unaffected and imperial edits round-trip exactly. Inline (non-popup)
+ * editor, so a plain controlled input is safe here.
+ */
+export const RateCellEditor = forwardRef((props: ICellEditorParams, ref) => {
+  const dq = (props.context as { displayQuantity?: DisplayQuantityApi } | undefined)?.displayQuantity;
+  const unit = (props.data?.unit as string | undefined) ?? '';
+  const inputRef = useRef<HTMLInputElement>(null);
+  // The rate the editor OPENS on, in the displayed system. Kept as the
+  // unchanged-commit fallback: valueParser applies toMetricRate to whatever we
+  // return, so on a blank / invalid entry we must hand back a DISPLAY value
+  // (never the raw metric one) for it to reverse to the original stored rate.
+  const displaySeed = useMemo(() => {
+    const raw = props.value;
+    if (typeof raw !== 'number' || !isFinite(raw)) return null;
+    return dq ? dq.convertRate(raw, unit) : raw;
+  }, [props.value, dq, unit]);
+
+  const [value, setValue] = useState<string>(displaySeed != null ? String(displaySeed) : '');
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    getValue() {
+      const n = parseFloat(value.replace(',', '.'));
+      if (isFinite(n)) return n; // typed display value -> valueParser -> metric
+      if (displaySeed != null) return displaySeed; // unchanged -> reverses to original
+      return props.value; // non-numeric original -> valueParser returns oldValue
+    },
+    isCancelAfterEnd() {
+      return false;
+    },
+  }));
+
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      min={0}
+      step="any"
+      inputMode="decimal"
+      className="w-full h-full bg-surface-elevated border border-oe-blue/40 rounded ring-2 ring-oe-blue/20 outline-none text-sm text-content-primary tabular-nums text-right px-1"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+    />
+  );
+});
+RateCellEditor.displayName = 'RateCellEditor';
 
 /* ── Autocomplete Cell Editor ─────────────────────────────────────── */
 

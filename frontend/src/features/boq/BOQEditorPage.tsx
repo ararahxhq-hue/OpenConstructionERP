@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useBIMLinkSelectionStore } from '@/stores/useBIMLinkSelectionStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
+import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 import {
   boqApi,
   groupPositionsIntoSections,
@@ -202,6 +203,10 @@ export function BOQEditorPage() {
   // chosen system (storage stays metric-canonical; only the export boundary
   // converts).
   const measurementSystem = usePreferencesStore((s) => s.measurementSystem);
+  // Issue #287: display<->metric conversion seam for batch write actions. The
+  // grid renders/edits in the chosen system while storage stays canonical, so
+  // absolute batch values typed by the user must be reversed to metric here.
+  const displayQuantity = useDisplayQuantity();
   /**
    * Project FX template (RFC 37 / Issue #93) — flatten to the shape BOQGrid
    * expects (`currency` + numeric `rate`). The API returns `code` and a
@@ -1558,10 +1563,19 @@ export function BOQEditorPage() {
       for (const id of ids) {
         const pos = boq.positions.find((p) => p.id === id);
         if (!pos || isSection(pos)) continue;
+        // Issue #287: the batch value is typed in the DISPLAYED measurement
+        // system. Convert it to metric-canonical storage against each
+        // position's own unit before writing. Identity for the metric system /
+        // unmapped units, so metric users get the exact value they typed.
+        const unit = (pos.unit as string | undefined) ?? '';
+        const metricValue =
+          field === 'unit_rate'
+            ? displayQuantity.toMetricRate(value, unit)
+            : displayQuantity.toMetric(value, unit);
         const oldData: UpdatePositionData =
           field === 'unit_rate' ? { unit_rate: pos.unit_rate } : { quantity: pos.quantity };
         const newData: UpdatePositionData =
-          field === 'unit_rate' ? { unit_rate: value } : { quantity: value };
+          field === 'unit_rate' ? { unit_rate: metricValue } : { quantity: metricValue };
         trackedUpdate(id, newData, oldData);
         count++;
       }
@@ -1575,7 +1589,7 @@ export function BOQEditorPage() {
         } as Record<string, string>),
       });
     },
-    [boq, trackedUpdate, addToast, t],
+    [boq, trackedUpdate, addToast, t, displayQuantity],
   );
 
   /**

@@ -64,6 +64,7 @@ import { getColumnDefs, getCustomColumnDefs } from './grid/columnDefs';
 import type { FormulaVariable } from './grid/formula';
 import {
   FormulaCellEditor,
+  RateCellEditor,
   AutocompleteCellEditor,
   UnitCellEditor,
 } from './grid/cellEditors';
@@ -2109,6 +2110,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   const components = useMemo(
     () => ({
       formulaCellEditor: FormulaCellEditor,
+      rateCellEditor: RateCellEditor,
       autocompleteCellEditor: AutocompleteCellEditor,
       unitCellEditor: UnitCellEditor,
       actionsCellRenderer: ActionsCellRenderer,
@@ -2243,7 +2245,16 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       if (NUMERIC_FIELDS.has(colId)) {
         const parsed = parseClipboardNumber(rawClipboard);
         if (isNaN(parsed) || !isFinite(parsed) || parsed < 0) return false;
-        newValue = Math.round(parsed * 100) / 100;
+        // Issue #287: a pasted number is typed against the DISPLAYED measurement
+        // system, so round it as the user sees it and then convert back to
+        // metric-canonical storage. Identity for the metric system / unmapped
+        // units, so metric pastes are byte-for-byte unchanged. Numeric columns
+        // that do not carry a unit (custom fields) are stored as typed.
+        const roundedDisplay = Math.round(parsed * 100) / 100;
+        const unit = (data.unit as string | undefined) ?? '';
+        if (colId === 'quantity') newValue = displayQuantity.toMetric(roundedDisplay, unit);
+        else if (colId === 'unit_rate') newValue = displayQuantity.toMetricRate(roundedDisplay, unit);
+        else newValue = roundedDisplay;
       }
 
       // Skip if value is unchanged
@@ -2254,7 +2265,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       onUpdatePosition(data.id as string, update, old);
       return true;
     },
-    [onUpdatePosition, isCellPasteable],
+    [onUpdatePosition, isCellPasteable, displayQuantity],
   );
 
   useEffect(() => {
@@ -2278,7 +2289,18 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
         if (!focusedCell) return;
 
         const colId = focusedCell.column.getColId();
-        const value = getCellRawValue(api, focusedCell.rowIndex, colId);
+        let value = getCellRawValue(api, focusedCell.rowIndex, colId);
+        // Issue #287: export the value in the DISPLAYED measurement system so a
+        // copy -> paste round-trips (paste converts display -> metric). Identity
+        // for the metric system / unmapped units. Fill-down (Ctrl+D) still reads
+        // raw metric via getCellRawValue, so it copies canonical -> canonical.
+        if (typeof value === 'number') {
+          const unit =
+            (api.getDisplayedRowAtIndex(focusedCell.rowIndex)?.data?.unit as string | undefined) ??
+            '';
+          if (colId === 'quantity') value = displayQuantity.convert(value, unit).value;
+          else if (colId === 'unit_rate') value = displayQuantity.convertRate(value, unit);
+        }
         const text = formatCellForClipboard(value, colId);
 
         try {
@@ -2482,6 +2504,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
     t,
     isCellPasteable,
     onUpdatePosition,
+    displayQuantity,
   ]);
 
   /* ── Right-click on AG Grid cells → context menu ──────────────── */

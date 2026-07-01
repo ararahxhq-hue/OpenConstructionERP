@@ -6482,7 +6482,9 @@ export default function TakeoffViewerModule({
                                     </button>
                                   )}
                                   <span className="text-2xs text-content-tertiary capitalize truncate shrink">
-                                    {m.label}
+                                    {/* Issue #287: show the measurement label in the
+                                        user's system (m -> ft); identity for metric. */}
+                                    {measurementLabel(m, scale, measurementSystem)}
                                   </span>
                                   {m.suggested && (
                                     <span
@@ -6591,10 +6593,17 @@ export default function TakeoffViewerModule({
                                       {t('takeoff.will_transfer', { defaultValue: 'Will transfer:' })}
                                     </span>
                                     <span className="font-mono font-semibold text-rose-700 dark:text-rose-300 tabular-nums">
-                                      {(Math.round(m.value * 100) / 100).toLocaleString()}
+                                      {/* Issue #287: preview the quantity in the user's
+                                          system so it matches the canvas readout. The
+                                          value pushed to the position stays metric. */}
+                                      {(
+                                        Math.round(
+                                          convertQuantity(m.value, m.unit || '', measurementSystem).value * 100,
+                                        ) / 100
+                                      ).toLocaleString()}
                                     </span>
                                     <span className="font-mono text-rose-700/80 dark:text-rose-300/80 shrink-0">
-                                      {normalizeUnit(m.unit)}
+                                      {displayUnitFor(m.unit || '', measurementSystem)}
                                     </span>
                                     {m.page && (
                                       <span className="text-content-tertiary shrink-0 ml-auto">
@@ -6788,7 +6797,12 @@ export default function TakeoffViewerModule({
                                         </span>
                                         <span className="font-semibold">{t('takeoff.quantity', { defaultValue: 'Quantity' })}:</span>
                                         <span className="text-content-primary font-mono">
-                                          {Math.round(m.value * 100) / 100} {normalizeUnit(m.unit)}
+                                          {/* Issue #287: display the quantity in the user's
+                                              system; the created position stores metric. */}
+                                          {Math.round(
+                                            convertQuantity(m.value, m.unit || '', measurementSystem).value * 100,
+                                          ) / 100}{' '}
+                                          {displayUnitFor(m.unit || '', measurementSystem)}
                                         </span>
                                       </div>
                                       <button
