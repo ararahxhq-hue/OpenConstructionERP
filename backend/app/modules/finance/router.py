@@ -1839,7 +1839,11 @@ async def update_ledger_account(
 ) -> LedgerAccountResponse:
     """Update a chart-of-accounts account."""
     account = await service.get_account(account_id)
-    await _require_project_access(session, account.project_id, user_id)
+    # A workspace-level (company-wide) account has project_id=None, where the
+    # per-project owner check no-ops. Gate that path to admins like the create
+    # and seed endpoints (and the consolidated GL); a project-scoped account
+    # falls through to the normal per-project owner check.
+    await _require_gl_consolidated_scope(session, account.project_id, user_id)
     updated = await service.update_account(account_id, data)
     return LedgerAccountResponse.model_validate(updated)
 
