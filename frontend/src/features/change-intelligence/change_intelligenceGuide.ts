@@ -61,6 +61,14 @@ export const changeIntelligenceGuide: ModuleGuideContent = {
         'Dispute risk ranks which open change is most likely to escalate and names the cure. Delay risk scores which items will overrun their response window. Scope risk grades your BOQ lines for vague wording before work starts, and Watch surfaces changes quietly drifting toward stalled, incomplete or lost.',
     },
     {
+      icon: 'ClipboardCheck',
+      titleKey: 'guide.change-intelligence.notice.title',
+      titleDefault: 'Never miss a contractual notice deadline',
+      bodyKey: 'guide.change-intelligence.notice.body',
+      bodyDefault:
+        'The Time bar tab turns the event date already on each change, variation and extension-of-time claim into a countdown against the notice period for your contract standard (FIDIC, NEC, JCT, AIA or ConsensusDocs), worst-first. A red chip is overdue, amber is due soon, green is upcoming or met. When a required notice has nothing on file or the bar has lapsed, the row is flagged entitlement at risk, so a claim is not quietly forfeited. Override the standard from the filter when a record follows a different form.',
+    },
+    {
       icon: 'Sparkles',
       titleKey: 'guide.change-intelligence.clarifier.title',
       titleDefault: 'Turn rough notes into structured requests',
