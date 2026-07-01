@@ -3,7 +3,7 @@
 The platform exposes per-tenant data via the ``tenant_id`` column on
 contacts and dashboards (snapshots), and per-owner scoping via the
 ``owner_id`` column on projects. A regression in any of those filters
-would leak one tenant's data to another — a privacy disaster.
+would leak one tenant's data to another - a privacy disaster.
 
 This module pins the cross-tenant access policy at the HTTP boundary so
 the leak surfaces as a red test rather than a customer-reported bug.
@@ -18,9 +18,9 @@ Test scaffolding
 * The two-tenant setup fixture is **module-scoped** because:
   (a) registering 2 users + lifespan boot is expensive (~25-30s on
       Windows + the dashboards module loader);
-  (b) ``POST /auth/register`` is rate-limited per IP — repeating the
+  (b) ``POST /auth/register`` is rate-limited per IP - repeating the
       registration once per test would hit 429 mid-suite.
-  Each test only reads / fails to mutate the data — they don't
+  Each test only reads / fails to mutate the data - they don't
   conflict on shared state.
 
 * The dashboards module table (``oe_dashboards_snapshot``) is NOT
@@ -33,15 +33,15 @@ Test scaffolding
   registration so they can hit ``POST /api/v1/contacts/`` (the public
   ``/auth/register`` endpoint demotes self-registered users to
   ``viewer``, who lacks the ``contacts.create`` permission). Tenant B
-  is left as a viewer — they're the *attacker* in this scenario, and
+  is left as a viewer - they're the *attacker* in this scenario, and
   giving them admin would defeat the test.
 
 Coverage
 ~~~~~~~~
-* projects   — ``GET /api/v1/projects/{id}`` ownership boundary.
-* contacts   — ``GET /api/v1/contacts/`` list scoping + ``GET / PATCH /
+* projects   - ``GET /api/v1/projects/{id}`` ownership boundary.
+* contacts   - ``GET /api/v1/contacts/`` list scoping + ``GET / PATCH /
                 DELETE /api/v1/contacts/{id}`` per-row gate.
-* dashboards — ``GET /api/v1/dashboards/snapshots/{id}`` and
+* dashboards - ``GET /api/v1/dashboards/snapshots/{id}`` and
                 ``DELETE /api/v1/dashboards/snapshots/{id}``.
 * rfi / changeorders / submittals - the per-row
                 ``GET / PATCH / DELETE`` project-scope gate. The attacker
@@ -75,7 +75,7 @@ async def app_instance():
 
     Lifespan startup runs ``Base.metadata.create_all`` on the conftest
     PostgreSQL. After lifespan we explicitly import the dashboards models
-    (which ``app.main`` does NOT pre-import — they get pulled in by the
+    (which ``app.main`` does NOT pre-import - they get pulled in by the
     module loader, but only after ``create_all`` has already run) and
     run ``create_all`` a second time to backfill the missing table.
     """
@@ -275,9 +275,9 @@ async def two_tenants(http_client):
     assert contact.status_code in (200, 201), f"contact create failed: {contact.status_code} {contact.text}"
     contact_id = contact.json()["id"]
 
-    # ── Tenant A's dashboard snapshot — direct DB seed ─────────────────────
+    # ── Tenant A's dashboard snapshot - direct DB seed ─────────────────────
     # POST /dashboards/projects/{id}/snapshots requires real CAD/BIM
-    # uploads + the cad2data bridge — too heavy for an isolation test.
+    # uploads + the cad2data bridge - too heavy for an isolation test.
     from app.database import async_session_factory
     from app.modules.dashboards.models import Snapshot
 
@@ -450,7 +450,7 @@ async def test_tenant_b_cannot_delete_tenant_a_snapshot(http_client, two_tenants
         headers=a["headers"],
     )
     assert a_view.status_code == 200, (
-        f"tenant A's snapshot disappeared after B's DELETE attempt — got {a_view.status_code}: {a_view.text!r}"
+        f"tenant A's snapshot disappeared after B's DELETE attempt - got {a_view.status_code}: {a_view.text!r}"
     )
 
 
@@ -600,9 +600,16 @@ async def rw_project_world(http_client):
     # design (CWICR / reference data every deployment is expected to read).
     from app.database import async_session_factory
     from app.modules.costs.models import CostItem
+    from app.modules.saved_views.models import SavedView
 
+    o_uid = reg_o.json()["id"]
     cost_item_id = uuid.uuid4()
     cost_item_code = f"REF-XT-{uuid.uuid4().hex[:8]}"
+    # A project-SHARED saved view owned by O. Seeded straight through the ORM
+    # because the POST /saved-views/ create path needs a registered entity_type
+    # and a spec that binds against it; the read path under test (get_view)
+    # reads the row back without either, so a bare row is a sufficient target.
+    saved_view_id = uuid.uuid4()
     async with async_session_factory() as s:
         s.add(
             CostItem(
@@ -621,6 +628,20 @@ async def rw_project_world(http_client):
                 metadata_={},
             )
         )
+        s.add(
+            SavedView(
+                id=saved_view_id,
+                owner_id=uuid.UUID(o_uid),
+                project_id=uuid.UUID(project_id),
+                entity_type="ledger_entry",
+                name=f"O-shared-view-{uuid.uuid4().hex[:6]}",
+                description="A-owned project-shared saved view",
+                spec={},
+                share_scope="project",
+                is_pinned=False,
+                metadata_={},
+            )
+        )
         await s.commit()
 
     return {
@@ -632,6 +653,7 @@ async def rw_project_world(http_client):
         "submittal_id": submittal_id,
         "cost_item_id": str(cost_item_id),
         "cost_item_code": cost_item_code,
+        "saved_view_id": str(saved_view_id),
     }
 
 
@@ -1210,3 +1232,39 @@ async def test_outsider_cannot_read_evidence_pack(http_client, commercial_record
         headers=w["owner_headers"],
     )
     assert owner_view.status_code == 200, owner_view.text
+
+
+# ── saved_views (shared-view definition disclosure) ─────────────────────────
+#
+# ``GET /saved-views/{id}`` returns a stored view definition (name /
+# description / filter spec). A project/workspace-shared view is meant to be
+# visible to members of its project. Every other saved-views read path (run /
+# count / export) reaches the row scoper, which independently runs
+# ``verify_project_access`` on the request's project pin. ``get_view`` does
+# NOT run the scoper - it returned the definition after comparing the view's
+# project to the CALLER-SUPPLIED ``?project_id`` query parameter, so a
+# non-member could read a shared definition by echoing the view's own project
+# id back. The attacker M is a MANAGER (holds ``saved_views.read``), so the
+# only thing that can block the read is the project-access check the fix adds.
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_shared_saved_view(http_client, rw_project_world):
+    """Reading O's project-shared saved view as a manager outsider must 404."""
+    w = rw_project_world
+    # The attacker echoes the view's real project id back - exactly the input
+    # that tripped the pre-fix visibility check.
+    resp = await http_client.get(
+        f"/api/v1/saved-views/{w['saved_view_id']}?project_id={w['project_id']}",
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="GET", target=f"saved-views/{w['saved_view_id']}")
+
+    # Positive control - the owner still reads their own shared view, so the
+    # 404 above is unambiguously the access gate and not a missing route / row.
+    owner_view = await http_client.get(
+        f"/api/v1/saved-views/{w['saved_view_id']}?project_id={w['project_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["id"] == w["saved_view_id"]
