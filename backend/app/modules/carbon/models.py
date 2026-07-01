@@ -8,6 +8,8 @@ Tables:
     oe_carbon_scope1_entry             - direct-emission (fuel) line
     oe_carbon_scope2_entry             - purchased-energy line
     oe_carbon_scope3_entry             - upstream/downstream other line
+    oe_carbon_operational_entry        - B6 use-phase operational-carbon line (6D Ph2)
+    oe_carbon_lcc_entry                - ISO 15686-5 whole-life cost line (6D Ph2)
     oe_carbon_target                   - project carbon-reduction target
     oe_carbon_report                   - generated sustainability report
 
@@ -322,6 +324,164 @@ class Scope3Entry(Base):
 
     def __repr__(self) -> str:
         return f"<Scope3Entry {self.category} {self.total_co2e_kg} kgCO2e>"
+
+
+class OperationalCarbonEntry(Base):
+    """B6 use-phase operational-carbon line (6D Phase 2).
+
+    Recurring use-phase carbon from energy demand x a grid emission factor,
+    rolled over a study period. One row per energy-consuming BIM asset (HVAC,
+    lighting, pumps, lifts) or a single modelled whole-building line. Distinct
+    from the Scope 1/2/3 corporate-GHG lines, which are period actuals, and from
+    embodied A1-A5. ``carbon_kg`` is the study-period total (annual x years) and
+    rolls into the EN 15978 B stage of the inventory total.
+
+    AI-proposes / human-confirms: computed rows land as ``status='draft'`` with a
+    ``match_confidence`` band and an ``assumptions`` note; a human confirms them.
+    ``element_id`` is a plain GUID cross-module ref to ``oe_bim_element.id`` (no
+    ForeignKey), matching the convention on ``EmbodiedCarbonEntry.element_id``.
+    """
+
+    __tablename__ = "oe_carbon_operational_entry"
+
+    inventory_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_carbon_inventory.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    element_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    element_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    system: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="whole_building",
+        server_default="whole_building",
+        index=True,
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    end_use: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="regulated",
+        server_default="regulated",
+    )
+    # How the annual energy was established: 'asset_info' / 'element' /
+    # 'asset_power_rating' (per-asset signals) or 'modelled_intensity'
+    # (gross floor area x an energy-use intensity).
+    energy_source: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="modelled_intensity",
+        server_default="modelled_intensity",
+    )
+    annual_energy_kwh: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    grid_country: Mapped[str] = mapped_column(String(8), nullable=False, default="", server_default="")
+    grid_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grid_factor_kg_co2e_per_kwh: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    study_period_years: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default="60")
+    annual_carbon_kg: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    # Study-period total (annual_carbon_kg x study_period_years); the B6 figure.
+    carbon_kg: Mapped[str] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    stage: Mapped[str] = mapped_column(String(8), nullable=False, default="b6", server_default="b6")
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="modelled",
+        server_default="modelled",
+    )
+    match_confidence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="draft",
+        server_default="draft",
+        index=True,
+    )
+    assumptions: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<OperationalCarbonEntry {self.system} {self.carbon_kg} kg ({self.status})>"
+
+
+class LifeCycleCostEntry(Base):
+    """ISO 15686-5 whole-life cost line (6D Phase 2).
+
+    Whole-life cost of one element / system = capex + present value of opex +
+    present value of the B4/B5 replacement cycle (keyed to service life and the
+    study period) + present value of end-of-life. Future costs are discounted at
+    ``discount_rate``; the four present-value components and the total are
+    persisted for provenance so a stored row is fully reproducible.
+
+    Sits side by side with the whole-life carbon rollup for the same inventory.
+    AI-proposes / human-confirms: computed rows land as ``status='draft'`` with a
+    ``confidence`` band and an ``assumptions`` note. ``element_id`` is a plain
+    GUID cross-module ref to ``oe_bim_element.id`` (no ForeignKey).
+    """
+
+    __tablename__ = "oe_carbon_lcc_entry"
+
+    inventory_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_carbon_inventory.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    element_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    element_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(80), nullable=False, default="", server_default="")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="EUR", server_default="EUR")
+
+    capex: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    annual_opex: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    replacement_cost: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    service_life_years: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
+    eol_cost: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    discount_rate: Mapped[str] = mapped_column(Numeric(9, 6), nullable=False, default=0)
+    study_period_years: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default="60")
+
+    capex_pv: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    opex_pv: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    replacement_pv: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    replacement_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    eol_pv: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    whole_life_cost: Mapped[str] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="modelled",
+        server_default="modelled",
+    )
+    confidence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="draft",
+        server_default="draft",
+        index=True,
+    )
+    assumptions: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<LifeCycleCostEntry {self.category} {self.whole_life_cost} {self.currency} ({self.status})>"
 
 
 class CarbonTarget(Base):

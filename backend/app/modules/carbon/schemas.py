@@ -610,6 +610,9 @@ class InventoryTotalsResponse(BaseModel):
     embodied_b: Decimal = Field(default=Decimal("0"))
     embodied_c: Decimal = Field(default=Decimal("0"))
     embodied_d: Decimal = Field(default=Decimal("0"))
+    # B6 use-phase operational carbon (6D Phase 2), already folded into
+    # embodied_b (the full EN 15978 B stage) and into total.
+    b6_operational: Decimal = Field(default=Decimal("0"))
     scope1: Decimal = Field(default=Decimal("0"))
     scope2: Decimal = Field(default=Decimal("0"))
     scope3: Decimal = Field(default=Decimal("0"))
@@ -651,3 +654,217 @@ class CarbonDashboardResponse(BaseModel):
     targets_missed: int = 0
     intensity_per_m2: Decimal | None = None
     latest_report_id: UUID | None = None
+
+
+# ── 6D Phase 2: operational carbon (B6 use-phase) ─────────────────────────
+
+
+class OperationalCarbonComputeRequest(BaseModel):
+    """Request to compute B6 operational carbon for an inventory's BIM.
+
+    The grid factor is resolved as: an explicit ``grid_factor_kg_co2e_per_kwh``
+    override, else the built-in country/year catalogue, else the average of the
+    inventory's Scope-2 entries. Per-asset lines come from elements carrying an
+    energy signal (annual energy, or a rated power x run hours). A single
+    modelled whole-building line is added only when both ``gross_floor_area_m2``
+    and ``modelled_intensity_kwh_per_m2_year`` are supplied.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    model_id: UUID | None = None
+    grid_country: str = Field(default="", max_length=8)
+    grid_year: int = Field(default=2023, ge=2000, le=2100)
+    grid_factor_kg_co2e_per_kwh: Decimal | None = Field(default=None, ge=0)
+    study_period_years: int = Field(default=60, ge=1, le=200)
+    end_use: str = Field(default="regulated", pattern=r"^(regulated|unregulated|mixed)$")
+    gross_floor_area_m2: Decimal | None = Field(default=None, ge=0)
+    modelled_intensity_kwh_per_m2_year: Decimal | None = Field(default=None, ge=0)
+
+
+class OperationalCarbonEntryResponse(BaseModel):
+    """Operational-carbon (B6) entry returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    inventory_id: UUID
+    element_id: UUID | None = None
+    element_ref: str | None = None
+    system: str
+    description: str
+    end_use: str
+    energy_source: str
+    annual_energy_kwh: Decimal
+    grid_country: str
+    grid_year: int | None = None
+    grid_factor_kg_co2e_per_kwh: Decimal
+    study_period_years: int
+    annual_carbon_kg: Decimal
+    carbon_kg: Decimal
+    stage: str
+    source: str
+    match_confidence: str | None = None
+    status: str
+    assumptions: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+class OperationalCarbonComputeResponse(BaseModel):
+    """Result of an operational-carbon compute run (dry-run or persisted)."""
+
+    inventory_id: UUID
+    model_id: UUID | None = None
+    dry_run: bool
+    study_period_years: int
+    grid_factor_kg_co2e_per_kwh: Decimal
+    grid_factor_source: str
+    created: int = 0
+    skipped_existing: int = 0
+    skipped_no_energy: int = 0
+    total_b6_carbon_kg: Decimal = Field(default=Decimal("0"))
+    entries: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ── 6D Phase 2: whole-life cost (ISO 15686-5) ─────────────────────────────
+
+
+class LCCLineInput(BaseModel):
+    """A single explicit whole-life cost line (non-BIM manual entry)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    description: str = Field(default="", max_length=500)
+    category: str = Field(default="", max_length=80)
+    capex: Decimal = Field(default=Decimal("0"), ge=0)
+    annual_opex: Decimal | None = Field(default=None, ge=0)
+    replacement_cost: Decimal | None = Field(default=None, ge=0)
+    service_life_years: int | None = Field(default=None, ge=1, le=200)
+    eol_cost: Decimal | None = Field(default=None, ge=0)
+
+
+class LifeCycleCostComputeRequest(BaseModel):
+    """Request to compute ISO 15686-5 whole-life cost for an inventory.
+
+    Per-element lines are derived from the project's BIM asset register (service
+    life and any cost fields on ``asset_info``, with modelled fallbacks). Any
+    explicit ``lines`` are costed too (additive; useful without BIM cost data).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    model_id: UUID | None = None
+    discount_rate: Decimal = Field(default=Decimal("0.035"), ge=0, le=1)
+    study_period_years: int = Field(default=60, ge=1, le=200)
+    currency: str = Field(default="EUR", max_length=8)
+    default_capex: Decimal | None = Field(default=None, ge=0)
+    opex_rate_pct: Decimal = Field(default=Decimal("2.0"), ge=0, le=100)
+    eol_rate_pct: Decimal = Field(default=Decimal("10.0"), ge=0, le=100)
+    default_service_life_years: int = Field(default=30, ge=1, le=200)
+    lines: list[LCCLineInput] = Field(default_factory=list)
+
+
+class LifeCycleCostEntryResponse(BaseModel):
+    """Whole-life cost entry returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    inventory_id: UUID
+    element_id: UUID | None = None
+    element_ref: str | None = None
+    description: str
+    category: str
+    currency: str
+    capex: Decimal
+    annual_opex: Decimal
+    replacement_cost: Decimal
+    service_life_years: int
+    eol_cost: Decimal
+    discount_rate: Decimal
+    study_period_years: int
+    capex_pv: Decimal
+    opex_pv: Decimal
+    replacement_pv: Decimal
+    replacement_count: int
+    eol_pv: Decimal
+    whole_life_cost: Decimal
+    source: str
+    confidence: str | None = None
+    status: str
+    assumptions: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+class LifeCycleCostComputeResponse(BaseModel):
+    """Result of a whole-life cost compute run (dry-run or persisted)."""
+
+    inventory_id: UUID
+    model_id: UUID | None = None
+    dry_run: bool
+    currency: str
+    discount_rate: Decimal
+    study_period_years: int
+    created: int = 0
+    skipped_existing: int = 0
+    skipped_no_cost: int = 0
+    total_whole_life_cost: Decimal = Field(default=Decimal("0"))
+    entries: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ── 6D Phase 2: combined whole-life rollup (carbon + cost side by side) ────
+
+
+class WholeLifeCarbonBreakdown(BaseModel):
+    """EN 15978 whole-life carbon A-B-C-D breakdown (kgCO2e)."""
+
+    a1a3: Decimal = Field(default=Decimal("0"))
+    a4: Decimal = Field(default=Decimal("0"))
+    a5: Decimal = Field(default=Decimal("0"))
+    a1a5: Decimal = Field(default=Decimal("0"))
+    b_embodied: Decimal = Field(default=Decimal("0"))
+    b6_operational: Decimal = Field(default=Decimal("0"))
+    b_total: Decimal = Field(default=Decimal("0"))
+    c_end_of_life: Decimal = Field(default=Decimal("0"))
+    d_beyond: Decimal = Field(default=Decimal("0"))
+    whole_life_total: Decimal = Field(default=Decimal("0"))
+
+
+class WholeLifeCostBreakdown(BaseModel):
+    """ISO 15686-5 whole-life cost breakdown (present values)."""
+
+    currency: str = "EUR"
+    capex: Decimal = Field(default=Decimal("0"))
+    opex_pv: Decimal = Field(default=Decimal("0"))
+    replacement_pv: Decimal = Field(default=Decimal("0"))
+    eol_pv: Decimal = Field(default=Decimal("0"))
+    whole_life_cost: Decimal = Field(default=Decimal("0"))
+    entry_count: int = 0
+
+
+class WholeLifeCoverage(BaseModel):
+    """How much of the model is covered by carbon / cost data."""
+
+    bim_element_count: int = 0
+    embodied_linked_count: int = 0
+    operational_linked_count: int = 0
+    lcc_linked_count: int = 0
+    embodied_coverage_pct: float = 0.0
+    operational_coverage_pct: float = 0.0
+    lcc_coverage_pct: float = 0.0
+
+
+class WholeLifeResponse(BaseModel):
+    """Combined 6D whole-life view: carbon and cost side by side."""
+
+    inventory_id: UUID
+    study_period_years: int
+    carbon: WholeLifeCarbonBreakdown
+    cost: WholeLifeCostBreakdown
+    coverage: WholeLifeCoverage
+    carbon_price_per_tonne: Decimal | None = None
+    cost_of_whole_life_carbon: Decimal | None = None
