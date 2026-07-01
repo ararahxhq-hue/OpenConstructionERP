@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.6.0] - 2026-07-01
+
+A change intelligence and 6D lifecycle release. Change Intelligence gains a contractual notice and time-bar register that tracks every claim and extension-of-time notice against the project's contract standard so an entitlement is not lost to a missed deadline, a cross-source register of who owes the next action, a change-driver Pareto that ranks change cost by cause and by responsible party, and a change run-rate with a burn-rate forecast. The 6D carbon module adds a whole-life dashboard that reports embodied and operational carbon by EN 15978 stage alongside ISO 15686-5 whole-life cost and computes both from your BIM model with a dry-run preview you accept or reject line by line. It also closes a cross-project read gap on shared saved views and tightens who may edit workspace-level ledger accounts.
+
+### Added
+
+- A contractual notice and time-bar register on the Change Intelligence page. It derives every open notice and response clock from the dates already on your change orders, variation notices and extension-of-time claims, applies the notice period for the project's contract standard (FIDIC, NEC, JCT, AIA, ConsensusDocs, or a standard-neutral fallback), classifies each clock as met, upcoming, due soon or overdue, and flags a required notice with no proof on file or a lapsed bar so an entitlement is not quietly lost.
+- A cross-source commitment register that consolidates open meeting action items, risk mitigation actions, change orders and RFIs and submittals awaiting a response into one owe-list, ranked overdue first, with per-owner load and per-source counts.
+- A change-driver Pareto that ranks the cost and count of change by originating cause and by responsible party, with a running cumulative percentage, a per-currency split and a month-over-month trend.
+- A change run-rate that tracks the cumulative approved and pending change value against the contract over time, reports the intake rate, and projects a simple linear burn-rate forecast of the final change percentage at completion.
+- A 6D whole-life dashboard in the carbon module. It reports embodied and operational carbon by EN 15978 stage (A, B including B6 operational, and C, with module D shown separately and never added to the total) alongside ISO 15686-5 whole-life cost, computes operational carbon and life-cycle cost from the BIM model behind a dry-run preview, and lets you accept or reject each computed line before it counts.
+
+### Fixed
+
+- A project-shared saved view could be read by a manager from another project by passing the view's own project id back to the read. The read now enforces project access, so only the owner, a member of the view's project or an admin can open a shared view definition.
+- Editing a workspace-level general-ledger account, one not tied to a single project, now requires the consolidated-ledger admin scope, matching how those accounts are created and seeded.
+
 ## [9.5.0] - 2026-07-01
 
 A localization, contracts and construction-control release. The interface is now available in Mexican Spanish with local construction terminology, a new Contracts workspace tracks parties, guarantees, extension-of-time claims and milestones, and a Mexico pack adds unit-price analysis, IMSS site safety and IVA, retention and CFDI billing checks. Cross-module Cases playbooks walk you through real scenarios end to end, every remaining module gains a built-in How-It-Works guide, and 6D links embodied carbon to BIM model elements. The Bill of Quantities resource split becomes a three-way toggle, the main PDF exports carry your logo and details, the client portal opens the right page from its sign-in link, the file manager gains a media viewer with keyboard access, and new projects take their currency from your regional preference.
