@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.5.0] - 2026-07-01
+
+A localization, contracts and construction-control release. The interface is now available in Mexican Spanish with local construction terminology, a new Contracts workspace tracks parties, guarantees, extension-of-time claims and milestones, and a Mexico pack adds unit-price analysis, IMSS site safety and IVA, retention and CFDI billing checks. Cross-module Cases playbooks walk you through real scenarios end to end, every remaining module gains a built-in How-It-Works guide, and 6D links embodied carbon to BIM model elements. The Bill of Quantities resource split becomes a three-way toggle, the main PDF exports carry your logo and details, the client portal opens the right page from its sign-in link, the file manager gains a media viewer with keyboard access, and new projects take their currency from your regional preference.
+
+### Added
+
+- A Mexican Spanish (es-MX) interface option with Latin American construction terminology, falling back to Spanish and then English for anything not localized.
+- A Contracts workspace for counterparties, security and guarantees, extension-of-time claims and contract milestones, reachable from the Simple view navigation.
+- A Mexico regional pack with unit-price analysis (APU), IMSS and NOM site safety, IVA, retention and CFDI billing, public works (LOPSRM) and social housing (Infonavit) rule sets.
+- Cross-module Cases playbooks that guide you through end-to-end scenarios across the modules involved.
+- A built-in How-It-Works guide for every remaining module, short guided tours on the change intelligence, construction control, value and compliance screens, and a readable module developer guide.
+- 6D carbon links embodied carbon to BIM model elements and enriches it automatically from the model.
+
+### Changed
+
+- The Bill of Quantities resource split is now a three-way toggle (compact, columns, off).
+- The main PDF exports carry your logo and project details.
+- The client portal sign-in link opens the right page with proper loading and error states.
+- The file manager shows media in a viewer with context-menu actions and keyboard access.
+- New projects and forms take their currency from your regional preference instead of a fixed default.
+- Project status history now records who changed the status and when, with the interim waiting state removed, and daily diary, field reports and GeoHub anchoring were improved.
+
 ## [9.4.0] - 2026-06-30
 
 An end-to-end Imperial release. The measurement-system preference now follows the whole estimating workflow, including the editable Bill of Quantities grid, and a display rule that earlier releases applied unevenly is now applied everywhere: when a quantity is shown converted to Imperial, the paired per-unit rate is restated against the same unit so the line reconciles. Line and project totals stay invariant, and the machine-readable exports stay canonical metric so no stored figure is ever changed by a display unit.
