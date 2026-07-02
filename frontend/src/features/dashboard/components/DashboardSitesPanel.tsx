@@ -54,7 +54,7 @@ export function DashboardSitesPanel({ projects }: DashboardSitesPanelProps) {
   }, [projects, t]);
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border-light bg-surface-elevated/90">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border-light bg-surface-elevated/90">
       <div className="flex items-center justify-between border-b border-border-light px-3 py-2">
         <span className="text-xs font-semibold text-content-primary">
           {t('dashboard.sites_title', { defaultValue: 'Sites & weather' })}

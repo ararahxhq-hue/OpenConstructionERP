@@ -2251,8 +2251,8 @@ function DashboardPageInner() {
     map:
       projects && projects.length > 0 ? (
         <div className="animate-card-in" style={{ animationDelay: '220ms' }}>
-          <div className="rounded-xl border border-border-light bg-surface-primary/70 p-4">
-            <div className="mb-3 flex items-center gap-2">
+          <div className="rounded-xl border border-border-light bg-surface-primary/70 p-3.5">
+            <div className="mb-2.5 flex items-center gap-2">
               <MapPin size={16} className="text-oe-blue" />
               <h3 className="text-sm font-semibold text-content-primary">
                 {t('dashboard.map_section_title', {
@@ -2260,8 +2260,11 @@ function DashboardPageInner() {
                 })}
               </h3>
             </div>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.5fr_1fr]">
-              <DashboardProjectsMap heightClass="h-64 lg:h-[22rem]" projects={mapPins} />
+            {/* Map (left) and sites list (right) share one fixed-height row on
+                desktop so the two columns always line up; both children fill it
+                (map via h-full, panel via its own h-full + internal scroll). */}
+            <div className="grid grid-cols-1 gap-3 lg:h-[19rem] lg:grid-cols-[1.5fr_1fr]">
+              <DashboardProjectsMap className="lg:h-full" projects={mapPins} />
               <DashboardSitesPanel projects={mapPins} />
             </div>
           </div>
