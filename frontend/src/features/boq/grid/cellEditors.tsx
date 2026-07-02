@@ -320,23 +320,42 @@ export const FormulaCellEditor = forwardRef(
     // numeric editing still works when the grid doesn't supply them (e.g. an
     // isolated unit test that only passes displayQuantity).
     const gridCtx = props.context as
-      | { positions?: Position[]; boqVariablesMap?: Map<string, FormulaVariable> }
+      | {
+          positions?: Position[];
+          boqVariablesMap?: Map<string, FormulaVariable>;
+          displayQuantity?: DisplayQuantityApi;
+        }
       | undefined;
     const ctxPositions = gridCtx?.positions;
     const ctxVariables = gridCtx?.boqVariablesMap;
-    const formulaCtx = useMemo(
-      () =>
-        buildFormulaContext({
-          positions: ctxPositions ?? [],
-          variables: ctxVariables ?? new Map<string, FormulaVariable>(),
-          currentPositionId: props.data?.id,
-        }),
-      [ctxPositions, ctxVariables, props.data?.id],
-    );
+    // Read the display seam once: it both gates the feet-and-inches parser
+    // (#290) and projects the formula context into display space (#292).
+    const dq = gridCtx?.displayQuantity;
+    const formulaCtx = useMemo(() => {
+      // Issue #292: evaluate the quantity formula in DISPLAY space. A reference
+      // like =pos("01.005").qty must reuse the *displayed* quantity so the
+      // commit seam (toMetricQty) converts it back to metric-canonical exactly
+      // once. Feeding raw metric positions would make pos()/section() return
+      // metric numbers that the seam then converts a SECOND time in imperial
+      // mode (dividing by the ft factor again), a #285-class quantity
+      // corruption. In metric mode convert() is identity, so this projection is
+      // a no-op there.
+      const src = ctxPositions ?? [];
+      const positions = dq
+        ? src.map((p) => ({
+            ...p,
+            quantity: dq.convert(Number(p.quantity) || 0, p.unit ?? '').value,
+          }))
+        : src;
+      return buildFormulaContext({
+        positions,
+        variables: ctxVariables ?? new Map<string, FormulaVariable>(),
+        currentPositionId: props.data?.id,
+      });
+    }, [ctxPositions, ctxVariables, props.data?.id, dq]);
 
     // Issue #290: engage feet-and-inches parsing ONLY in imperial cells whose
     // unit displays as feet (metric users and every other unit are untouched).
-    const dq = (props.context as { displayQuantity?: DisplayQuantityApi } | undefined)?.displayQuantity;
     const ftInActive = dq?.system === 'imperial' && dq.unitFor(props.data?.unit ?? '') === 'ft';
 
     const preview = useMemo(
