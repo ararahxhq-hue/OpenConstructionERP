@@ -90,10 +90,20 @@ class BIMModel(Base):
     )
 
     # Relationships
+    #
+    # ``lazy="select"`` (NOT ``selectin``): no code reads ``model.elements``
+    # through this relationship - elements are always queried straight from
+    # oe_bim_element (list_elements etc.). Under ``selectin`` every plain
+    # ``session.get(BIMModel, id)`` (get_model -> geometry / schema /
+    # single-model endpoints) silently hydrated ALL of a model's elements
+    # into memory, which blew up the worker on large models and surfaced as a
+    # "parsing error" in the BIM 3D viewer (issue #291: a 6114-element HVAC
+    # model). The list endpoint already guards with noload(); deletes use a
+    # Core DELETE + DB ondelete="CASCADE", so nothing depends on the eager load.
     elements: Mapped[list[BIMElement]] = relationship(
         back_populates="model",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="select",
     )
 
     def __repr__(self) -> str:
