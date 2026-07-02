@@ -32,13 +32,17 @@ import {
   KeyRound,
   ArrowLeft,
   FileText,
+  FolderOpen,
   GitPullRequestArrow,
   LifeBuoy,
   Receipt,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import { Badge, Card, EmptyState, SkeletonTable } from '@/shared/ui';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useToastStore } from '@/stores/useToastStore';
 import { PortalProgressReportsTab } from './PortalProgressReportsTab';
 import {
   consumePortalMagicLink,
@@ -46,12 +50,15 @@ import {
   getMyPortalProfile,
   listMyChangeOrders,
   listMyTickets,
+  listMyDocuments,
+  fetchMyDocumentBlob,
   type PortalChangeOrder,
   type PortalTicket,
+  type PortalSharedDocument,
 } from './api';
 import { PORTAL_PAYMENTS_PATH } from './portalLanding';
 
-type Tab = 'progress' | 'change_orders' | 'tickets';
+type Tab = 'progress' | 'change_orders' | 'tickets' | 'documents';
 
 // Roles that see executed change orders on their landing.
 const CHANGE_ORDER_ROLES = new Set(['client', 'investor', 'consultant']);
@@ -178,6 +185,15 @@ function PortalHomeContent() {
   const showChangeOrders = CHANGE_ORDER_ROLES.has(role);
   const showTickets = TICKET_ROLES.has(role);
 
+  // Documents are shared with any role, so the tab always shows. This lightweight
+  // query drives the tab count and, sharing DocumentsTab's cache key, doubles as
+  // its prefetch (React Query dedupes the two into a single request).
+  const documentsQ = useQuery({
+    queryKey: ['portal-home', 'documents'],
+    queryFn: () => listMyDocuments(),
+    staleTime: 60_000,
+  });
+
   const tabs = (
     [
       {
@@ -198,7 +214,14 @@ function PortalHomeContent() {
         icon: LifeBuoy,
         show: showTickets,
       },
-    ] as { id: Tab; label: string; icon: React.ElementType; show: boolean }[]
+      {
+        id: 'documents' as Tab,
+        label: t('homeportal.documents_tab', { defaultValue: 'Documents' }),
+        icon: FolderOpen,
+        show: true,
+        count: documentsQ.data?.total,
+      },
+    ] as { id: Tab; label: string; icon: React.ElementType; show: boolean; count?: number }[]
   ).filter((it) => it.show);
 
   const [tab, setTab] = useState<Tab>('progress');
@@ -280,6 +303,18 @@ function PortalHomeContent() {
               >
                 <Icon size={14} />
                 {it.label}
+                {typeof it.count === 'number' && it.count > 0 ? (
+                  <span
+                    className={clsx(
+                      'ml-0.5 rounded-full px-1.5 text-2xs font-semibold',
+                      tab === it.id
+                        ? 'bg-oe-blue-subtle text-oe-blue-text'
+                        : 'bg-surface-secondary text-content-tertiary',
+                    )}
+                  >
+                    {it.count}
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -292,6 +327,8 @@ function PortalHomeContent() {
         <ChangeOrdersTab />
       ) : tab === 'tickets' && showTickets ? (
         <TicketsTab />
+      ) : tab === 'documents' ? (
+        <DocumentsTab />
       ) : (
         <PortalProgressReportsTab />
       )}
@@ -508,6 +545,219 @@ function TicketCard({ ticket }: { ticket: PortalTicket }) {
             <DateDisplay value={ticket.sla_due_at} />
           </span>
         ) : null}
+      </div>
+    </li>
+  );
+}
+
+/* ── Documents ─────────────────────────────────────────────────────────────*/
+
+// Common mime types mapped to a short, upper-case format tag. Anything not
+// here falls back to a derived subtype tag or a translated "File" label.
+const MIME_SHORT_LABELS: Record<string, string> = {
+  'application/pdf': 'PDF',
+  'application/zip': 'ZIP',
+  'application/json': 'JSON',
+  'application/xml': 'XML',
+  'text/xml': 'XML',
+  'text/csv': 'CSV',
+  'text/plain': 'TXT',
+  'text/html': 'HTML',
+  'application/msword': 'DOC',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+  'application/vnd.ms-excel': 'XLS',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'XLSX',
+  'application/vnd.ms-powerpoint': 'PPT',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPTX',
+};
+
+/**
+ * A short upper-case format tag for a mime type (e.g. "PDF", "PNG"), or null
+ * when only a generic word fits - the caller supplies the translated fallback.
+ */
+function shortMimeLabel(mimeType: string): string | null {
+  const mime = mimeType.trim().toLowerCase();
+  if (!mime) return null;
+  const mapped = MIME_SHORT_LABELS[mime];
+  if (mapped) return mapped;
+  const subtype = mime.split('/')[1] ?? '';
+  const beforeSuffix = subtype.split('+')[0] ?? subtype;
+  const token = beforeSuffix.split('.').pop() ?? '';
+  if (token.length >= 2 && token.length <= 5 && /^[a-z0-9]+$/.test(token)) {
+    return token.toUpperCase();
+  }
+  return null;
+}
+
+/** Human-readable byte size (e.g. "2.4 MB"); a plain dash when unknown. */
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded} ${units[unit] ?? 'B'}`;
+}
+
+function DocumentsTab() {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['portal-home', 'documents'],
+    queryFn: () => listMyDocuments(),
+    staleTime: 60_000,
+  });
+  const items = q.data?.items ?? [];
+
+  if (q.isLoading) {
+    return (
+      <Card padding="md">
+        <SkeletonTable rows={4} columns={3} />
+      </Card>
+    );
+  }
+  if (q.error) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<AlertCircle size={22} />}
+          title={t('homeportal.documents_load_failed', { defaultValue: 'Could not load documents' })}
+          description={q.error instanceof Error ? q.error.message : ''}
+          action={{
+            label: t('common.retry', { defaultValue: 'Retry' }),
+            onClick: () => void q.refetch(),
+          }}
+        />
+      </Card>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<FolderOpen size={22} />}
+          title={t('homeportal.documents_empty', {
+            defaultValue: 'No documents shared with you yet',
+          })}
+          description={t('homeportal.documents_empty_desc', {
+            defaultValue: 'Documents shared with you will appear here.',
+          })}
+        />
+      </Card>
+    );
+  }
+  return (
+    <ul className="space-y-3">
+      {items.map((doc) => (
+        <DocumentCard key={doc.id} doc={doc} />
+      ))}
+    </ul>
+  );
+}
+
+function DocumentCard({ doc }: { doc: PortalSharedDocument }) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [busy, setBusy] = useState<'open' | 'download' | null>(null);
+  const typeLabel =
+    shortMimeLabel(doc.mime_type) ?? t('homeportal.documents_type_file', { defaultValue: 'File' });
+
+  // The content endpoint rides the session token, so a link cannot carry the
+  // Authorization header: fetch the bytes as a Blob and hand them to `use`,
+  // which turns them into a short-lived object URL for open / download.
+  const withBlob = async (use: (blob: Blob) => void): Promise<void> => {
+    try {
+      const blob = await fetchMyDocumentBlob(doc.id);
+      if (blob === null) {
+        addToast({
+          type: 'error',
+          title: t('homeportal.documents_gone', {
+            defaultValue: 'This document is no longer available.',
+          }),
+        });
+        return;
+      }
+      use(blob);
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title:
+          err instanceof Error
+            ? err.message
+            : t('homeportal.documents_open_failed', { defaultValue: 'Could not open the document.' }),
+      });
+    }
+  };
+
+  const onOpen = async () => {
+    setBusy('open');
+    await withBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    });
+    setBusy(null);
+  };
+
+  const onDownload = async () => {
+    setBusy('download');
+    await withBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.name || 'document';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+    setBusy(null);
+  };
+
+  return (
+    <li className="rounded-xl border border-border bg-surface-primary p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <FileText size={16} className="shrink-0 text-content-tertiary" />
+          <span className="truncate text-sm font-medium text-content-primary">{doc.name}</span>
+        </div>
+        <Badge variant="neutral" size="sm">
+          {typeLabel}
+        </Badge>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-content-tertiary">
+        <span>{formatFileSize(doc.file_size)}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={onOpen}
+          className="inline-flex items-center gap-1 rounded-lg border border-border-light bg-surface-primary px-3 py-1.5 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'open' ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <ExternalLink size={12} />
+          )}
+          {t('homeportal.documents_open', { defaultValue: 'Open' })}
+        </button>
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={onDownload}
+          className="inline-flex items-center gap-1 rounded-lg border border-border-light bg-surface-primary px-3 py-1.5 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'download' ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Download size={12} />
+          )}
+          {t('homeportal.documents_download', { defaultValue: 'Download' })}
+        </button>
       </div>
     </li>
   );

@@ -603,6 +603,63 @@ export function listMyTickets(params?: {
   );
 }
 
+/* ── Portal-user-facing (session-token) shared documents ───────────────────
+ *
+ * Documents an internal admin has shared with the caller through a `document`
+ * access rule. The list is metadata only; the bytes are streamed by a separate
+ * content endpoint that re-checks the grant. Both ride the magic-link session
+ * token (never the internal JWT). The content endpoint is bearer-gated, so a
+ * plain link / window.open cannot carry the Authorization header - the bytes
+ * are fetched as a Blob and handed back for the caller to open or download
+ * through an object URL.
+ */
+
+export interface PortalSharedDocument {
+  id: string;
+  name: string;
+  file_size: number;
+  mime_type: string;
+  project_id: string;
+}
+
+export interface PortalSharedDocumentList {
+  items: PortalSharedDocument[];
+  total: number;
+}
+
+/** List the documents shared with the portal caller. */
+export function listMyDocuments(): Promise<PortalSharedDocumentList> {
+  return portalFetch<PortalSharedDocumentList>(`${PORTAL_ME_BASE}/documents`);
+}
+
+/**
+ * Fetch one shared document's bytes with the session token. Returns the Blob,
+ * or null when the file is gone from disk (410) - mirrors
+ * fetchMyProgressReportHtml. The content endpoint is bearer-gated, so the bytes
+ * must be fetched (not linked) and handed to the caller as a Blob it can open
+ * or download through a short-lived object URL.
+ */
+export async function fetchMyDocumentBlob(documentId: string): Promise<Blob | null> {
+  const token = getPortalSessionToken();
+  if (!token) throw new PortalUnauthorizedError('No portal session');
+  const res = await fetch(
+    `${PORTAL_ME_BASE}/documents/${encodeURIComponent(documentId)}/content`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (res.status === 401) {
+    clearPortalSessionToken();
+    throw new PortalUnauthorizedError();
+  }
+  if (res.status === 410) return null;
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+    const detail =
+      typeof body.detail === 'string' ? body.detail : `Could not open document (${res.status})`;
+    throw new Error(detail);
+  }
+  return res.blob();
+}
+
 /** Consume a magic-link token, persist the session, and return it. */
 export async function consumePortalMagicLink(
   token: string,
