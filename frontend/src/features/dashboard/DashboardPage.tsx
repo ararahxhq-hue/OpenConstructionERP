@@ -41,6 +41,7 @@ import {
   GraduationCap,
   ChevronDown,
   ChevronUp,
+  MapPin,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState, ModuleHelpButton, ModuleGuideButton, PartnerLogoBadge } from '@/shared/ui';
 import { dashboardGuide } from './dashboardGuide';
@@ -50,7 +51,8 @@ import BIMCoverageCard from './BIMCoverageCard';
 import { FinanceSummaryCard } from './FinanceSummaryCard';
 import { InboxPanel } from '@/features/inbox';
 import { CompactProjectCard } from './components/CompactProjectCard';
-import { DashboardProjectsMap } from './components/DashboardProjectsMap';
+import { DashboardProjectsMap, type ProjectPin } from './components/DashboardProjectsMap';
+import { DashboardSitesPanel } from './components/DashboardSitesPanel';
 import { WeatherSiteWidget } from './components/NewWidgets';
 import { OperationsSnapshotCard } from './components/OperationsSnapshotCard';
 import { LatestSitePhotosCard } from './components/LatestSitePhotosCard';
@@ -2138,6 +2140,20 @@ function DashboardPageInner() {
   //    in the user's saved order (`resolvedWidgets`), skipping hidden ones.
   //    Conditional widgets resolve to `null` (and contribute nothing) just
   //    as they did when they were inline. */
+  // Shared marker list for the map + the sites/weather side panel (built
+  // once so both columns show the same projects). Capped at 30 to keep the
+  // map readable and the per-site weather fan-out bounded.
+  const mapPins: ProjectPin[] = (projects ?? []).slice(0, 30).map((p) => ({
+    id: p.id,
+    name: p.name,
+    region: p.region,
+    lat: p.address?.lat ?? null,
+    lng: p.address?.lng ?? null,
+    address: p.address?.street ?? null,
+    city: p.address?.city ?? null,
+    country: p.address?.country ?? null,
+  }));
+
   const widgetNodes: Record<string, ReactNode> = {
     continue_work: lastBoq ? (
       <button
@@ -2235,18 +2251,20 @@ function DashboardPageInner() {
     map:
       projects && projects.length > 0 ? (
         <div className="animate-card-in" style={{ animationDelay: '220ms' }}>
-          <DashboardProjectsMap
-            projects={projects.slice(0, 30).map((p) => ({
-              id: p.id,
-              name: p.name,
-              region: p.region,
-              lat: p.address?.lat ?? null,
-              lng: p.address?.lng ?? null,
-              address: p.address?.street ?? null,
-              city: p.address?.city ?? null,
-              country: p.address?.country ?? null,
-            }))}
-          />
+          <div className="rounded-xl border border-border-light bg-surface-primary/70 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <MapPin size={16} className="text-oe-blue" />
+              <h3 className="text-sm font-semibold text-content-primary">
+                {t('dashboard.map_section_title', {
+                  defaultValue: 'Project locations & weather',
+                })}
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.5fr_1fr]">
+              <DashboardProjectsMap heightClass="h-64 lg:h-[22rem]" projects={mapPins} />
+              <DashboardSitesPanel projects={mapPins} />
+            </div>
+          </div>
         </div>
       ) : null,
 
