@@ -1,21 +1,29 @@
 /**
- * Regression guard for Issue #292 (imperial): a quantity-cell formula that
- * reuses another position's quantity, e.g. =pos("01.005").qty, must reproduce
- * the referenced metric-canonical quantity after the display-to-metric commit
- * seam, in BOTH measurement systems.
+ * Regression guard for the imperial BOQ money path (Issue #292 + H2 fix).
  *
- * The FormulaCellEditor projects each context position's metric quantity into
- * the active display unit before evaluation, so the commit seam (toMetricQty ->
- * fromDisplayQuantity) converts exactly once. Feeding raw metric positions
- * would let the seam convert a SECOND time in imperial mode (dividing by the ft
- * factor again), a #285-class quantity corruption. These tests lock in the
- * round-trip against the real conversion primitives the editor uses.
+ * A quantity-cell formula can reference symbols that are all stored
+ * metric-canonical: another position (=pos("01.005").qty / .rate / .total), a
+ * section aggregate, or a BOQ variable (=$GFA). BOQ variables carry no unit, so
+ * the editor evaluates a formula in METRIC space - positions are NOT projected
+ * into the display unit - and, when the formula references one of these
+ * canonical symbols, stores the resolved value as-is: it must NOT be run through
+ * the display->metric seam again. A pure-literal formula (=10+6) or a plain
+ * typed number carries no reference, so it is read in the displayed unit and
+ * converted display->metric exactly once.
+ *
+ * The earlier model projected positions into the display unit but passed
+ * variables through raw and then always divided by the cell's unit factor, so a
+ * dimensional =$GFA in imperial mode silently stored ~10.76x the metric quantity
+ * the same formula stored in metric mode. These tests lock the stored value in
+ * both measurement systems against the real conversion primitives, with an
+ * explicit no-divergence assertion for the variable path.
  */
 import { describe, it, expect } from 'vitest';
 
-import { buildFormulaContext, evaluateFormula } from './formula';
+import { buildFormulaContext, evaluateFormula, extractReferences } from './formula';
+import type { FormulaVariable } from './formula';
 import type { Position } from '../api';
-import { toDisplayQuantity, fromDisplayQuantity } from '@/shared/lib/unitConversion';
+import { fromDisplayQuantity } from '@/shared/lib/unitConversion';
 
 type System = 'metric' | 'imperial';
 
@@ -31,50 +39,94 @@ function makePosition(ordinal: string, quantityMetric: number, unit: string): Po
   } as unknown as Position;
 }
 
-// Mirror what FormulaCellEditor does: project each context position's metric
-// quantity into the active display unit before building the formula context.
-function projectedContext(positions: Position[], system: System) {
-  const projected = positions.map((p) => ({
-    ...p,
-    quantity: toDisplayQuantity(Number(p.quantity) || 0, p.unit, system).value,
-  })) as unknown as Position[];
-  return buildFormulaContext({ positions: projected });
+// Mirror what FormulaCellEditor now does: evaluate against raw (metric)
+// positions, never projected into the display unit.
+function metricContext(positions: Position[], variables?: Map<string, FormulaVariable>) {
+  return buildFormulaContext({ positions, variables });
 }
 
-// The commit seam the editor applies to a resolved formula value.
-function storeFromDisplay(resolved: number, unit: string, system: System): number {
-  return fromDisplayQuantity(resolved, unit, system);
+// Mirror the editor's commit seam (parseInput -> commitFromInput): a formula
+// that references a canonical symbol is stored as-is; anything else is a
+// displayed value converted display->metric exactly once.
+function storeFromEditor(src: string, resolved: number, unit: string, system: System): number {
+  const refs = extractReferences(src);
+  const canonical =
+    refs.variables.size > 0 || refs.positionOrdinals.size > 0 || refs.sectionNames.size > 0;
+  return canonical ? resolved : fromDisplayQuantity(resolved, unit, system);
 }
 
-describe('quantity-cell reference reuse round-trips through the display seam (#292)', () => {
-  it('metric mode is a no-op: =pos().qty stores the referenced metric value', () => {
-    const ctx = projectedContext([makePosition('01.001', 3.048, 'm')], 'metric');
-    const resolved = evaluateFormula('=pos("01.001").qty', ctx);
-    expect(resolved).not.toBeNull();
-    expect(storeFromDisplay(resolved as number, 'm', 'metric')).toBeCloseTo(3.048, 6);
+function boqVars(entries: Record<string, number>): Map<string, FormulaVariable> {
+  const m = new Map<string, FormulaVariable>();
+  for (const [k, v] of Object.entries(entries)) {
+    m.set(k.toUpperCase(), { type: 'number', value: v });
+  }
+  return m;
+}
+
+describe('imperial BOQ quantity formulas store metric-canonical, identical in both systems (#292 / H2)', () => {
+  it('=pos().qty stores the referenced metric quantity, same in metric and imperial', () => {
+    const positions = [makePosition('01.001', 3.048, 'm')];
+    const src = '=pos("01.001").qty';
+    for (const system of ['metric', 'imperial'] as System[]) {
+      const resolved = evaluateFormula(src, metricContext(positions));
+      expect(resolved).not.toBeNull();
+      expect(storeFromEditor(src, resolved as number, 'm', system)).toBeCloseTo(3.048, 6);
+    }
   });
 
-  it('imperial length: =pos().qty resolves in feet and stores the original metres', () => {
-    const ctx = projectedContext([makePosition('01.001', 3.048, 'm')], 'imperial'); // 10 ft
-    const resolved = evaluateFormula('=pos("01.001").qty', ctx);
-    expect(resolved).not.toBeNull();
-    expect(resolved as number).toBeCloseTo(10, 4); // displayed feet, not metres
-    expect(storeFromDisplay(resolved as number, 'm', 'imperial')).toBeCloseTo(3.048, 6);
+  it('=pos().qty area reference stores the referenced m2, same in both systems', () => {
+    const positions = [makePosition('02.001', 10, 'm2')];
+    const src = '=pos("02.001").qty';
+    for (const system of ['metric', 'imperial'] as System[]) {
+      const resolved = evaluateFormula(src, metricContext(positions));
+      expect(storeFromEditor(src, resolved as number, 'm2', system)).toBeCloseTo(10, 6);
+    }
   });
 
-  it('imperial area: =pos().qty round-trips m2 to ft2 and back', () => {
-    const ctx = projectedContext([makePosition('02.001', 10, 'm2')], 'imperial');
-    const resolved = evaluateFormula('=pos("02.001").qty', ctx);
-    expect(resolved).not.toBeNull();
-    expect(resolved as number).toBeCloseTo(107.639, 2);
-    expect(storeFromDisplay(resolved as number, 'm2', 'imperial')).toBeCloseTo(10, 6);
+  it('=pos().qty * 2 stores 2x the metric quantity, same in both systems', () => {
+    const positions = [makePosition('01.001', 3.048, 'm')];
+    const src = '=pos("01.001").qty * 2';
+    for (const system of ['metric', 'imperial'] as System[]) {
+      const resolved = evaluateFormula(src, metricContext(positions));
+      expect(storeFromEditor(src, resolved as number, 'm', system)).toBeCloseTo(6.096, 6);
+    }
   });
 
-  it('imperial with arithmetic: =pos().qty * 2 stays consistent end to end', () => {
-    const ctx = projectedContext([makePosition('01.001', 3.048, 'm')], 'imperial');
-    const resolved = evaluateFormula('=pos("01.001").qty * 2', ctx);
-    expect(resolved).not.toBeNull();
-    expect(resolved as number).toBeCloseTo(20, 3); // 2 * 10 ft
-    expect(storeFromDisplay(resolved as number, 'm', 'imperial')).toBeCloseTo(6.096, 6);
+  it('H2: a dimensional variable =$GFA * 0.15 stores the SAME metric value in metric and imperial', () => {
+    const vars = boqVars({ GFA: 1500 }); // e.g. 1500 m2 stored canonical
+    const src = '=$GFA * 0.15';
+    const stores = (['metric', 'imperial'] as System[]).map((system) => {
+      const r = evaluateFormula(src, metricContext([], vars));
+      expect(r).not.toBeNull();
+      return storeFromEditor(src, r as number, 'm2', system);
+    });
+    expect(stores[0]).toBeCloseTo(225, 6); // metric
+    // The bug this guards: the imperial store must not diverge (was ~20.9 m2).
+    expect(stores[1]).toBeCloseTo(225, 6); // imperial
+    expect(stores[1]).toBeCloseTo(stores[0], 9);
+  });
+
+  it('H2: a mixed formula =pos().qty + $GFA stays canonical and identical across systems', () => {
+    const positions = [makePosition('01.001', 10, 'm2')];
+    const vars = boqVars({ GFA: 5 });
+    const src = '=pos("01.001").qty + $GFA';
+    const stores = (['metric', 'imperial'] as System[]).map((system) => {
+      const r = evaluateFormula(src, metricContext(positions, vars));
+      return storeFromEditor(src, r as number, 'm2', system);
+    });
+    expect(stores[0]).toBeCloseTo(15, 6);
+    expect(stores[1]).toBeCloseTo(15, 6); // no divergence
+  });
+
+  it('a pure-literal formula (no reference) is still read in the displayed unit and converted once', () => {
+    const src = '=10 + 6';
+    // No references -> treated as a displayed value, not canonical.
+    expect(extractReferences(src).variables.size).toBe(0);
+    expect(extractReferences(src).positionOrdinals.size).toBe(0);
+    const r = evaluateFormula(src, metricContext([]));
+    expect(r as number).toBeCloseTo(16, 6);
+    // metric: stored as typed; imperial foot cell: 16 ft -> metres, once.
+    expect(storeFromEditor(src, r as number, 'm', 'metric')).toBeCloseTo(16, 6);
+    expect(storeFromEditor(src, r as number, 'm', 'imperial')).toBeCloseTo(4.8768, 4);
   });
 });

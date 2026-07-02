@@ -21,6 +21,7 @@ import {
   isFormula as isFormulaImpl,
   normaliseFormula as normaliseFormulaImpl,
   buildFormulaContext,
+  extractReferences,
   type FormulaContext,
   type FormulaVariable,
 } from './formula';
@@ -259,9 +260,15 @@ type FormulaPreview =
  * feet-and-inches value (in imperial foot cells), nor a formula that
  * evaluates - so the commit path must refuse to write instead of coercing to
  * `parseFloat || 0` and silently storing garbage.
+ *
+ * `canonical` (H2 fix) marks whether `parsed` is already a metric-canonical
+ * value: true for a formula that referenced a canonical symbol ($VAR / pos() /
+ * section(), whose stored values are all metric), false for a displayed value
+ * (a plain number, a feet-and-inches entry, or a pure-literal formula) that the
+ * commit path still converts display->metric exactly once.
  */
 type ParseResult =
-  | { ok: true; parsed: number; formulaSrc: string }
+  | { ok: true; parsed: number; formulaSrc: string; canonical: boolean }
   | { ok: false };
 
 function previewFor(input: string, ctx?: FormulaContext, ftInActive = false): FormulaPreview {
@@ -332,27 +339,24 @@ export const FormulaCellEditor = forwardRef(
     // (#290) and projects the formula context into display space (#292).
     const dq = gridCtx?.displayQuantity;
     const formulaCtx = useMemo(() => {
-      // Issue #292: evaluate the quantity formula in DISPLAY space. A reference
-      // like =pos("01.005").qty must reuse the *displayed* quantity so the
-      // commit seam (toMetricQty) converts it back to metric-canonical exactly
-      // once. Feeding raw metric positions would make pos()/section() return
-      // metric numbers that the seam then converts a SECOND time in imperial
-      // mode (dividing by the ft factor again), a #285-class quantity
-      // corruption. In metric mode convert() is identity, so this projection is
-      // a no-op there.
-      const src = ctxPositions ?? [];
-      const positions = dq
-        ? src.map((p) => ({
-            ...p,
-            quantity: dq.convert(Number(p.quantity) || 0, p.unit ?? '').value,
-          }))
-        : src;
+      // Issue #292 / H2 fix: evaluate the quantity formula in METRIC-canonical
+      // space. Every symbol a formula can reference - pos()/section() positions,
+      // $VAR variables, and pos().rate/.total - is stored metric-canonical, and
+      // BOQ variables carry no unit, so there is no single display factor that
+      // could project them all consistently. We therefore keep positions raw
+      // (metric) here; when a formula actually references one of these canonical
+      // symbols the commit path treats the whole result as already-canonical and
+      // skips toMetricQty (see parseInput), while a pure-literal formula (=10+6)
+      // or a plain typed number is still read in the displayed unit and
+      // converted once. This removes the earlier split - positions projected but
+      // variables passed raw - which double-converted a dimensional $VAR in
+      // imperial mode and stored ~10.76x the metric quantity.
       return buildFormulaContext({
-        positions,
+        positions: ctxPositions ?? [],
         variables: ctxVariables ?? new Map<string, FormulaVariable>(),
         currentPositionId: props.data?.id,
       });
-    }, [ctxPositions, ctxVariables, props.data?.id, dq]);
+    }, [ctxPositions, ctxVariables, props.data?.id]);
 
     // Issue #290: engage feet-and-inches parsing ONLY in imperial cells whose
     // unit displays as feet (metric users and every other unit are untouched).
@@ -405,19 +409,32 @@ export const FormulaCellEditor = forwardRef(
       const trimmed = live.trim();
       // Issue #290: feet-and-inches, imperial foot cells only. The result is a
       // DISPLAY quantity in feet; the commit path (toMetricQty) converts it to
-      // metres, so we must NOT convert here - just hand back the decimal feet.
+      // metres, so it is NOT canonical yet.
       if (ftInActive) {
         const ft = parseFeetInches(trimmed);
-        if (ft !== null) return { ok: true, parsed: ft, formulaSrc: '' };
+        if (ft !== null) return { ok: true, parsed: ft, formulaSrc: '', canonical: false };
       }
       // Plain finite number (strict - never truncate "abc" / "10.5x" to a
-      // partial value the way parseFloat did).
+      // partial value the way parseFloat did). A plain number is read in the
+      // displayed unit, so it still needs display->metric conversion.
       const plain = parsePlainNumber(trimmed);
-      if (plain !== null) return { ok: true, parsed: plain, formulaSrc: '' };
-      // Formula - now context-aware so $VAR / pos(...) resolve (Issue #292).
+      if (plain !== null) return { ok: true, parsed: plain, formulaSrc: '', canonical: false };
+      // Formula - context-aware so $VAR / pos(...) resolve (Issue #292). H2 fix:
+      // when the formula references a canonical symbol ($VAR / pos() / section(),
+      // which also covers pos().rate / .total), the resolved value is already in
+      // metric-canonical space and must NOT run through toMetricQty again; a
+      // pure-literal formula (=10+6) carries no reference, so it is read in the
+      // displayed unit like a plain number and converted once.
       if (isFormula(trimmed)) {
         const result = evaluateFormula(trimmed, formulaCtx);
-        if (result !== null) return { ok: true, parsed: result, formulaSrc: trimmed };
+        if (result !== null) {
+          const refs = extractReferences(trimmed);
+          const canonical =
+            refs.variables.size > 0 ||
+            refs.positionOrdinals.size > 0 ||
+            refs.sectionNames.size > 0;
+          return { ok: true, parsed: result, formulaSrc: trimmed, canonical };
+        }
       }
       return { ok: false };
     };
@@ -451,14 +468,17 @@ export const FormulaCellEditor = forwardRef(
         committedRef.current = false;
         return false;
       }
-      const { parsed, formulaSrc } = res;
-      // Issue #285: the Qty cell DISPLAYS the value converted into the user's
-      // measurement system, so a formula typed here resolves in the displayed
-      // unit. Convert the resolved value back to metric-canonical storage
-      // BEFORE writing via setDataValue (which bypasses the column
-      // valueParser). Identity for metric / unmapped units. We store the
-      // metric value in lastParsedRef so getValue() returns the same number.
-      const metricParsed = toMetricQty(props, parsed);
+      const { parsed, formulaSrc, canonical } = res;
+      // Issue #285 / H2 fix: the Qty cell DISPLAYS the value converted into the
+      // user's measurement system, so a displayed value (a plain number, a
+      // feet-and-inches entry, or a pure-literal formula) resolves in the
+      // displayed unit and is converted back to metric-canonical storage here,
+      // before writing via setDataValue (which bypasses the column valueParser).
+      // A formula that referenced a canonical symbol ($VAR / pos() / section())
+      // already resolved to a metric-canonical value, so it is stored as-is and
+      // must NOT be converted again. Identity for metric / unmapped units. The
+      // metric value goes into lastParsedRef so getValue() returns the same one.
+      const metricParsed = canonical ? parsed : toMetricQty(props, parsed);
       const hadStoredFormula = !!formula;
       lastParsedRef.current = metricParsed;
       lastFormulaRef.current = formulaSrc;
@@ -587,7 +607,9 @@ export const FormulaCellEditor = forwardRef(
         // the original stored (metric) value so a stray cold-path getValue
         // can't corrupt it.
         if (!res.ok) return props.value;
-        return toMetricQty(props, res.parsed);
+        // H2 fix: mirror commitFromInput - a formula that referenced a canonical
+        // symbol is already metric-canonical and must not be converted again.
+        return res.canonical ? res.parsed : toMetricQty(props, res.parsed);
       },
       isCancelAfterEnd() {
         return false;
