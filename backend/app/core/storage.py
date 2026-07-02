@@ -394,6 +394,25 @@ class StorageBackend(ABC):
         _ = (key, expires_in)
         return None
 
+    def local_path(self, key: str) -> Path | None:
+        """Return the on-disk path for ``key`` when the blob lives on a local
+        filesystem, else ``None``.
+
+        This is the local-disk counterpart to :meth:`url_for`: where
+        ``url_for`` lets an S3-backed caller redirect the browser to a
+        presigned URL, ``local_path`` lets a filesystem-backed caller hand the
+        path to something like ``FileResponse`` and stream straight from disk
+        with HTTP Range support and no in-memory copy.  Prefer this over an
+        ``isinstance`` check so callers stay backend-agnostic.
+
+        The default returns ``None`` so remote backends (S3) and any community
+        backend without an on-disk representation transparently fall back to
+        the caller's byte path (:meth:`get` / :meth:`open_stream`).  Only
+        :class:`LocalStorageBackend` overrides this.
+        """
+        _ = key
+        return None
+
     # -- Multipart upload (RFC 34 §4 W0.5) ------------------------------
     #
     # These four methods are intentionally *concrete* (not @abstractmethod)
@@ -744,6 +763,21 @@ class LocalStorageBackend(StorageBackend):
     def url_for(self, key: str, *, expires_in: int = 3600) -> str | None:
         # Local backend cannot presign - caller must stream through the route.
         return None
+
+    def local_path(self, key: str) -> Path | None:
+        """Resolve ``key`` to an existing on-disk file, honouring the same
+        back-compat data roots as :meth:`get` / :meth:`exists`.
+
+        Returns ``None`` when the blob exists under no data root, or when the
+        key is structurally invalid, so callers can fall back cleanly without
+        catching.  The returned path is guaranteed to sit inside a
+        platform-owned data root because :meth:`_existing_path_for` re-checks
+        containment with ``relative_to``.
+        """
+        try:
+            return self._existing_path_for(key)
+        except ValueError:
+            return None
 
     # -- Multipart upload ------------------------------------------------
 
