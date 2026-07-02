@@ -842,6 +842,7 @@ class WholeLifeCostBreakdown(BaseModel):
     opex_pv: Decimal = Field(default=Decimal("0"))
     replacement_pv: Decimal = Field(default=Decimal("0"))
     eol_pv: Decimal = Field(default=Decimal("0"))
+    residual_value_pv: Decimal = Field(default=Decimal("0"))
     whole_life_cost: Decimal = Field(default=Decimal("0"))
     entry_count: int = 0
 

@@ -2665,12 +2665,13 @@ class CarbonService:
             eol_cost=inputs["eol_cost"],
             discount_rate=discount_rate,
             study_period_years=study_period,
-            # ISO 15686-5 residual value is modelled in the engine and unit
-            # tested, but kept out of the persisted whole-life total for now so
-            # the dashboard's capex/opex/replacement/end-of-life breakdown still
-            # reconciles to the total. Surfacing the residual credit as its own
-            # line (schema column + dashboard row) is a dedicated follow-up.
-            include_residual_value=False,
+            # ISO 15686-5 residual value: credit the study-end residual worth of
+            # the components still in service against the whole-life total. It is
+            # surfaced per entry below (residual_value_pv) and as its own credit
+            # line in the 6D whole-life dashboard, so the capex / opex /
+            # replacement / end-of-life breakdown still reconciles to the total
+            # (components - residual = whole-life cost).
+            include_residual_value=True,
         )
         assumptions = (
             f"ISO 15686-5: capex {result['capex']}, opex {result['annual_opex']}/yr, "
@@ -2689,6 +2690,7 @@ class CarbonService:
             "replacement_pv": str(result["replacement_pv"]),
             "replacement_count": result["replacement_count"],
             "eol_pv": str(result["eol_pv"]),
+            "residual_value_pv": str(result["residual_value_pv"]),
             "whole_life_cost": str(result["whole_life_cost"]),
             "confidence": confidence,
             "source": source,

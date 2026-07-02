@@ -605,6 +605,10 @@ def summarize_life_cycle_cost(entries: Any) -> dict[str, Any]:
         except (ArithmeticError, ValueError, TypeError):
             return Decimal("0")
 
+    def _has(entry: Any, key: str) -> bool:
+        raw = entry.get(key) if isinstance(entry, dict) else getattr(entry, key, None)
+        return raw is not None
+
     capex = Decimal("0")
     opex_pv = Decimal("0")
     replacement_pv = Decimal("0")
@@ -613,12 +617,31 @@ def summarize_life_cycle_cost(entries: Any) -> dict[str, Any]:
     whole_life_cost = Decimal("0")
     count = 0
     for entry in entries:
-        capex += _get(entry, "capex")
-        opex_pv += _get(entry, "opex_pv")
-        replacement_pv += _get(entry, "replacement_pv")
-        eol_pv += _get(entry, "eol_pv")
-        residual_value_pv += _get(entry, "residual_value_pv")
-        whole_life_cost += _get(entry, "whole_life_cost")
+        c = _get(entry, "capex")
+        o = _get(entry, "opex_pv")
+        r = _get(entry, "replacement_pv")
+        e = _get(entry, "eol_pv")
+        wlc = _get(entry, "whole_life_cost")
+        # Residual value is not a persisted column on the LCC row. A fresh
+        # compute dict carries an explicit residual_value_pv and is used as is; a
+        # persisted model row has no such attribute, so derive it from the ISO
+        # 15686-5 identity whole_life_cost = capex + opex_pv + replacement_pv +
+        # eol_pv - residual_value_pv (rows written before the residual credit have
+        # whole_life_cost == the components and derive to 0). A partial or legacy
+        # dict without the field carries no residual credit and stays 0, so it
+        # never derives a spurious value from incomplete components.
+        if _has(entry, "residual_value_pv"):
+            resid = _get(entry, "residual_value_pv")
+        elif isinstance(entry, dict):
+            resid = Decimal("0")
+        else:
+            resid = c + o + r + e - wlc
+        capex += c
+        opex_pv += o
+        replacement_pv += r
+        eol_pv += e
+        residual_value_pv += resid
+        whole_life_cost += wlc
         count += 1
     return {
         "capex": capex,

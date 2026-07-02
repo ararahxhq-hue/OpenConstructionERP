@@ -413,6 +413,37 @@ def test_summarize_lcc_from_dicts_and_missing_fields() -> None:
     assert summary["entry_count"] == 2
 
 
+def test_summarize_lcc_derives_residual_for_persisted_rows_without_column() -> None:
+    # A persisted LCC row has no residual_value_pv attribute, so the rollup
+    # derives the credit from the ISO 15686-5 identity: components minus the
+    # stored whole_life_cost. Here 100 + 40 + 0 + 10 - 135 = 15.
+    row = SimpleNamespace(
+        capex=Decimal("100"),
+        opex_pv=Decimal("40"),
+        replacement_pv=Decimal("0"),
+        eol_pv=Decimal("10"),
+        whole_life_cost=Decimal("135"),
+    )
+    assert not hasattr(row, "residual_value_pv")
+    summary = lcc.summarize_life_cycle_cost([row])
+    assert summary["residual_value_pv"] == Decimal("15")
+    assert summary["whole_life_cost"] == Decimal("135")
+
+
+def test_summarize_lcc_pre_residual_rows_derive_zero() -> None:
+    # A row written before the residual credit has whole_life_cost equal to the
+    # sum of its components, so the derived residual is 0 (no spurious credit).
+    row = SimpleNamespace(
+        capex=Decimal("100"),
+        opex_pv=Decimal("40"),
+        replacement_pv=Decimal("0"),
+        eol_pv=Decimal("10"),
+        whole_life_cost=Decimal("150"),
+    )
+    summary = lcc.summarize_life_cycle_cost([row])
+    assert summary["residual_value_pv"] == Decimal("0")
+
+
 def test_summarize_lcc_empty() -> None:
     summary = lcc.summarize_life_cycle_cost([])
     assert summary["whole_life_cost"] == Decimal("0")
