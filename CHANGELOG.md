@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.7.0] - 2026-07-02
+
+A features release. You can compare two independent DWG drawings side by side, import a 3D mesh directly in the browser with a quantity read-out, and read the project dashboard from a redesigned map with a side panel of sites and local weather. You can support the project through PayPal or GitHub Sponsors, and contributors are credited on a community thank-you wall. It also loads large BIM models without running out of memory, gives the client portal a Documents area so a shared client can see and open their files, and makes Bill of Quantities quantity cells accept imperial feet-and-inches and resolve variable and cross-position references correctly in both metric and imperial.
+
+### Added
+
+- Compare two independent DWG drawings side by side, not only two versions of the same file (#289).
+- Import 3D meshes (glTF, GLB, OBJ, DAE, 3DS, FBX, STL, PLY, USD) with in-browser quantity extraction.
+- A redesigned project dashboard map, a compact map with a side panel of sites and local weather.
+- Support for the project through PayPal and GitHub Sponsors, with a community thank-you wall for contributors.
+- A Documents area in the client portal, so a shared client can see and open the files shared with them (#288).
+- Translations for the new screens across all locales.
+
+### Fixed
+
+- The BIM 3D viewer loads large models without running out of memory, which previously surfaced as a parsing error (#291).
+- Bill of Quantities quantity cells accept imperial feet-and-inches input (for example 10'6", 3/4") and no longer store an unparseable entry as zero (#290).
+- Bill of Quantities quantity cells resolve $variables and pos() references, correctly in both metric and imperial, so a measured quantity can be reused across positions (#292).
+
 ## [9.6.1] - 2026-07-02
 
 A fix and hardening release. A photo uploaded from a project's Photos tab now becomes a real site picture and shows up everywhere site pictures appear, a shared video streams and seeks in the file viewer instead of getting stuck, a field report can no longer link a document that belongs to another project, and the whole-life cost engine now models ISO 15686-5 residual value. It also completes the Spanish and Mexican Spanish translations on the newest screens.
