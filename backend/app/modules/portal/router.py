@@ -492,9 +492,7 @@ async def portal_me_document_content(
             detail="No access to this document",
         )
 
-    row = (
-        await service.session.execute(select(Document).where(Document.id == document_id))
-    ).scalar_one_or_none()
+    row = (await service.session.execute(select(Document).where(Document.id == document_id))).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="File no longer exists")
     path = row.file_path
