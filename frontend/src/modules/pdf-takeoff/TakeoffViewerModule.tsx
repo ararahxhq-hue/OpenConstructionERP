@@ -15,6 +15,8 @@ import {
   Focus,
   Hand,
   Spline,
+  Magnet,
+  Copy,
   ChevronLeft,
   ChevronRight,
   MousePointer2,
@@ -118,6 +120,9 @@ import {
   zoomAtCursorScroll,
   wheelZoomStep,
   orthoSnap,
+  dropTrailingDuplicateVertex,
+  snapToVertex,
+  VERTEX_SNAP_SCREEN_PX,
   computeDrawReadout,
   type DrawReadout,
 } from '../../features/takeoff/lib/takeoff-viewport';
@@ -491,6 +496,17 @@ export default function TakeoffViewerModule({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Bumped at the end of every successful (non-cancelled) page render. The
+  // overlay-draw effect depends on it so it repaints AFTER the render
+  // continuation resets the overlay bitmap - otherwise a page navigation /
+  // select-tool zoom leaves the measurements wiped until the next unrelated
+  // redraw (issue #297). The render effect does NOT depend on it, so it can
+  // never loop.
+  const [renderNonce, setRenderNonce] = useState(0);
+  // 1-indexed page the main canvas has actually finished rendering. The
+  // thumbnail effect reads this to know the main canvas holds THIS page before
+  // downscaling it into the current page's thumbnail (issue #301).
+  const mainRenderedPageRef = useRef(0);
 
   // Touch state for pinch-to-zoom
   const touchStateRef = useRef<{ initialDistance: number; initialZoom: number } | null>(null);
@@ -508,6 +524,18 @@ export default function TakeoffViewerModule({
   /** True while Shift is physically held, so a momentary press locks the
    *  segment without flipping the persistent toggle (CAD-standard). */
   const shiftHeldRef = useRef(false);
+
+  /** Vertex-snap toggle (toolbar). When on, a new point being drawn snaps onto
+   *  the nearest vertex of an already-drawn measurement within a screen-space
+   *  radius, so shapes connect exactly to existing corners (issue #303). Read
+   *  through a ref in the pointer handlers so toggling it never re-creates
+   *  them. Takes precedence over the ortho lock when a vertex is in range. */
+  const [vertexSnap, setVertexSnap] = useState(false);
+  const vertexSnapRef = useRef(vertexSnap);
+  vertexSnapRef.current = vertexSnap;
+  /** The existing vertex the in-progress point is currently snapping to, in PDF
+   *  units, or null. Drives the on-canvas snap ring cue. */
+  const [snapPoint, setSnapPoint] = useState<Point | null>(null);
 
   /** Space-drag / middle-mouse pan transient. Lives in a ref so the
    *  mid-pan mousemove never triggers a re-render storm; `panning` state
@@ -530,6 +558,21 @@ export default function TakeoffViewerModule({
     x: number;
     y: number;
   } | null>(null);
+  /** Mirror of hoverInfo so the right-click context-menu handler can read the
+   *  measurement under the cursor without adding hoverInfo to its deps. */
+  const hoverInfoRef = useRef(hoverInfo);
+  hoverInfoRef.current = hoverInfo;
+
+  /** Right-click context menu for a measurement (select tool). Positioned at
+   *  the viewport-space cursor; carries the target measurement id. Null when
+   *  closed. Offers Duplicate / Delete (issue #302). */
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    measurementId: string;
+  } | null>(null);
+  const contextMenuRef = useRef(contextMenu);
+  contextMenuRef.current = contextMenu;
 
   // Measurement groups
   const [activeGroup, setActiveGroup] = useState('General');
@@ -986,7 +1029,16 @@ export default function TakeoffViewerModule({
         await task.promise;
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') throw err;
+        return; // superseded render: the follow-up effect run repaints.
       }
+      if (cancelled) return;
+      // Setting overlayRef.width/height above reset the overlay bitmap, wiping
+      // any measurements the draw effect painted while this render was
+      // suspended on getPage. Bump a nonce the draw effect depends on so it
+      // repaints over the freshly rendered page (issue #297); record that the
+      // main canvas now holds this page for the thumbnail downscale (#301).
+      mainRenderedPageRef.current = currentPage;
+      setRenderNonce((n) => n + 1);
     })();
 
     return () => {
@@ -1010,6 +1062,11 @@ export default function TakeoffViewerModule({
     (async () => {
       for (const n of pagesNearestFirst(currentPage, totalPages)) {
         if (cancelled) return;
+        // The current page is captured from the main canvas by the effect
+        // below, never re-rendered here: re-rendering it through pdf.js races
+        // the main render effect for the same page object and the loser rejects
+        // into the empty catch, so the thumbnail spins forever (issue #301).
+        if (n === currentPage) continue;
         // Skip pages already rendered (thumbsRef) or currently rendering (queue).
         if (queue.has(n) || thumbsRef.current[n] !== undefined) continue;
         queue.add(n);
@@ -1040,6 +1097,36 @@ export default function TakeoffViewerModule({
     // `thumbs` intentionally excluded - see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfDoc, showThumbnails, currentPage, totalPages]);
+
+  /* Current page thumbnail (issue #301). Rather than re-rendering the current
+   * page through pdf.js (which races the main render effect), downscale the
+   * already-rendered main canvas into the thumbnail once the main render has
+   * settled. `renderNonce` bumps on every completed main render, so this
+   * captures the page as soon as it is painted and the sidebar spinner clears.
+   * Cheap (a single drawImage), so re-running it per render is fine. */
+  useEffect(() => {
+    if (!showThumbnails || totalPages <= 1) return;
+    if (mainRenderedPageRef.current !== currentPage) return; // not painted yet
+    if (thumbsRef.current[currentPage] !== undefined) return; // already captured
+    const main = canvasRef.current;
+    if (!main || main.width === 0) return;
+    try {
+      const targetW = Math.max(1, THUMB_MAX_WIDTH);
+      const targetH = Math.max(1, Math.round(targetW * (main.height / main.width)));
+      const off = document.createElement('canvas');
+      off.width = targetW;
+      off.height = targetH;
+      const offCtx = off.getContext('2d');
+      if (!offCtx) return;
+      offCtx.drawImage(main, 0, 0, targetW, targetH);
+      const url = off.toDataURL('image/png');
+      setThumbs((prev) => capThumbCache({ ...prev, [currentPage]: url }, currentPage));
+    } catch {
+      /* tainted / not-ready canvas: a later render pass retries */
+    }
+    // `thumbs` read through thumbsRef; capture keyed off renderNonce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showThumbnails, totalPages, currentPage, renderNonce]);
 
   /** Keep the current-page thumbnail in view as the page changes. */
   useEffect(() => {
@@ -1101,7 +1188,10 @@ export default function TakeoffViewerModule({
 
     // Draw completed measurements on current page (respecting group visibility)
     for (const m of measurements.filter((m) => m.page === currentPage && !hiddenGroups.has(m.group) && !(isAnnotationType(m.type) && hiddenGroups.has('__annotations__')))) {
-      const color = GROUP_COLOR_MAP[m.group] || '#3B82F6';
+      // A per-measurement colour (set via the properties swatch) wins over the
+      // group default so a recoloured measurement paints in its chosen colour
+      // (issue #299); annotation markups already resolve `m.color` below.
+      const color = m.color || GROUP_COLOR_MAP[m.group] || '#3B82F6';
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       // AI suggestions (#194) render translucent + dashed until the user
@@ -1650,7 +1740,22 @@ export default function TakeoffViewerModule({
       }
       ctx.restore();
     }
-  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem]);
+
+    // Snap-to-vertex cue (issue #303): a ring at the existing vertex the
+    // in-progress point will lock onto, so the connection is visible before the
+    // click lands. Drawn last so it sits above everything.
+    if (snapPoint) {
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#22C55E';
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.arc(snapPoint.x * dpr * zoom, snapPoint.y * dpr * zoom, 6 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem, snapPoint, renderNonce]);
 
   /* ── Canvas click handler ────────────────────────────────────────── */
 
@@ -1791,6 +1896,24 @@ export default function TakeoffViewerModule({
   const armCountSimilarRef = useRef(false);
   const handleCountByExampleSeedRef = useRef<((seed: Point) => void) | null>(null);
 
+  // Snap-target vertices (issue #303): every vertex of a visible, committed
+  // measurement on the current page, hit-tested against the draw cursor when
+  // vertex snap is on. Read through a ref inside the pointer handlers so it
+  // never enters their dependency arrays. Suggestions + hidden groups are
+  // excluded (you cannot connect to a corner you cannot see).
+  const snapVertices = useMemo(() => {
+    const out: Point[] = [];
+    for (const m of measurements) {
+      if (m.page !== currentPage || m.suggested) continue;
+      if (hiddenGroups.has(m.group)) continue;
+      if (isAnnotationType(m.type) && hiddenGroups.has('__annotations__')) continue;
+      for (const p of m.points) out.push(p);
+    }
+    return out;
+  }, [measurements, currentPage, hiddenGroups]);
+  const snapVerticesRef = useRef(snapVertices);
+  snapVerticesRef.current = snapVertices;
+
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       // A pan gesture that ended on this element must not also place a point.
@@ -1801,12 +1924,23 @@ export default function TakeoffViewerModule({
       const y = (e.clientY - rect.top) / zoom;
       let point: Point = { x, y };
 
-      // Ortho / angle lock: when the toggle is on or Shift is held, constrain
-      // the new segment to 0 / 45 / 90 degrees from the previous placed point.
-      // Only the multi-point linear + polygon tools have a meaningful anchor;
-      // rectangles are inherently axis-aligned and the first click has no
-      // anchor to snap against.
-      if (
+      // Snap precedence (issue #303, then ortho): when vertex snap is on and a
+      // nearby existing vertex is in range, the new point locks onto it so the
+      // shape connects exactly to that corner (even for the first point, which
+      // has no ortho anchor). Otherwise the ortho / angle lock (toggle or Shift)
+      // constrains the new segment to 0 / 45 / 90 degrees from the previous
+      // placed point. Rectangles are inherently axis-aligned so neither applies.
+      const canVertexSnap =
+        activeTool === 'distance' ||
+        activeTool === 'polyline' ||
+        activeTool === 'area' ||
+        activeTool === 'volume';
+      const vsnap = vertexSnapRef.current && canVertexSnap
+        ? snapToVertex(point, snapVerticesRef.current, zoom, VERTEX_SNAP_SCREEN_PX)
+        : null;
+      if (vsnap) {
+        point = vsnap;
+      } else if (
         (orthoLock || shiftHeldRef.current) &&
         activePoints.length > 0 &&
         (activeTool === 'distance' ||
@@ -2055,19 +2189,27 @@ export default function TakeoffViewerModule({
 
   /** Double-click to close an area/volume polygon or finish a polyline */
   const handleCanvasDblClick = useCallback(() => {
+    // A double-click fires two click events before this handler, so the last
+    // placed vertex is a near-duplicate of the one before it (issue #298a).
+    // Drop it in screen space before finalizing, so a polyline has no
+    // zero-length tail and an area / volume has no sliver edge. A right-click
+    // finish (which reuses this path) has no preceding click, so its last two
+    // vertices are meaningfully apart and nothing is trimmed.
+    const pts = dropTrailingDuplicateVertex(activePoints, zoom);
+
     // Polyline: finish with double-click (need at least 2 points)
-    if (activeTool === 'polyline' && activePoints.length >= 2) {
+    if (activeTool === 'polyline' && pts.length >= 2) {
       let totalPx = 0;
-      for (let i = 0; i < activePoints.length - 1; i++) {
-        const pa = activePoints[i]!;
-        const pb = activePoints[i + 1]!;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const pa = pts[i]!;
+        const pb = pts[i + 1]!;
         totalPx += pixelDistance(pa.x, pa.y, pb.x, pb.y);
       }
       const totalReal = toRealDistance(totalPx, scale);
       const newMeasurement: Measurement = {
         id: `m_${Date.now()}`,
         type: 'polyline',
-        points: [...activePoints],
+        points: [...pts],
         value: totalReal,
         unit: scale.unitLabel,
         label: formatMeasurement(totalReal, scale.unitLabel),
@@ -2075,22 +2217,22 @@ export default function TakeoffViewerModule({
         page: currentPage,
         group: activeGroup,
       };
-      pushUndo({ kind: 'complete_measurement', measurement: newMeasurement, previousActivePoints: [...activePoints] });
+      pushUndo({ kind: 'complete_measurement', measurement: newMeasurement, previousActivePoints: [...pts] });
       setMeasurements((prev) => [...prev, newMeasurement]);
       setActivePoints([]);
       return;
     }
 
     // Area: close polygon with double-click
-    if (activeTool === 'area' && activePoints.length >= 3) {
-      const pixArea = polygonAreaPixels(activePoints);
+    if (activeTool === 'area' && pts.length >= 3) {
+      const pixArea = polygonAreaPixels(pts);
       const realArea = toRealArea(pixArea, scale);
-      const perimPx = polygonPerimeterPixels(activePoints);
+      const perimPx = polygonPerimeterPixels(pts);
       const realPerim = toRealDistance(perimPx, scale);
       const newMeasurement: Measurement = {
         id: `m_${Date.now()}`,
         type: 'area',
-        points: [...activePoints],
+        points: [...pts],
         value: realArea,
         unit: `${scale.unitLabel}\u00B2`,
         label: `${formatMeasurement(realArea, scale.unitLabel + '\u00B2')} (P: ${formatMeasurement(realPerim, scale.unitLabel)})`,
@@ -2098,15 +2240,15 @@ export default function TakeoffViewerModule({
         page: currentPage,
         group: activeGroup,
       };
-      pushUndo({ kind: 'complete_measurement', measurement: newMeasurement, previousActivePoints: [...activePoints] });
+      pushUndo({ kind: 'complete_measurement', measurement: newMeasurement, previousActivePoints: [...pts] });
       setMeasurements((prev) => [...prev, newMeasurement]);
       setActivePoints([]);
       return;
     }
 
     // Volume: close polygon then prompt for depth
-    if (activeTool === 'volume' && activePoints.length >= 3) {
-      setPendingVolumePoints([...activePoints]);
+    if (activeTool === 'volume' && pts.length >= 3) {
+      setPendingVolumePoints([...pts]);
       setVolumeDepthValue('1');
       setShowVolumeDepthInput(true);
       setActivePoints([]);
@@ -2114,11 +2256,11 @@ export default function TakeoffViewerModule({
     }
 
     // Cloud: close cloud polygon with double-click (need at least 3 points)
-    if (activeTool === 'cloud' && activePoints.length >= 3) {
+    if (activeTool === 'cloud' && pts.length >= 3) {
       const newMeasurement: Measurement = {
         id: `m_${Date.now()}`,
         type: 'cloud',
-        points: [...activePoints],
+        points: [...pts],
         value: 0,
         unit: '',
         label: '',
@@ -2127,12 +2269,12 @@ export default function TakeoffViewerModule({
         group: activeGroup,
         color: annotationColor,
       };
-      pushUndo({ kind: 'complete_measurement', measurement: newMeasurement, previousActivePoints: [...activePoints] });
+      pushUndo({ kind: 'complete_measurement', measurement: newMeasurement, previousActivePoints: [...pts] });
       setMeasurements((prev) => [...prev, newMeasurement]);
       setActivePoints([]);
       return;
     }
-  }, [activeTool, activePoints, scale, currentPage, pushUndo, nextAnnotation, activeGroup, annotationColor]);
+  }, [activeTool, activePoints, zoom, scale, currentPage, pushUndo, nextAnnotation, activeGroup, annotationColor]);
 
   /** Confirm volume depth and create the volume measurement */
   const handleVolumeDepthConfirm = useCallback(() => {
@@ -2164,20 +2306,38 @@ export default function TakeoffViewerModule({
     setPendingVolumePoints([]);
   }, [volumeDepthValue, pendingVolumePoints, scale, currentPage, pushUndo, nextAnnotation, activeGroup]);
 
-  /** Right-click to finish polyline/cloud (alternative to double-click) */
+  /** Right-click: finish an in-progress polyline / area / volume / cloud
+   *  (reuses the double-click finish, which drops no stray vertex here since no
+   *  click precedes the right-click), or, with the select tool, open the
+   *  measurement context menu for the shape under the cursor (issue #302). */
   const handleCanvasContextMenu = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (activeTool === 'polyline' && activePoints.length >= 2) {
         e.preventDefault();
         handleCanvasDblClick(); // Reuse the double-click finish logic
+      } else if (activeTool === 'area' && activePoints.length >= 3) {
+        // Area was missing from the right-click finish (issue #298b).
+        e.preventDefault();
+        handleCanvasDblClick();
       } else if (activeTool === 'volume' && activePoints.length >= 3) {
         e.preventDefault();
         handleCanvasDblClick();
       } else if (activeTool === 'cloud' && activePoints.length >= 3) {
         e.preventDefault();
         handleCanvasDblClick();
-      } else if (activeTool !== 'select') {
-        // Prevent context menu while using measurement tools
+      } else if (activeTool === 'select') {
+        // Open a context menu for the measurement under the cursor. The hover
+        // hit-test (mouse move) already tracks it, so no re-hit-test is needed.
+        const targetId = hoverInfoRef.current?.measurementId;
+        if (targetId) {
+          e.preventDefault();
+          setSelectedMeasurementId(targetId);
+          setContextMenu({ x: e.clientX, y: e.clientY, measurementId: targetId });
+        } else {
+          setContextMenu(null);
+        }
+      } else {
+        // Prevent the native context menu while using the other measurement tools.
         e.preventDefault();
       }
     },
@@ -2443,9 +2603,11 @@ export default function TakeoffViewerModule({
         return;
       }
 
-      // Live readout: track the cursor (ortho-snapped against the last placed
-      // point when the lock is engaged) while a linear / polygon measure tool
-      // is active, so the HUD can show the running segment + cumulative length.
+      // Live readout: track the cursor (snapped against a nearby existing
+      // vertex when vertex snap is on, else ortho-snapped against the last
+      // placed point when the lock is engaged) while a linear / polygon measure
+      // tool is active, so the HUD shows the running segment + cumulative
+      // length and the rubber-band follows the same point a click will place.
       if (
         pt &&
         (activeTool === 'distance' ||
@@ -2453,12 +2615,24 @@ export default function TakeoffViewerModule({
           activeTool === 'area' ||
           activeTool === 'volume')
       ) {
-        const anchor = activePoints[activePoints.length - 1];
-        const snapped =
-          anchor && (orthoLock || shiftHeldRef.current) ? orthoSnap(anchor, pt) : pt;
-        setLiveCursor(snapped);
-      } else if (liveCursor) {
-        setLiveCursor(null);
+        // Vertex snap wins over ortho (issue #303): connecting to an existing
+        // corner is a stronger intent than an angle constraint.
+        const vsnap = vertexSnapRef.current
+          ? snapToVertex(pt, snapVerticesRef.current, zoomRef.current || 1, VERTEX_SNAP_SCREEN_PX)
+          : null;
+        if (vsnap) {
+          setSnapPoint(vsnap);
+          setLiveCursor(vsnap);
+        } else {
+          setSnapPoint((cur) => (cur ? null : cur));
+          const anchor = activePoints[activePoints.length - 1];
+          const snapped =
+            anchor && (orthoLock || shiftHeldRef.current) ? orthoSnap(anchor, pt) : pt;
+          setLiveCursor(snapped);
+        }
+      } else {
+        if (liveCursor) setLiveCursor(null);
+        setSnapPoint((cur) => (cur ? null : cur));
       }
 
       // Hover tooltip: in select mode, surface the topmost measurement under
@@ -2496,6 +2670,7 @@ export default function TakeoffViewerModule({
   const handleCanvasMouseLeave = useCallback(() => {
     if (liveCursor) setLiveCursor(null);
     if (hoverInfo) setHoverInfo(null);
+    setSnapPoint((cur) => (cur ? null : cur));
   }, [liveCursor, hoverInfo]);
 
   const handleCanvasMouseUp = useCallback(() => {
@@ -3270,6 +3445,49 @@ export default function TakeoffViewerModule({
     // Clear selection if the deleted measurement was selected.
     setSelectedMeasurementId((cur) => (cur === id ? null : cur));
   }, [measurements, pushUndo, registerDeletion]);
+
+  /**
+   * Duplicate a measurement (issue #302): clone it with a fresh id, a small
+   * visible offset (so the copy is not exactly on top), and the same group /
+   * annotation / colour / geometry / other properties. Server identity, BOQ
+   * link and AI-suggestion flags are intentionally dropped so the copy is a
+   * fresh, unsynced, unlinked measurement rather than a second row pointing at
+   * the same server object / BOQ position. Goes through the normal create path
+   * (build -> pushUndo -> append) so undo removes it in one step.
+   */
+  const duplicateMeasurement = useCallback((id: string) => {
+    const src = measurements.find((m) => m.id === id);
+    if (!src) return;
+    // Offset by a fixed screen distance regardless of zoom so the copy is
+    // always visibly separated from the original.
+    const offset = 12 / (zoomRef.current || 1);
+    const clone: Measurement = {
+      ...src,
+      // Random suffix so rapid Ctrl+D (keyboard auto-repeat, same millisecond)
+      // never mints two colliding ids.
+      id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      points: src.points.map((p) => ({ x: p.x + offset, y: p.y + offset })),
+      serverId: undefined,
+      suggested: undefined,
+      linkedPositionId: undefined,
+      linkedPositionOrdinal: undefined,
+      linkedBoqId: undefined,
+      linkedPositionLabel: undefined,
+    };
+    pushUndo({ kind: 'complete_measurement', measurement: clone, previousActivePoints: [] });
+    setMeasurements((prev) => [...prev, clone]);
+    setSelectedMeasurementId(clone.id);
+    setContextMenu(null);
+  }, [measurements, pushUndo]);
+
+  // Close the measurement context menu when the select tool is left or its
+  // target measurement disappears (issue #302).
+  useEffect(() => {
+    if (!contextMenu) return;
+    if (activeTool !== 'select' || !measurements.some((m) => m.id === contextMenu.measurementId)) {
+      setContextMenu(null);
+    }
+  }, [activeTool, measurements, contextMenu]);
 
   /* ── Recognize: offline AI vector detection (issue #194) ───────────── */
 
@@ -4531,8 +4749,29 @@ export default function TakeoffViewerModule({
         return;
       }
 
+      // Ctrl/Cmd+D: duplicate the selected measurement (issue #302). Gated on
+      // the same focus guard as the tool letters so it never fires while typing
+      // in the properties panel; preventDefault suppresses the browser bookmark
+      // default when it does apply.
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'd' &&
+        shouldHandleShortcut(e.target)
+      ) {
+        e.preventDefault();
+        if (selectedMeasurementId) duplicateMeasurement(selectedMeasurementId);
+        return;
+      }
+
       // Esc: cancel any in-progress drawing + deselect any selected measurement
       if (e.key === 'Escape') {
+        // Close an open context menu first (issue #302).
+        if (contextMenuRef.current) {
+          setContextMenu(null);
+          return;
+        }
         // Abort an in-flight in-canvas edit drag first (restore geometry,
         // no undo frame) - the user is bailing out of a reshape.
         if (dragRef.current) {
@@ -4650,7 +4889,7 @@ export default function TakeoffViewerModule({
       window.removeEventListener('keyup', upHandler);
       window.removeEventListener('blur', blurHandler);
     };
-  }, [handleUndo, handleRedo, selectTool, activePoints.length, rectStartPoint, showTextInput, showScaleDialog, showVolumeDepthInput, selectedMeasurementId, calibrationMode, settingScale, measurements, finishDrag, commitGeometryEdit, pushUndo, fitToViewport, zoomToSelection]);
+  }, [handleUndo, handleRedo, selectTool, activePoints.length, rectStartPoint, showTextInput, showScaleDialog, showVolumeDepthInput, selectedMeasurementId, calibrationMode, settingScale, measurements, finishDrag, commitGeometryEdit, pushUndo, fitToViewport, zoomToSelection, duplicateMeasurement]);
 
   /* ── Render ──────────────────────────────────────────────────────── */
 
@@ -5257,6 +5496,16 @@ export default function TakeoffViewerModule({
                   data-testid="ortho-lock-toggle"
                 >
                   <Spline size={16} />
+                </button>
+                <button
+                  onClick={() => { setVertexSnap((v) => !v); setSnapPoint(null); }}
+                  className={tbBtn(vertexSnap, 'blue')}
+                  title={t('takeoff_viewer.vertex_snap_hint', { defaultValue: 'Snap new points to the corners of existing measurements' })}
+                  aria-label={t('takeoff_viewer.vertex_snap', { defaultValue: 'Snap to vertices' })}
+                  aria-pressed={vertexSnap}
+                  data-testid="vertex-snap-toggle"
+                >
+                  <Magnet size={16} />
                 </button>
                 <span
                   className={`inline-flex h-7 items-center justify-center rounded-md px-1.5 transition-colors ${spaceHeld || panning ? 'bg-oe-blue text-white shadow-sm' : 'text-content-tertiary'}`}
@@ -7052,6 +7301,51 @@ export default function TakeoffViewerModule({
                 {t('common.apply', { defaultValue: 'Apply' })}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Measurement context menu (issue #302): right-click a measurement with
+          the select tool to duplicate or delete it. The transparent backdrop
+          dismisses it on any outside click / right-click / scroll. */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+          onWheel={() => setContextMenu(null)}
+        >
+          <div
+            className="absolute min-w-[168px] rounded-lg border border-border bg-surface-elevated py-1 shadow-lg"
+            style={{
+              left: Math.min(contextMenu.x, window.innerWidth - 184),
+              top: Math.min(contextMenu.y, window.innerHeight - 96),
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="menu"
+            data-testid="measurement-context-menu"
+          >
+            <button
+              type="button"
+              onClick={() => duplicateMeasurement(contextMenu.measurementId)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-content-primary hover:bg-surface-secondary transition-colors"
+              role="menuitem"
+              data-testid="context-duplicate"
+            >
+              <Copy size={13} />
+              <span className="flex-1">{t('takeoff_viewer.duplicate_measurement', { defaultValue: 'Duplicate' })}</span>
+              <span className="text-content-tertiary tabular-nums">Ctrl+D</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { deleteMeasurement(contextMenu.measurementId); setContextMenu(null); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-semantic-error hover:bg-semantic-error-bg transition-colors"
+              role="menuitem"
+              data-testid="context-delete"
+            >
+              <Trash2 size={13} />
+              <span className="flex-1">{t('takeoff_viewer.delete_measurement', { defaultValue: 'Delete measurement' })}</span>
+              <span className="text-content-tertiary tabular-nums">Del</span>
+            </button>
           </div>
         </div>
       )}

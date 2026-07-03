@@ -9,19 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [9.8.0] - 2026-07-03
 
-A features and fixes release. It adds a Field Time and Daywork module for capturing labour and plant time on site against a project, its resources and its equipment, with cost-code assist, an approval workflow, and a feed into payroll and earned value. The About page now shows contributors' photos on the community thank-you wall, saved and served from the platform itself. It also fixes a header and photo-filter overlap, a date that could shift a day at negative time zones, a project photos tab that did not open from a link, and database migrations that assumed SQLite syntax and could fail on PostgreSQL.
+A features and fixes release. It adds a Field Time and Daywork module for capturing labour and plant time on site against a project, its resources and its equipment, with cost-code assist, an approval workflow, and a feed into payroll and earned value. It brings a wave of PDF takeoff improvements, so measurements survive a page change or zoom, keep their own colour on screen and in the export, can snap to the corners of existing measurements, and can be duplicated in one step. The About page now shows contributors' photos on the community thank-you wall, saved and served from the platform itself. It also fixes a header and photo-filter overlap, a date that could shift a day at negative time zones, a project photos tab that did not open from a link, and database migrations that assumed SQLite syntax and could fail on PostgreSQL.
 
 ### Added
 
 - Field Time and Daywork module, capture labour and plant time on site against a project, its resources and its equipment, with labour-or-plant lines, cost-code assist, an approval workflow, and a feed into payroll and earned value.
 - Contributor photos on the About page community thank-you wall, saved and served from the platform rather than fetched from an outside site.
 - Import LWO (LightWave) mesh files in the in-browser 3D importer, completing the mesh-format set alongside glTF, GLB, OBJ, DAE, 3DS, FBX, STL, PLY and USD (#296).
+- Duplicate a PDF takeoff measurement, from a right-click menu or with Ctrl/Cmd+D, cloning its shape, group, colour and label as a new independent measurement (#302).
+- Snap new PDF takeoff points to the corners of existing measurements, an opt-in magnet toggle next to ortho lock, with a cue on the vertex being snapped to (#303).
 
 ### Fixed
 
 - The header project switcher no longer overlaps the search on narrow widths, and the photo gallery filter card no longer overlaps the content below it (#293).
 - Date-only values no longer move back a day when shown in a negative time zone, and the project photos tab now opens directly from a link (#294).
 - Database migrations no longer assume SQLite-only syntax, so they run cleanly on PostgreSQL (#295).
+- PDF takeoff measurements no longer disappear after you change page or zoom with the select tool, and the current-page thumbnail now loads instead of spinning forever (#297, #301).
+- A per-measurement colour in PDF takeoff now applies on the canvas and in the exported PDF, rather than being overridden by the group colour (#299).
+- A Count measurement now shows its running tally, and finishing a shape by double-click or right-click no longer drops a stray vertex or skips the area tool (#298, #300).
 
 ## [9.7.0] - 2026-07-02
 

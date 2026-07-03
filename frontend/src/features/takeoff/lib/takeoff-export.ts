@@ -247,7 +247,10 @@ export function renderMeasurementsOnCanvas(
   );
 
   for (const m of visible) {
-    const color = groupColorMap[m.group] || '#3B82F6';
+    // A per-measurement colour (set via the properties swatch) wins over the
+    // group default so a recoloured measurement exports in its chosen colour
+    // (issue #299); annotation markups already resolve `m.color` below.
+    const color = m.color || groupColorMap[m.group] || '#3B82F6';
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
 

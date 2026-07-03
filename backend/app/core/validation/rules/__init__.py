@@ -6282,9 +6282,7 @@ class FieldTimeHoursPerDayMax(ValidationRule):
                     ),
                     element_ref=worker,
                     suggestion=(
-                        None
-                        if passed
-                        else translate("field_time.hours_per_day_max.suggestion", locale=locale)
+                        None if passed else translate("field_time.hours_per_day_max.suggestion", locale=locale)
                     ),
                 )
             )
@@ -6316,8 +6314,7 @@ class FieldTimeLineComplete(ValidationRule):
                 suggestion = None
             else:
                 reason = ", ".join(
-                    translate(f"field_time.line_complete.{code}", locale=locale)
-                    for code in outcome.reasons
+                    translate(f"field_time.line_complete.{code}", locale=locale) for code in outcome.reasons
                 )
                 message = translate(
                     "field_time.line_complete.fail",
@@ -6371,9 +6368,7 @@ class FieldTimeCostCodeResolves(ValidationRule):
 
         valid_codes = set(raw_codes) if raw_codes is not None else None
         valid_wbs = set(raw_wbs) if raw_wbs is not None else None
-        bad = set(
-            ft.cost_code_unresolved_indices(lines, valid_cost_codes=valid_codes, valid_wbs=valid_wbs)
-        )
+        bad = set(ft.cost_code_unresolved_indices(lines, valid_cost_codes=valid_codes, valid_wbs=valid_wbs))
         results: list[RuleResult] = []
         for index, line in enumerate(lines):
             code = str(line.get("cost_code") or "").strip()
@@ -6400,9 +6395,7 @@ class FieldTimeCostCodeResolves(ValidationRule):
                     ),
                     element_ref=str(line.get("id") or index),
                     suggestion=(
-                        None
-                        if passed
-                        else translate("field_time.cost_code_resolves.suggestion", locale=locale)
+                        None if passed else translate("field_time.cost_code_resolves.suggestion", locale=locale)
                     ),
                 )
             )
@@ -6453,9 +6446,7 @@ class FieldTimeDayworkNeedsVariation(ValidationRule):
                     ),
                     element_ref=str(line.get("id") or index),
                     suggestion=(
-                        None
-                        if passed
-                        else translate("field_time.daywork_needs_variation.suggestion", locale=locale)
+                        None if passed else translate("field_time.daywork_needs_variation.suggestion", locale=locale)
                     ),
                 )
             )

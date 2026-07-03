@@ -261,7 +261,12 @@ function toApiFormat(
     page: m.page,
     type: m.type,
     group_name: m.group || 'General',
-    group_color: m.color || '#3B82F6',
+    // Persist a colour ONLY when the user actually chose one (issue #299).
+    // Injecting a default here used to make every reloaded measurement carry a
+    // colour, which - now that the renderers honour `m.color` over the group
+    // default - would wrongly override the group colour on a measurement the
+    // user never recoloured.
+    group_color: m.color || undefined,
     annotation: m.annotation || m.label || null,
     points: m.points,
     measurement_value: m.value || null,
@@ -354,7 +359,8 @@ function toApiUpdate(
     is_deduction: m.type === 'area' ? Boolean(m.isDeduction) : false,
     // Non-geometry properties (issue #282).
     group_name: m.group || 'General',
-    group_color: m.color || '#3B82F6',
+    // Only persist a user-chosen colour (issue #299); see toApiFormat.
+    group_color: m.color || undefined,
     annotation: m.annotation || m.label || null,
     linked_boq_position_id: m.linkedPositionId ?? null,
     metadata: {
