@@ -162,7 +162,10 @@ jobs:
     # blocks the merge instead of surfacing the next morning. It is fast because
     # it collects only the security selection, not the whole integration tree.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The isolation + IDOR selection legitimately runs 28 to 30 minutes on the
+    # shared runners, so a 30 minute cap was cancelling otherwise green runs.
+    # 45 gives headroom as the suite grows with each new module.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: backend
