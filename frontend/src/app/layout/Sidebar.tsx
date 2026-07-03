@@ -13,6 +13,7 @@ import {
   Bot,
   Layers,
   Boxes,
+  Compass,
   Box,
   ShieldCheck,
   FileText,
@@ -266,6 +267,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'costs.title', to: '/costs', icon: Database, tourId: 'costs' },
       { labelKey: 'catalog.title', to: '/catalog', icon: Boxes },
+      { labelKey: 'nav.cost_explorer', to: '/cost-explorer', icon: Compass },
       { labelKey: 'nav.assemblies', to: '/assemblies', icon: Layers },
       { labelKey: 'nav.benchmarks', to: '/benchmarks', icon: BarChart3, moduleKey: 'cost-benchmark', advancedOnly: true },
     ],

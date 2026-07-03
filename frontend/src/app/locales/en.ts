@@ -4028,6 +4028,7 @@ const resource = {
     "nav.request_custom_module": "Request a custom module",
     "nav.request_custom_module_hint": "Missing something? Tell us what you need",
     "nav.assemblies": "Assemblies",
+    "nav.cost_explorer": "Cost Explorer",
     "nav.assembly_library": "Assembly library",
     "assemblies.library.title": "Assembly library",
     "assemblies.library.description": "Canonical recipe templates, pick a starting point and apply it to your project.",

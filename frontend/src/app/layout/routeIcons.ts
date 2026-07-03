@@ -26,6 +26,7 @@ import {
   BrainCircuit,
   Database,
   Boxes,
+  Compass,
   Layers,
   BarChart3,
   FileBarChart,
@@ -104,6 +105,7 @@ const ROUTE_ICON_MAP: Record<string, LucideIcon> = {
   // ── 3. Cost Data ──────────────────────────────────────────────────
   '/costs': Database,
   '/catalog': Boxes,
+  '/cost-explorer': Compass,
   '/assemblies': Layers,
   '/benchmarks': BarChart3,
   // ── 4. Takeoff ────────────────────────────────────────────────────

@@ -493,6 +493,9 @@ const AiEstimatorPage = lazy(() =>
 const CostsPage = lazy(() =>
   import('@/features/costs').then((m) => ({ default: m.CostsPage }))
 );
+const CostExplorerPage = lazy(() =>
+  import('@/features/cost-explorer').then((m) => ({ default: m.CostExplorerPage }))
+);
 const ValidationPage = lazy(() =>
   import('@/features/validation').then((m) => ({ default: m.ValidationPage }))
 );
@@ -944,6 +947,7 @@ export default function App() {
         <Route path="/costs/import" element={<P title="Import Cost Database"><ImportDatabasePage /></P>} />
 
         <Route path="/catalog" element={<P title="Resource Catalog"><CatalogPage /></P>} />
+        <Route path="/cost-explorer" element={<P title="Cost Explorer"><CostExplorerPage /></P>} />
 
         <Route path="/assemblies" element={<P title="Assemblies"><AssembliesPage /></P>} />
         <Route path="/assemblies/library" element={<P title="Assembly Library"><AssemblyLibraryPage /></P>} />
