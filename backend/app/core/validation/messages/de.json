@@ -2,6 +2,35 @@
   "common": {
     "ok": "OK"
   },
+  "field_time": {
+    "hours_per_day_max": {
+      "fail": "Arbeiter {worker} ist an diesem Tag mit {hours} h gebucht, über dem Limit von {max} h",
+      "suggestion": "Die Stunden vor dem Einreichen auf den richtigen Tag oder Arbeiter aufteilen"
+    },
+    "line_complete": {
+      "fail": "Zeile {line} ist unvollständig: {reason}",
+      "labour_xor_plant": "muss entweder Lohn oder Gerät buchen, nicht beides und nicht keines",
+      "hours_positive": "Stunden müssen größer als null sein",
+      "cost_code_required": "ein Kostencode ist erforderlich",
+      "suggestion": "Die Zeile vor dem Einreichen des Stundenzettels vervollständigen"
+    },
+    "cost_code_resolves": {
+      "fail": "Zeile {line} Code '{code}' passt zu keiner LV-Position oder WBS in diesem Projekt",
+      "suggestion": "Einen Kostencode oder eine WBS wählen, die im Projekt-LV vorhanden ist"
+    },
+    "daywork_needs_variation": {
+      "fail": "Regiezeile {line} ist keiner offenen Nachtragsanordnung zugeordnet",
+      "suggestion": "Die Regiearbeit mit der beauftragten Nachtragsanordnung verknüpfen"
+    },
+    "plant_needs_equipment": {
+      "fail": "Gerätezeile {line} nennt kein Gerät",
+      "suggestion": "Das Gerät zuordnen, damit Gerätestunden kalkuliert werden können"
+    },
+    "approved_immutable": {
+      "fail": "Dieser Stundenzettel ist {status} und kann nicht bearbeitet werden",
+      "suggestion": "Einen stornierenden Stundenzettel buchen, um genehmigte Stunden zu korrigieren"
+    }
+  },
   "ai_takeoff": {
     "scale_sanity": {
       "fail": "Der von der KI erkannte Maßstab ergibt eine unplausible Blattbreite von {span} m",

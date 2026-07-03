@@ -2,6 +2,35 @@
   "common": {
     "ok": "OK"
   },
+  "field_time": {
+    "hours_per_day_max": {
+      "fail": "Worker {worker} is booked {hours} h on this day, over the {max} h limit",
+      "suggestion": "Split the hours onto the correct day or worker before submitting"
+    },
+    "line_complete": {
+      "fail": "Line {line} is incomplete: {reason}",
+      "labour_xor_plant": "must book either labour or plant, not both or neither",
+      "hours_positive": "hours must be greater than zero",
+      "cost_code_required": "a cost code is required",
+      "suggestion": "Complete the line before submitting the timesheet"
+    },
+    "cost_code_resolves": {
+      "fail": "Line {line} code '{code}' matches no BOQ position or WBS in this project",
+      "suggestion": "Pick a cost code or WBS that exists in the project BOQ"
+    },
+    "daywork_needs_variation": {
+      "fail": "Daywork line {line} is not linked to an open variation",
+      "suggestion": "Link the daywork to the variation it was instructed under"
+    },
+    "plant_needs_equipment": {
+      "fail": "Plant line {line} names no equipment item",
+      "suggestion": "Attach the machine so plant hours can be costed"
+    },
+    "approved_immutable": {
+      "fail": "This timesheet is {status} and cannot be edited",
+      "suggestion": "Post a reversing timesheet to correct approved hours"
+    }
+  },
   "ai_takeoff": {
     "scale_sanity": {
       "fail": "The AI-detected scale implies an implausible page span of {span} m",

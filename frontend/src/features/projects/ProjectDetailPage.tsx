@@ -3,7 +3,7 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/app/i18n';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Table2,
   DollarSign,
@@ -126,7 +126,16 @@ interface ImportResult {
 // Tab types
 // ---------------------------------------------------------------------------
 
-type ProjectTab = 'dashboard' | 'overview' | 'schedule' | 'budget' | 'tendering' | 'photos' | 'compliance';
+const PROJECT_TABS = [
+  'dashboard',
+  'overview',
+  'schedule',
+  'budget',
+  'tendering',
+  'photos',
+  'compliance',
+] as const;
+type ProjectTab = (typeof PROJECT_TABS)[number];
 
 interface ScheduleItem {
   id: string;
@@ -1230,7 +1239,19 @@ export function ProjectDetailPage() {
     boqName: string;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<ProjectTab>('dashboard');
+  const [searchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<ProjectTab>(() =>
+    urlTab && (PROJECT_TABS as readonly string[]).includes(urlTab) ? (urlTab as ProjectTab) : 'dashboard',
+  );
+  // Keep the tab in sync with the ?tab= query param so deep links and the
+  // dashboard "view all" jumps (which navigate to ?tab=photos / ?tab=compliance)
+  // actually switch the tab, not just the URL.
+  useEffect(() => {
+    if (urlTab && (PROJECT_TABS as readonly string[]).includes(urlTab)) {
+      setActiveTab(urlTab as ProjectTab);
+    }
+  }, [urlTab]);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState(INITIAL_PROJECT_EDIT_FORM);
   const [customizing, setCustomizing] = useState(false);

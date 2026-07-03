@@ -1499,8 +1499,8 @@ export function PhotoGalleryPage() {
         <UploadZone projectId={projectId} onUploaded={handleUploaded} />
       )}
 
-      {/* Filters bar */}
-      <Card className="p-3">
+      {/* Filters bar - relative z-20 keeps the category dropdown above the list cards below */}
+      <Card className="relative z-20 p-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Search */}
           <div className="relative flex-1">

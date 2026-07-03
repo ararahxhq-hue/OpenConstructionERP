@@ -59,7 +59,11 @@ function monogramInitials(name: string): string {
 function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominent?: boolean }) {
   const [imgFailed, setImgFailed] = useState(false);
   const url = acknowledgedUrl(entry);
-  const avatarSrc = entry.handle ? `https://github.com/${entry.handle}.png?size=80` : undefined;
+  // Avatars are saved into public/contributors/<handle>.png (fetched from
+  // GitHub) so they serve same-origin and are not blocked by the image CSP,
+  // and the wall still shows faces offline. The initials monogram below
+  // remains the fallback for any handle without a saved image.
+  const avatarSrc = entry.handle ? `/contributors/${entry.handle}.png` : undefined;
   const showImg = Boolean(avatarSrc) && !imgFailed;
 
   const body = (

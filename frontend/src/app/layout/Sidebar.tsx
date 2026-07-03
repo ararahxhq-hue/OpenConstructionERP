@@ -66,6 +66,7 @@ import {
   Link2,
   // 18-Modules Wave icons
   Wrench,
+  Timer,
   Truck,
   BookOpen,
   Globe,
@@ -468,6 +469,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'nav.daily_diary', to: '/daily-diary', icon: BookOpen },
       { labelKey: 'nav.field_reports', to: '/field-reports', icon: ClipboardList, advancedOnly: true },
+      { labelKey: 'nav.field_time', to: '/field-time', icon: Timer, advancedOnly: true },
       { labelKey: 'nav.service', to: '/service', icon: Wrench },
       { labelKey: 'nav.portal', to: '/portal', icon: Globe },
     ],
@@ -769,6 +771,7 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   // Field operations
   '/daily-diary': 'oe_daily_diary',
   '/field-reports': 'oe_fieldreports',
+  '/field-time': 'oe_field_time',
   '/equipment': 'oe_equipment',
   '/resources': 'oe_resources',
   '/payroll': 'oe_payroll',
@@ -877,6 +880,7 @@ const ROUTE_MODULE_KEY: Record<string, string> = {
   // Field operations
   '/daily-diary': 'daily_diary',
   '/field-reports': 'fieldreports',
+  '/field-time': 'field_time',
   '/equipment': 'equipment',
   '/resources': 'resources',
   '/payroll': 'payroll',

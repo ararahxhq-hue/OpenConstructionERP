@@ -65,6 +65,9 @@ export const CONTRIBUTORS: Acknowledged[] = [
   { name: 'skeltic-wq', handle: 'skeltic-wq' },
   { name: 'MeCode4', handle: 'MeCode4' },
   { name: 'Nebulasunrise-OG', handle: 'Nebulasunrise-OG' },
+  { name: 'j209', handle: 'j209' },
+  { name: 'darkleono', handle: 'darkleono' },
+  { name: 'serviteur', handle: 'serviteur' },
 ];
 
 /**

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.8.0] - 2026-07-03
+
+A features and fixes release. It adds a Field Time and Daywork module for capturing labour and plant time on site against a project, its resources and its equipment, with cost-code assist, an approval workflow, and a feed into payroll and earned value. The About page now shows contributors' photos on the community thank-you wall, saved and served from the platform itself. It also fixes a header and photo-filter overlap, a date that could shift a day at negative time zones, a project photos tab that did not open from a link, and database migrations that assumed SQLite syntax and could fail on PostgreSQL.
+
+### Added
+
+- Field Time and Daywork module, capture labour and plant time on site against a project, its resources and its equipment, with labour-or-plant lines, cost-code assist, an approval workflow, and a feed into payroll and earned value.
+- Contributor photos on the About page community thank-you wall, saved and served from the platform rather than fetched from an outside site.
+
+### Fixed
+
+- The header project switcher no longer overlaps the search on narrow widths, and the photo gallery filter card no longer overlaps the content below it (#293).
+- Date-only values no longer move back a day when shown in a negative time zone, and the project photos tab now opens directly from a link (#294).
+- Database migrations no longer assume SQLite-only syntax, so they run cleanly on PostgreSQL (#295).
+
 ## [9.7.0] - 2026-07-02
 
 A features release. You can compare two independent DWG drawings side by side, import a 3D mesh directly in the browser with a quantity read-out, and read the project dashboard from a redesigned map with a side panel of sites and local weather. You can support the project through PayPal or GitHub Sponsors, and contributors are credited on a community thank-you wall. It also loads large BIM models without running out of memory, gives the client portal a Documents area so a shared client can see and open their files, and makes Bill of Quantities quantity cells accept imperial feet-and-inches and resolve variable and cross-position references correctly in both metric and imperial.

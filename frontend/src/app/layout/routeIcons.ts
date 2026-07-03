@@ -55,6 +55,7 @@ import {
   FileEdit,
   BookOpen,
   Wrench,
+  Timer,
   Truck,
   Users,
   Wallet,
@@ -143,6 +144,7 @@ const ROUTE_ICON_MAP: Record<string, LucideIcon> = {
   // ── 10. Field Operations ──────────────────────────────────────────
   '/daily-diary': BookOpen,
   '/field-reports': ClipboardList,
+  '/field-time': Timer,
   '/service': Wrench,
   '/portal': Globe,
   '/portal/payments': FileText,

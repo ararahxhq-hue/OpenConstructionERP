@@ -118,6 +118,9 @@ const InboxPage = lazy(() =>
 const FieldReportsPage = lazy(() =>
   import('@/features/fieldreports/FieldReportsPage').then((m) => ({ default: m.FieldReportsPage }))
 );
+const FieldTimePage = lazy(() =>
+  import('@/features/field-time').then((m) => ({ default: m.FieldTimePage }))
+);
 const FinancePage = lazy(() =>
   import('@/features/finance/FinancePage').then((m) => ({ default: m.FinancePage }))
 );
@@ -1120,6 +1123,8 @@ export default function App() {
         <Route path="/projects/:projectId/payroll" element={<P title="Payroll"><PayrollPage /></P>} />
         <Route path="/daily-diary" element={<P title="Daily Diary"><DailyDiaryPage /></P>} />
         <Route path="/projects/:projectId/daily-diary" element={<P title="Daily Diary"><DailyDiaryPage /></P>} />
+        <Route path="/field-time" element={<P title="Field Time"><FieldTimePage /></P>} />
+        <Route path="/projects/:projectId/field-time" element={<P title="Field Time"><FieldTimePage /></P>} />
         <Route path="/portal" element={<P title="Client & Partner Portal"><PortalPage /></P>} />
         <Route path="/projects/:projectId/portal" element={<P title="Client & Partner Portal"><PortalPage /></P>} />
         <Route path="/resources" element={<P title="Resources & Crew"><ResourcesPage /></P>} />

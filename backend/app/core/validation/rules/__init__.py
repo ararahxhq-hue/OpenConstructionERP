@@ -6213,6 +6213,333 @@ class TakeoffLowConfidenceReviewRule(ValidationRule):
         return results
 
 
+# ── Field Time (labour + plant field timesheets) ────────────────────────────
+#
+# Validate a foreman's field timesheet payload (see app.modules.field_time).
+# The logic lives in the pure engine ``field_time_math`` so the rule bodies stay
+# thin and the same checks are unit-tested without a database. The engine is
+# imported lazily inside ``validate()`` so this core package never hard-depends
+# on a business module at import time (a disabled field_time module must not
+# break rule loading).
+
+
+def _ft_payload(context: ValidationContext) -> dict[str, Any]:
+    """Return the timesheet payload dict from the context (empty if malformed)."""
+    data = context.data
+    return data if isinstance(data, dict) else {}
+
+
+def _ft_lines(context: ValidationContext) -> list[dict[str, Any]]:
+    """Return the timesheet's line dicts from the context."""
+    lines = _ft_payload(context).get("lines")
+    return lines if isinstance(lines, list) else []
+
+
+def _ft_line_label(index: int, line: dict[str, Any]) -> str:
+    """A human line label: the 1-based row number plus its cost code if any."""
+    code = str(line.get("cost_code") or "").strip()
+    return f"{index + 1} ({code})" if code else str(index + 1)
+
+
+class FieldTimeHoursPerDayMax(ValidationRule):
+    """A single worker cannot book more than 24 hours across a day's lines."""
+
+    rule_id = "field_time.hours_per_day_max"
+    name = "Field Time Hours Per Day Maximum"
+    standard = "field_time"
+    severity = Severity.ERROR
+    category = RuleCategory.CONSISTENCY
+    description = "Flags a worker whose summed labour hours for the day exceed 24."
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        lines = _ft_lines(context)
+        if not lines:
+            return []
+        from app.modules.field_time import field_time_math as ft
+
+        totals = ft.sum_hours_by_worker(lines)
+        results: list[RuleResult] = []
+        for worker, hours in sorted(totals.items()):
+            passed = hours <= ft.MAX_HOURS_PER_DAY
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=passed,
+                    message=(
+                        _ok(locale)
+                        if passed
+                        else translate(
+                            "field_time.hours_per_day_max.fail",
+                            locale=locale,
+                            worker=worker,
+                            hours=f"{hours}",
+                            max=f"{ft.MAX_HOURS_PER_DAY}",
+                        )
+                    ),
+                    element_ref=worker,
+                    suggestion=(
+                        None
+                        if passed
+                        else translate("field_time.hours_per_day_max.suggestion", locale=locale)
+                    ),
+                )
+            )
+        return results
+
+
+class FieldTimeLineComplete(ValidationRule):
+    """Each line must be labour XOR plant, have positive hours and a cost code."""
+
+    rule_id = "field_time.line_complete"
+    name = "Field Time Line Complete"
+    standard = "field_time"
+    severity = Severity.ERROR
+    category = RuleCategory.COMPLETENESS
+    description = "Flags timesheet lines that are not labour-XOR-plant, or lack hours / a cost code."
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        lines = _ft_lines(context)
+        if not lines:
+            return []
+        from app.modules.field_time import field_time_math as ft
+
+        results: list[RuleResult] = []
+        for index, line in enumerate(lines):
+            outcome = ft.line_completeness(line)
+            if outcome.passed:
+                message = _ok(locale)
+                suggestion = None
+            else:
+                reason = ", ".join(
+                    translate(f"field_time.line_complete.{code}", locale=locale)
+                    for code in outcome.reasons
+                )
+                message = translate(
+                    "field_time.line_complete.fail",
+                    locale=locale,
+                    line=_ft_line_label(index, line),
+                    reason=reason,
+                )
+                suggestion = translate("field_time.line_complete.suggestion", locale=locale)
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=outcome.passed,
+                    message=message,
+                    element_ref=str(line.get("id") or index),
+                    suggestion=suggestion,
+                )
+            )
+        return results
+
+
+class FieldTimeCostCodeResolves(ValidationRule):
+    """Each coded line must resolve to a BOQ position (cost code) or WBS code.
+
+    The valid code sets are supplied by the service through
+    ``context.metadata['valid_cost_codes']`` / ``['valid_wbs']`` (rules have no
+    database session). When neither is supplied the check is skipped, so a
+    project with no BOQ never produces spurious cost-code errors.
+    """
+
+    rule_id = "field_time.cost_code_resolves"
+    name = "Field Time Cost Code Resolves"
+    standard = "field_time"
+    severity = Severity.ERROR
+    category = RuleCategory.COMPLIANCE
+    description = "Flags timesheet lines whose cost code / WBS matches no BOQ position in the project."
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        lines = _ft_lines(context)
+        if not lines:
+            return []
+        meta = getattr(context, "metadata", None) or {}
+        raw_codes = meta.get("valid_cost_codes")
+        raw_wbs = meta.get("valid_wbs")
+        if raw_codes is None and raw_wbs is None:
+            return []
+        from app.modules.field_time import field_time_math as ft
+
+        valid_codes = set(raw_codes) if raw_codes is not None else None
+        valid_wbs = set(raw_wbs) if raw_wbs is not None else None
+        bad = set(
+            ft.cost_code_unresolved_indices(lines, valid_cost_codes=valid_codes, valid_wbs=valid_wbs)
+        )
+        results: list[RuleResult] = []
+        for index, line in enumerate(lines):
+            code = str(line.get("cost_code") or "").strip()
+            wbs = str(line.get("wbs") or "").strip()
+            if not code and not wbs:
+                continue  # completeness owns the missing-code case
+            passed = index not in bad
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=passed,
+                    message=(
+                        _ok(locale)
+                        if passed
+                        else translate(
+                            "field_time.cost_code_resolves.fail",
+                            locale=locale,
+                            line=_ft_line_label(index, line),
+                            code=code or wbs,
+                        )
+                    ),
+                    element_ref=str(line.get("id") or index),
+                    suggestion=(
+                        None
+                        if passed
+                        else translate("field_time.cost_code_resolves.suggestion", locale=locale)
+                    ),
+                )
+            )
+        return results
+
+
+class FieldTimeDayworkNeedsVariation(ValidationRule):
+    """A daywork line should reference an open variation it was performed under."""
+
+    rule_id = "field_time.daywork_needs_variation"
+    name = "Field Time Daywork Needs Variation"
+    standard = "field_time"
+    severity = Severity.WARNING
+    category = RuleCategory.CONSISTENCY
+    description = "Flags daywork lines not linked to an open variation order."
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        lines = _ft_lines(context)
+        if not lines:
+            return []
+        from app.modules.field_time import field_time_math as ft
+
+        meta = getattr(context, "metadata", None) or {}
+        raw_open = meta.get("open_variation_ids")
+        open_ids = set(raw_open) if raw_open is not None else None
+        bad = set(ft.daywork_incomplete_indices(lines, open_variation_ids=open_ids))
+        results: list[RuleResult] = []
+        for index, line in enumerate(lines):
+            if not line.get("is_daywork"):
+                continue
+            passed = index not in bad
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=passed,
+                    message=(
+                        _ok(locale)
+                        if passed
+                        else translate(
+                            "field_time.daywork_needs_variation.fail",
+                            locale=locale,
+                            line=_ft_line_label(index, line),
+                        )
+                    ),
+                    element_ref=str(line.get("id") or index),
+                    suggestion=(
+                        None
+                        if passed
+                        else translate("field_time.daywork_needs_variation.suggestion", locale=locale)
+                    ),
+                )
+            )
+        return results
+
+
+class FieldTimePlantNeedsEquipment(ValidationRule):
+    """A line declaring plant work should name the equipment item it used."""
+
+    rule_id = "field_time.plant_needs_equipment"
+    name = "Field Time Plant Needs Equipment"
+    standard = "field_time"
+    severity = Severity.WARNING
+    category = RuleCategory.COMPLETENESS
+    description = "Flags plant-intent lines that name no equipment item (so plant hours can be costed)."
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        lines = _ft_lines(context)
+        if not lines:
+            return []
+        from app.modules.field_time import field_time_math as ft
+
+        bad = ft.plant_missing_equipment_indices(lines)
+        results: list[RuleResult] = []
+        for index in bad:
+            line = lines[index]
+            results.append(
+                RuleResult(
+                    rule_id=self.rule_id,
+                    rule_name=self.name,
+                    severity=self.severity,
+                    category=self.category,
+                    passed=False,
+                    message=translate(
+                        "field_time.plant_needs_equipment.fail",
+                        locale=locale,
+                        line=_ft_line_label(index, line),
+                    ),
+                    element_ref=str(line.get("id") or index),
+                    suggestion=translate("field_time.plant_needs_equipment.suggestion", locale=locale),
+                )
+            )
+        return results
+
+
+class FieldTimeApprovedImmutable(ValidationRule):
+    """An approved or reversed timesheet cannot be edited - only reversed."""
+
+    rule_id = "field_time.approved_immutable"
+    name = "Field Time Approved Immutable"
+    standard = "field_time"
+    severity = Severity.ERROR
+    category = RuleCategory.CONSISTENCY
+    description = "Flags any attempt to mutate an approved or reversed timesheet."
+
+    async def validate(self, context: ValidationContext) -> list[RuleResult]:
+        locale = _get_locale(context)
+        payload = _ft_payload(context)
+        status_value = str(payload.get("status") or "")
+        meta = getattr(context, "metadata", None) or {}
+        operation = str(meta.get("operation") or "").lower()
+        mutating = operation in ("update", "delete", "edit")
+        locked = status_value in ("approved", "reversed")
+        if not (mutating and locked):
+            return []
+        return [
+            RuleResult(
+                rule_id=self.rule_id,
+                rule_name=self.name,
+                severity=self.severity,
+                category=self.category,
+                passed=False,
+                message=translate(
+                    "field_time.approved_immutable.fail",
+                    locale=locale,
+                    status=status_value,
+                ),
+                element_ref=str(payload.get("id") or ""),
+                suggestion=translate("field_time.approved_immutable.suggestion", locale=locale),
+            )
+        ]
+
+
 # ── Registration ────────────────────────────────────────────────────────────
 
 
@@ -6316,6 +6643,13 @@ def register_builtin_rules() -> None:
         (TakeoffScaleSanityRule(), None),
         (TakeoffPolygonSelfIntersectionRule(), None),
         (TakeoffLowConfidenceReviewRule(), None),
+        # Field Time (cost-coded, signed labour + plant timesheets)
+        (FieldTimeHoursPerDayMax(), None),
+        (FieldTimeLineComplete(), None),
+        (FieldTimeCostCodeResolves(), None),
+        (FieldTimeDayworkNeedsVariation(), None),
+        (FieldTimePlantNeedsEquipment(), None),
+        (FieldTimeApprovedImmutable(), None),
     ]
 
     for rule, sets in rules:
