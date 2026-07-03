@@ -5,7 +5,7 @@
 // price base. Every match can jump straight to comparing it across bases or
 // testing a resource substitution.
 
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { GitCompareArrows, Repeat2, Search } from 'lucide-react';
@@ -24,6 +24,14 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
     mutationFn: () => findWork({ q: q.trim(), region: region || null, limit: 40 }),
   });
   const results = search.data?.results ?? [];
+
+  // Results are tagged to the region they were searched in; changing the price
+  // base region clears them so old rows with a mismatched region badge never
+  // linger over the new filter until the next search.
+  const { reset: resetSearch } = search;
+  useEffect(() => {
+    resetSearch();
+  }, [region, resetSearch]);
 
   function run() {
     if (q.trim().length > 0) search.mutate();

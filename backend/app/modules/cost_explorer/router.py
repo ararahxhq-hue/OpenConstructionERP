@@ -88,9 +88,9 @@ async def price_intelligence(
 
 @router.get("/status", dependencies=[_READ])
 async def index_status(session: SessionDep) -> dict:
-    """Reverse-index health: how many edges are stored and items available."""
-    repo = CostExplorerRepository(session)
-    return {"indexed_edges": await repo.count_edges(), "cost_items": await repo.count_cost_items()}
+    """Reverse-index health: edges stored, items available, and any loaded
+    regions that carry works but are missing from the index (rebuild prompt)."""
+    return await _service(session).index_status()
 
 
 @router.post("/reindex", response_model=ReindexResponse, dependencies=[_REINDEX])
@@ -101,8 +101,12 @@ async def reindex(
     """Rebuild the resource -> work reverse index (manager action).
 
     Rebuilds a whole region (or every region), never a source-filtered subset,
-    so a partial rebuild can never silently drop another source's edges.
+    so a partial rebuild can never silently drop another source's edges. Taken
+    under the shared build lock so it never races an automatic rebuild into
+    duplicate edges; returns 409 when a rebuild is already running.
     """
-    report = await _service(session).reindex(region=region)
+    report = await _service(session).reindex_guarded(region=region)
+    if report is None:
+        raise HTTPException(status_code=409, detail="a reindex is already running; try again shortly")
     await session.commit()
     return report

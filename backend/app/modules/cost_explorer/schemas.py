@@ -203,9 +203,13 @@ class SubstituteRequest(BaseModel):
 
         Without this a caller could pass a huge-exponent Decimal string that
         parses fine but overflows the Decimal context inside the pricing maths.
+
+        A blank string normalises to ``None`` (not "0") so the "provide one or
+        the other" rule below still fires and the service does not silently take
+        the explicit-price branch with a zero price, dropping the line.
         """
         if value is None or value.strip() == "":
-            return value
+            return None
         try:
             parsed = Decimal(value)
         except (InvalidOperation, ValueError, TypeError) as exc:

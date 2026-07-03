@@ -16,10 +16,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator, Sequence
 
-from sqlalchemy import delete, distinct, func, insert, or_, select
+from sqlalchemy import case, delete, distinct, func, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalog.models import CatalogResource
+from app.modules.catalog.synonyms import expand_query
 from app.modules.cost_explorer.models import CostItemResource
 from app.modules.costs.models import CostItem
 
@@ -59,6 +60,12 @@ class CostExplorerRepository:
         """True when any cost item has no region tag (its own reindex bucket)."""
         stmt = select(CostItem.id).where(CostItem.region.is_(None)).limit(1)
         return (await self.session.execute(stmt)).first() is not None
+
+    async def distinct_edge_regions(self) -> list[str]:
+        """Non-null region tags that already carry at least one index edge."""
+        stmt = select(distinct(CostItemResource.region)).where(CostItemResource.region.is_not(None))
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return [r for r in rows if r]
 
     async def stream_items_in_region(self, region: str | None, batch_size: int = 1000) -> AsyncIterator[object]:
         """Yield ``(id, code, region, source, components)`` for one region bucket.
@@ -124,18 +131,24 @@ class CostExplorerRepository:
         if not resource_codes:
             return []
         match_count = func.count().label("matches")
+        # Always join the work item and keep only live ones. The read path
+        # filters is_active later, but the candidate cap is applied HERE, so
+        # without this a block of edges pointing at removed / soft-deleted works
+        # could fill the cap and crowd live candidates out of the results.
         stmt = (
             select(CostItemResource.cost_item_id, match_count)
-            .where(CostItemResource.resource_code.in_(list(resource_codes)))
+            .join(CostItem, CostItem.id == CostItemResource.cost_item_id)
+            .where(
+                CostItemResource.resource_code.in_(list(resource_codes)),
+                CostItem.is_active.is_(True),
+            )
             .group_by(CostItemResource.cost_item_id)
             .order_by(match_count.desc())
         )
         if region is not None:
             stmt = stmt.where(CostItemResource.region == region)
         if sources:
-            stmt = stmt.join(CostItem, CostItem.id == CostItemResource.cost_item_id).where(
-                CostItem.source.in_(list(sources))
-            )
+            stmt = stmt.where(CostItem.source.in_(list(sources)))
         stmt = stmt.limit(limit)
         return [row[0] for row in (await self.session.execute(stmt)).all()]
 
@@ -169,16 +182,34 @@ class CostExplorerRepository:
         sources: Sequence[str] | None,
         limit: int,
     ) -> list[CostItem]:
-        """Cost items where every token appears in the code or the description."""
-        stmt = select(CostItem).where(CostItem.is_active.is_(True))
+        """Cost items ranked by how many of the query concepts they match.
+
+        Each token is expanded with construction synonyms (so "rebar" also finds
+        "reinforcement") and matched against the code or description. An item
+        needs at least ONE concept to appear, and items that match more concepts
+        come first, so a descriptive multi-word query returns the best partial
+        matches instead of dead-ending on zero results when no single row carries
+        every word. The caller re-ranks this pool lexically for the final order.
+        """
+        concept_preds = []
         for tok in tokens:
-            pattern = f"%{_escape_like(tok)}%"
-            stmt = stmt.where(
-                or_(
-                    CostItem.code.ilike(pattern, escape="\\"),
-                    CostItem.description.ilike(pattern, escape="\\"),
-                )
-            )
+            like_clauses = []
+            for variant in expand_query(tok):
+                pattern = f"%{_escape_like(variant)}%"
+                like_clauses.append(CostItem.code.ilike(pattern, escape="\\"))
+                like_clauses.append(CostItem.description.ilike(pattern, escape="\\"))
+            if like_clauses:
+                concept_preds.append(or_(*like_clauses))
+
+        stmt = select(CostItem).where(CostItem.is_active.is_(True))
+        if concept_preds:
+            stmt = stmt.where(or_(*concept_preds))
+            # Rank by concept-match count (PostgreSQL has no boolean->int cast,
+            # so sum CASE expressions) so the pool holds the best candidates.
+            match_score = case((concept_preds[0], 1), else_=0)
+            for pred in concept_preds[1:]:
+                match_score = match_score + case((pred, 1), else_=0)
+            stmt = stmt.order_by(match_score.desc())
         if region is not None:
             stmt = stmt.where(CostItem.region == region)
         if sources:
@@ -248,6 +279,11 @@ class CostExplorerRepository:
         Joined to the cost item so a stale edge pointing at a removed / inactive
         work never skews the spread, and capped so the busiest resource cannot
         pull an unbounded column into memory for the in-Python percentiles.
+
+        Ordered by work id so that when the cap does bite (a resource used in
+        more than ``limit`` works) the sample is a stable, price-neutral subset
+        rather than an arbitrary physical-order slice that could cluster by
+        insert time and bias the percentiles.
         """
         stmt = (
             select(CostItemResource.unit_rate)
@@ -256,7 +292,7 @@ class CostExplorerRepository:
         )
         if region is not None:
             stmt = stmt.where(CostItemResource.region == region)
-        stmt = stmt.limit(limit)
+        stmt = stmt.order_by(CostItemResource.cost_item_id).limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def top_works_for_resource(

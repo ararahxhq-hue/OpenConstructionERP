@@ -83,9 +83,10 @@ export function CostExplorerPage() {
 }
 
 /**
- * Surfaces only when the reverse index is empty but there are works to index
- * (e.g. a base was just loaded). Offers a one-click rebuild; managers succeed,
- * others get a clear message. Silent once the index is populated.
+ * Surfaces when the reverse index is empty but there are works to index, or when
+ * a loaded cost base carries works that are missing from the index (e.g. a large
+ * second base imported past the auto-rebuild cap). Offers a one-click rebuild;
+ * managers succeed, others get a clear message. Silent once every base is indexed.
  */
 function IndexStatusNote() {
   const { t } = useTranslation();
@@ -123,16 +124,24 @@ function IndexStatusNote() {
 
   const data = status.data;
   const isEmpty = !!data && data.indexed_edges === 0 && data.cost_items > 0;
-  if (!isEmpty) return null;
+  const staleRegions = data?.unindexed_regions ?? [];
+  const show = isEmpty || staleRegions.length > 0;
+  if (!show) return null;
+
+  const message = isEmpty
+    ? t('costExplorer.index.empty', {
+        defaultValue: 'The resource index is empty, so by-resources search has nothing to match yet. Rebuild it to index the loaded cost bases.',
+      })
+    : t('costExplorer.index.stale', {
+        defaultValue:
+          'Some loaded cost bases are not in the resource index yet ({{regions}}), so by-resources search will miss them. Rebuild to index them.',
+        regions: staleRegions.join(', '),
+      });
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-semantic-warning/30 bg-semantic-warning/10 px-3 py-2.5">
       <AlertTriangle className="h-4 w-4 shrink-0 text-semantic-warning" aria-hidden />
-      <span className="min-w-0 flex-1 text-sm text-content-secondary">
-        {t('costExplorer.index.empty', {
-          defaultValue: 'The resource index is empty, so by-resources search has nothing to match yet. Rebuild it to index the loaded cost bases.',
-        })}
-      </span>
+      <span className="min-w-0 flex-1 text-sm text-content-secondary">{message}</span>
       <Button size="sm" variant="secondary" onClick={() => rebuild.mutate()} disabled={rebuild.isPending}>
         <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${rebuild.isPending ? 'animate-spin' : ''}`} />
         {rebuild.isPending ? t('costExplorer.index.rebuilding', { defaultValue: 'Rebuilding...' }) : t('costExplorer.index.rebuild', { defaultValue: 'Rebuild index' })}

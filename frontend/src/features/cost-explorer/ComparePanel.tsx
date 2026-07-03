@@ -9,7 +9,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Search } from 'lucide-react';
+import { AlertTriangle, Loader2, Search } from 'lucide-react';
 import { Button, EmptyState, ErrorState, Input } from '@/shared/ui';
 import { getErrorMessage } from '@/shared/lib/api';
 import { compareBases } from './api';
@@ -61,7 +61,9 @@ export function ComparePanel({ code, onCodeChange }: { code: string; onCodeChang
             />
           </div>
           <Button onClick={run} disabled={draft.trim().length === 0 || query.isFetching}>
-            {t('costExplorer.compare.go', { defaultValue: 'Compare' })}
+            {query.isFetching
+              ? t('costExplorer.compare.going', { defaultValue: 'Comparing...' })
+              : t('costExplorer.compare.go', { defaultValue: 'Compare' })}
           </Button>
         </div>
         <p className="mt-1.5 text-xs text-content-tertiary">
@@ -71,7 +73,14 @@ export function ComparePanel({ code, onCodeChange }: { code: string; onCodeChang
 
       {query.isError && <ErrorState title={getErrorMessage(query.error)} onRetry={() => query.refetch()} />}
 
-      {code.trim().length === 0 && (
+      {query.isFetching && !data && (
+        <div className="flex items-center gap-2 rounded-lg border border-border-light px-3 py-4 text-sm text-content-tertiary">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          {t('costExplorer.compare.loading', { defaultValue: 'Comparing across bases...' })}
+        </div>
+      )}
+
+      {code.trim().length === 0 && !query.isFetching && (
         <EmptyState
           title={t('costExplorer.compare.startTitle', { defaultValue: 'Compare a rate across bases' })}
           description={t('costExplorer.compare.startBody', { defaultValue: 'Enter a rate code, or open one from another tab, to see how it is priced in each region.' })}

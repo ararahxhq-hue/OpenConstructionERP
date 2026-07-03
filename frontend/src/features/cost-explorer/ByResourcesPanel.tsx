@@ -40,14 +40,15 @@ export function ByResourcesPanel({ nav }: { nav: CrossNav }) {
       }),
   });
 
-  // Results describe the resource set at the time of the search; clear them the
-  // moment that set changes (chip added/removed/reweighted, or "Clear all") so
-  // stale rows and the "no works" message never linger over a different query.
+  // Results describe the resource set AND region at the time of the search;
+  // clear them the moment either changes (chip added/removed/reweighted, "Clear
+  // all", or a different price-base region) so stale rows and the "no works"
+  // message never linger over a query that no longer matches the controls.
   const { reset: resetSearch } = search;
   useEffect(() => {
     resetSearch();
     setExpanded(new Set());
-  }, [picked, resetSearch]);
+  }, [picked, region, resetSearch]);
 
   function addResource(r: CatalogResource) {
     setPicked((prev) =>

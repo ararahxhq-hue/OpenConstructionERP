@@ -178,6 +178,8 @@ export interface PriceIntelResponse {
 export interface IndexStatus {
   indexed_edges: number;
   cost_items: number;
+  /** Loaded regions that carry works but are missing from the index (rebuild prompt). */
+  unindexed_regions?: string[];
 }
 
 export interface ReindexResponse {

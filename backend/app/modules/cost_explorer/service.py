@@ -24,6 +24,7 @@ import re
 import uuid
 from decimal import Decimal
 
+from app.modules.catalog.synonyms import expand_query
 from app.modules.cost_explorer import pricing, ranking
 from app.modules.cost_explorer.repository import CostExplorerRepository
 from app.modules.cost_explorer.schemas import (
@@ -237,13 +238,17 @@ class CostExplorerService:
         # Over-fetch so the lexical re-rank has room to promote the best hits.
         pool = await self.repo.search_work(tokens, req.region, req.sources, min(req.limit * 4, 400))
         query_l = req.q.strip().lower()
-        lowered = [t.lower() for t in tokens]
+        # Expand each token to its construction-synonym group so a hit on a
+        # synonym ("reinforcement" for a typed "rebar") counts as a real token
+        # hit and ranks with the word the user meant, matching the synonym-
+        # expanded pool the repository returns.
+        token_variants = [[v.lower() for v in expand_query(tok)] for tok in tokens]
 
         scored: list[tuple[float, object]] = []
         for item in pool:
             hay = f"{item.code} {_description(item)}".lower()
-            hits = sum(1 for t in lowered if t in hay)
-            token_share = hits / len(lowered) if lowered else 0.0
+            hits = sum(1 for variants in token_variants if any(v in hay for v in variants))
+            token_share = hits / len(token_variants) if token_variants else 0.0
             phrase = 1.0 if query_l and query_l in hay else 0.0
             score = min(1.0, 0.5 * phrase + 0.5 * token_share)
             scored.append((score, item))
@@ -327,11 +332,20 @@ class CostExplorerService:
         if req.new_unit_rate is not None:
             new_unit_rate = ranking.to_decimal(req.new_unit_rate)
         else:
-            sub = await self.repo.catalog_resource(
-                req.substitute_resource_code, item.region
-            ) or await self.repo.catalog_resource(req.substitute_resource_code)
+            # Prefer the substitute's catalog row in the item's own region. Only
+            # fall back to another region when that row is priced in the SAME
+            # currency as the work, otherwise a foreign price would be silently
+            # blended into the rate and the reported delta would mix currencies.
+            item_currency = _resolve_currency(item.currency, item.region)
+            sub = await self.repo.catalog_resource(req.substitute_resource_code, item.region)
             if sub is None:
-                raise CostExplorerNotFound("substitute resource not found")
+                fallback = await self.repo.catalog_resource(req.substitute_resource_code)
+                if fallback is not None and fallback.currency == item_currency:
+                    sub = fallback
+            if sub is None:
+                raise CostExplorerNotFound(
+                    "substitute resource is not priced in this work's region or currency"
+                )
             new_unit_rate = ranking.to_decimal(sub.base_price)
             sub_name = sub.name
 
@@ -479,6 +493,63 @@ class CostExplorerService:
             edges_written=edges_written,
             resources_seen=len(resources_seen),
         )
+
+    async def reindex_guarded(self, region: str | None = None) -> ReindexResponse | None:
+        """Rebuild under the shared advisory lock; None when another build holds it.
+
+        Every rebuild path (startup, post-import, the admin endpoint) funnels
+        through this one transaction-scoped lock so two rebuilds can never
+        interleave their per-region delete-then-insert passes and double-insert
+        edges. The edge table has no unique key to fall back on (a work may list
+        the same resource on more than one component line), so serialising the
+        writers is the guard. The caller commits the session, which releases the
+        lock; on ``None`` the caller should not commit (nothing was written).
+        """
+        if not await _try_build_lock(self.repo.session):
+            return None
+        return await self.reindex(region)
+
+    async def index_status(self) -> dict:
+        """Reverse-index health for the status endpoint and the rebuild prompt.
+
+        ``unindexed_regions`` lists regions that carry component-bearing works
+        yet have no index edges, so the UI can prompt a rebuild for exactly the
+        bases missing from search (not only when the whole index is empty).
+        Regions whose works carry no resource breakdown are skipped, so a
+        breakdown-less base never shows as permanently stale.
+        """
+        indexed_edges = await self.repo.count_edges()
+        cost_items = await self.repo.count_cost_items()
+        unindexed: list[str] = []
+        if indexed_edges and cost_items:
+            item_regions = set(await self.repo.distinct_regions())
+            edge_regions = set(await self.repo.distinct_edge_regions())
+            for region in sorted(item_regions - edge_regions):
+                if await self._region_has_indexable_work(region):
+                    unindexed.append(region)
+        return {
+            "indexed_edges": indexed_edges,
+            "cost_items": cost_items,
+            "unindexed_regions": unindexed,
+        }
+
+    async def _region_has_indexable_work(self, region: str) -> bool:
+        """True when a region has an active work whose components would form edges.
+
+        Scans a bounded prefix of the region's items (a genuinely stale region's
+        first item already carries a breakdown), so a region of breakdown-less
+        items does not turn the rebuild prompt into a permanent false alarm.
+        """
+        scanned = 0
+        async for _id, _code, _region, _source, components in self.repo.stream_items_in_region(
+            region, batch_size=200
+        ):
+            if parse_components(components):
+                return True
+            scanned += 1
+            if scanned >= 2000:
+                break
+        return False
 
     async def refresh_item(self, item_id: uuid.UUID) -> int:
         """Rebuild the reverse-index edges for one cost item (incremental sync).

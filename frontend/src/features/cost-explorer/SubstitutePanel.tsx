@@ -160,6 +160,26 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
         </div>
       )}
 
+      {/* Price intelligence failed to load: say so (distinct from "no data") and
+          offer a retry, without blocking the substitution itself. */}
+      {resourceCode && priceQ.isError && (
+        <div className="flex items-start gap-2 rounded-lg border border-semantic-warning/30 bg-semantic-warning/10 px-3 py-2 text-xs text-content-secondary">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-semantic-warning" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {t('costExplorer.substitute.priceError', {
+              defaultValue: 'Could not load where this resource is priced. You can still test a substitution below.',
+            })}
+          </span>
+          <button
+            type="button"
+            onClick={() => priceQ.refetch()}
+            className="shrink-0 font-medium text-oe-blue hover:underline"
+          >
+            {t('common.retry', { defaultValue: 'Retry' })}
+          </button>
+        </div>
+      )}
+
       {/* Replacement */}
       {resourceCode && (
         <div>

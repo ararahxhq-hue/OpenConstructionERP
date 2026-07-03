@@ -67,6 +67,31 @@ def test_substitute_degrades_on_garbage() -> None:
     assert r.delta == Decimal(0)
 
 
+def test_substitute_clamps_absurd_catalog_price_without_overflow() -> None:
+    # A malformed catalog base_price (huge exponent) parses to a valid Decimal
+    # then overflows the multiply; the clamp keeps the engine total-safe rather
+    # than raising an uncaught decimal.Overflow that would 500 the endpoint.
+    r = pricing.substitute("100", "1", "0", "1E9999999")
+    assert r.new_rate.is_finite()
+    assert r.delta.is_finite()
+    assert r.new_line_cost == pricing.MAX_ABS_PRICE
+
+
+def test_substitute_clamps_absurd_quantity_and_negative_price() -> None:
+    r = pricing.substitute("100", "1E9999999", "0", "5")
+    assert r.new_line_cost.is_finite()
+    r2 = pricing.substitute("100", "1", "0", "-1E9999999")
+    assert r2.delta.is_finite()
+    assert r2.new_line_cost == -pricing.MAX_ABS_PRICE
+
+
+def test_clamp_price_bounds_and_nonfinite() -> None:
+    assert pricing._clamp_price(Decimal("1E20")) == pricing.MAX_ABS_PRICE
+    assert pricing._clamp_price(Decimal("-1E20")) == -pricing.MAX_ABS_PRICE
+    assert pricing._clamp_price(Decimal("NaN")) == Decimal(0)
+    assert pricing._clamp_price(Decimal("5")) == Decimal("5")
+
+
 # ── price_stats: distribution across the rows that carry a price ────────────
 
 

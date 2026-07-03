@@ -24,6 +24,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
+# Upper bound on any single price/quantity/rate fed into the substitution maths.
+# Catalog ``base_price`` is a free ``String(50)`` column, so a malformed row can
+# hold an absurd-exponent value like ``"1E9999999"`` that parses to a valid
+# Decimal and then overflows the multiply below. Clamping every magnitude keeps
+# the pure engine total-safe for any caller: the request schema guards the
+# explicit-price path, and this guards the catalog-priced twin that reads a
+# stored price straight out of the database.
+MAX_ABS_PRICE = Decimal("1e12")
+
+
+def _clamp_price(value: Decimal) -> Decimal:
+    """Bound a parsed value to +/- :data:`MAX_ABS_PRICE`, non-finite -> 0."""
+    if not value.is_finite():
+        return Decimal(0)
+    if value > MAX_ABS_PRICE:
+        return MAX_ABS_PRICE
+    if value < -MAX_ABS_PRICE:
+        return -MAX_ABS_PRICE
+    return value
+
 
 def to_decimal(value: object) -> Decimal:
     """Parse a stored money/quantity value to Decimal, degrading to 0.
@@ -73,10 +93,10 @@ def substitute(
         floor bit, while ``delta`` stays the true signed change so the caller
         can still see the magnitude.
     """
-    rate = to_decimal(item_rate)
-    qty = to_decimal(resource_quantity)
-    old_price = to_decimal(old_unit_rate)
-    new_price = to_decimal(new_unit_rate)
+    rate = _clamp_price(to_decimal(item_rate))
+    qty = _clamp_price(to_decimal(resource_quantity))
+    old_price = _clamp_price(to_decimal(old_unit_rate))
+    new_price = _clamp_price(to_decimal(new_unit_rate))
 
     old_line = qty * old_price
     new_line = qty * new_price

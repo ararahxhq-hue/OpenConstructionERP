@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.9.1] - 2026-07-04
+
+A quality release that sharpens the Cost Explorer. Search now understands construction vocabulary, so looking for "rebar" also finds work priced against "reinforcement", and the same applies to the catalog search and to finding work by description. A descriptive, multi-word search returns the closest partial matches instead of dead-ending on zero results when no single line carries every word. Substitute is steadier: it will not blend in a replacement that is only priced in another currency, it treats a blank replacement rate as a request to use the catalog price, and it stays well-behaved on extreme catalog figures. The workspace now tells you when a loaded price base is not yet in the resource index and offers to rebuild it, and it keeps that index in step base by base as you import.
+
+### Added
+
+- Construction synonyms across By resources, Find work and the catalog search, so a search finds the work whatever term the data used for it.
+- A prompt in the workspace when a loaded price base is not yet indexed for resource search, with a one-click rebuild for just that base.
+- Translations for the new Cost Explorer messages across all locales.
+
+### Fixed
+
+- Substitute no longer blends a resource priced in a different currency into a work's rate; it asks for a same-currency price instead.
+- Substitute treats a blank replacement rate as "use the catalog price" and stays well-behaved on extreme catalog figures instead of failing.
+- Works that have been removed no longer appear in By resources results.
+
+### Changed
+
+- Find work ranks and returns the best partial matches for a multi-word query rather than only exact all-word hits.
+- On import the resource index is rebuilt for just the price base that changed, so a large catalogue becomes searchable without a full rebuild.
+
 ## [9.9.0] - 2026-07-03
 
 A features release. It adds Cost Explorer, a search-first workspace over the cost and resource databases. You can start from the resources you have, a material, a trade or a piece of plant, and find the priced work that uses them, ranked by how well each work is covered by what you named. You can search the catalogs for a work by description across every loaded price base, compare the same rate code across regional price bases side by side with a clear warning when the currencies differ, and substitute one resource inside a work to see the effect on its rate, with a read-out of where that resource is priced across your data. It is built on a resource-to-work reverse index over each cost item's resource composition that stays in sync as cost items change.

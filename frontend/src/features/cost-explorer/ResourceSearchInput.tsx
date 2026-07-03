@@ -39,6 +39,12 @@ export function ResourceSearchInput({
   const listboxId = useId();
   const optionId = (i: number) => `${listboxId}-opt-${i}`;
 
+  // Translate the resource type ("labor" / "material" / "equipment" / ...) via a
+  // per-type key, falling back to the raw value so an unmapped type still reads
+  // sensibly instead of leaking a bare English/data token into the dropdown.
+  const typeLabel = (type: string) =>
+    t(`costExplorer.resourceType.${type.trim().toLowerCase()}`, { defaultValue: type });
+
   // Debounce so a fast typist does not fire a request per keystroke.
   useEffect(() => {
     const id = window.setTimeout(() => setDebounced(query.trim()), 220);
@@ -100,7 +106,14 @@ export function ResourceSearchInput({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (!open || results.length === 0) return;
+    if (!open) return;
+    // Escape closes the dropdown even when it only shows "No matching
+    // resources", so a keyboard user is never stuck having to click away.
+    if (e.key === 'Escape') {
+      setOpen(false);
+      return;
+    }
+    if (results.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setHighlight((h) => nextSelectable(h, 1));
@@ -113,8 +126,6 @@ export function ResourceSearchInput({
         e.preventDefault();
         pick(chosen);
       }
-    } else if (e.key === 'Escape') {
-      setOpen(false);
     }
   }
 
@@ -196,7 +207,7 @@ export function ResourceSearchInput({
                   <span className="block truncate font-medium text-content-primary">{r.name || r.resource_code}</span>
                   <span className="block truncate text-xs text-content-tertiary">
                     {r.resource_code}
-                    {r.resource_type ? ` · ${r.resource_type}` : ''}
+                    {r.resource_type ? ` · ${typeLabel(r.resource_type)}` : ''}
                     {r.unit ? ` · ${r.unit}` : ''}
                     {r.region ? ` · ${r.region}` : ''}
                   </span>
