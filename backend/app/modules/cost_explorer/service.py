@@ -343,9 +343,7 @@ class CostExplorerService:
                 if fallback is not None and fallback.currency == item_currency:
                     sub = fallback
             if sub is None:
-                raise CostExplorerNotFound(
-                    "substitute resource is not priced in this work's region or currency"
-                )
+                raise CostExplorerNotFound("substitute resource is not priced in this work's region or currency")
             new_unit_rate = ranking.to_decimal(sub.base_price)
             sub_name = sub.name
 
@@ -541,9 +539,7 @@ class CostExplorerService:
         items does not turn the rebuild prompt into a permanent false alarm.
         """
         scanned = 0
-        async for _id, _code, _region, _source, components in self.repo.stream_items_in_region(
-            region, batch_size=200
-        ):
+        async for _id, _code, _region, _source, components in self.repo.stream_items_in_region(region, batch_size=200):
             if parse_components(components):
                 return True
             scanned += 1
