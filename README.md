@@ -165,22 +165,6 @@ Star OpenConstructionERP on GitHub and be instantly notified of new releases.
 
 ---
 
-## <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/sparkle-fill-dark.svg"><img src="docs/readme-icons/sparkle-fill-light.svg" width="14" align="center" alt=""></picture> What's New in v6
-
-v6 is the version where setup stops being a chore. Install the wheel, run one command, and the app boots into a full PostgreSQL database with the demo data already loaded. No Docker, no connection strings, no migration step. The whole platform now ships as 117 modules out of the box.
-
-- **Embedded PostgreSQL 16 is the default runtime.** The first run brings up a local PostgreSQL server bundled with the wheel, so there is nothing to install and nothing to configure. It just boots. If you want the lightest possible local setup, set `OE_USE_SQLITE=1` and the app falls back to plain SQLite.
-- **117 modules out of the box, 27 languages, 55,000+ cost items.** Everything is on by default, the full UI is translated, and the CWICR pricing data covers every major trade across 11 regional price sets.
-- **Partner packs.** Preset bundles you can `pip install`, drop into a folder as a zip, or upload right in the app. They apply live with no restart, so a partner deployment is one step.
-- **Cost spine.** Control accounts and cost lines give you a proper budget structure with FX-correct rollups. Amounts are grouped by currency and never blended, so totals stay honest across regions.
-- **Geo hub.** Cesium 3D Tiles in the browser plus a one-click "place project on the map", so every job site has real coordinates and shows up on the globe.
-- **One-click country packs.** Pick a country and the language, the local cost database and a couple of demo projects all install together in a single step.
-- **Cross-platform CAD converters.** The DDC cad2data converters auto-download on Windows, Linux and macOS, so RVT, IFC, DWG and DGN takeoff works the same everywhere.
-
-See the [latest release](https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest) and the [CHANGELOG](CHANGELOG.md) for the per-release breakdown.
-
----
-
 ## Why OpenConstructionERP?
 
 Construction cost estimation software is expensive, closed-source, and locked to specific regions. OpenConstructionERP changes that.
