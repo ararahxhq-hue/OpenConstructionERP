@@ -20,6 +20,7 @@ Endpoints:
 """
 
 import logging
+import mimetypes
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -1362,8 +1363,27 @@ async def serve_share_link_file(
     return FileResponse(
         path=str(file_path),
         filename=doc.name,
-        media_type=doc.mime_type or "application/octet-stream",
+        media_type=_serve_media_type(doc.name, doc.mime_type),
     )
+
+
+def _serve_media_type(name: str | None, stored_mime: str | None) -> str:
+    """Resolve the Content-Type to serve a stored file with.
+
+    A specific stored MIME wins. When it is missing or the generic
+    ``application/octet-stream`` (what a browser sends when it uploads a video
+    or other blob without a type, so that is what we recorded), fall back to a
+    guess from the filename extension. Without this a ``.mp4`` served as
+    ``application/octet-stream`` will not play in a ``<video>`` element and an
+    image will not render inline - the browser treats it as an opaque
+    download. Covers already-stored files too, since playback keys off the
+    served type, not the recorded one.
+    """
+    generic = "application/octet-stream"
+    if stored_mime and stored_mime.lower() != generic:
+        return stored_mime
+    guessed, _ = mimetypes.guess_type(name or "")
+    return guessed or generic
 
 
 def _link_to_response(link: object, public_url: str) -> ShareLinkResponse:
@@ -1522,7 +1542,7 @@ async def download_document(
     return FileResponse(
         path=str(file_path),
         filename=doc.name,
-        media_type=doc.mime_type or "application/octet-stream",
+        media_type=_serve_media_type(doc.name, doc.mime_type),
     )
 
 
