@@ -6391,6 +6391,7 @@ const resource = {
     "support.action_case_study_tag": "Wir verbreiten es",
     "support.action_case_study_body": "Zeigen Sie uns, wie Sie OpenConstructionERP nutzen, ein Video, eine Fallstudie, einen LinkedIn-Beitrag. Sie können uns den Link direkt senden oder einfach @DataDrivenConstruction in Ihrem Beitrag erwähnen, wir werden ihn entdecken und über unseren Newsletter und unsere Social-Media-Kanäle weiter teilen, wo Zehntausende von Baufachleuten und führenden Branchenexperten unsere Arbeit verfolgen. E-Mail für Links: ",
     "support.thanks": "Vielen Dank. Jeder Stern, jedes Teilen und jede Geschichte hält dieses Projekt wirklich am Leben, mit ❤️ für die Bau-Community erstellt.",
+    "support.see_contributors": "Sehen Sie, wer schon mitbaut",
     "onboarding.finish_pack_seeded": "Beispielprojekte bereit",
     "onboarding.finish_subtitle_pack": "Ihr vorgefertigtes Paket ist installiert. Sprache, Kostendatenbanken, Module und Beispielprojekte sind eingerichtet.",
     "onboarding.mod_group_estimation": "Kalkulation",

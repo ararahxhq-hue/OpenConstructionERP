@@ -6293,6 +6293,7 @@ const resource = {
     "support.action_case_study_tag": "拡散します",
     "support.action_case_study_body": "OpenConstructionERP の活用方法を教えてください、動画、ケーススタディ、LinkedIn の投稿。リンクを直接送るか、投稿で @DataDrivenConstruction にタグ付けしてください、私たちが見つけ、ニュースレターとソーシャルチャネルで再共有します。そこでは数万人の建設専門家と業界シニア専門家が私たちの活動をフォローしています。リンク用 Email: ",
     "support.thanks": "ありがとうございます。一つひとつのスター、シェア、ストーリーがこのプロジェクトを生かし続けています、建設業界コミュニティへの ❤️ を込めて。",
+    "support.see_contributors": "すでに一緒に作っている人たちを見る",
     "onboarding.mod_group_estimation": "積算",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM と 3D",

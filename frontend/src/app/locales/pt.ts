@@ -5410,6 +5410,7 @@ const resource = {
     "support.action_case_study_tag": "Nós amplificamos",
     "support.action_case_study_body": "Mostre-nos como usa o OpenConstructionERP, um vídeo, um estudo de caso, um artigo no LinkedIn. Pode enviar-nos o link diretamente, ou apenas marcar @DataDrivenConstruction na sua publicação, vamos vê-la e voltar a partilhá-la através da nossa newsletter e canais sociais, onde dezenas de milhares de profissionais da construção e especialistas seniores da indústria acompanham o nosso trabalho. Email para links: ",
     "support.thanks": "Obrigado. Cada estrela, partilha e história mantém genuinamente este projeto vivo, construído com ❤️ para a comunidade da construção.",
+    "support.see_contributors": "Veja quem ja constroi conosco",
     "onboarding.mod_group_estimation": "Orçamentação",
     "onboarding.mod_group_ai": "IA",
     "onboarding.mod_group_bim_advanced": "BIM e 3D",

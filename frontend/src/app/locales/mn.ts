@@ -8218,6 +8218,7 @@ const resource = {
     "support.share_linkedin": "LinkedIn дээр нийтлэх",
     "support.share_twitter": "X дээр нийтлэх",
     "support.thanks": "Баярлалаа. Од, түгээлт болгон энэ төслийг үргэлжлүүлэн амьд байлгана, барилгын хамт олонд зориулж ❤️ -тэй бүтээгдсэн.",
+    "support.see_contributors": "Хэн аль хэдийн бидэнтэй хамт бүтээж байгааг харах",
     "sustainability.area": "Талбай (м²)",
     "sustainability.benchmark": "Жишиг",
     "sustainability.boq": "БМЖ",

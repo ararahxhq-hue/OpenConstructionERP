@@ -5253,6 +5253,7 @@ const resource = {
     "support.action_case_study_tag": "Nous l'amplifions",
     "support.action_case_study_body": "Montrez-nous comment vous utilisez OpenConstructionERP, une vidéo, une étude de cas, un article LinkedIn. Vous pouvez nous envoyer le lien directement, ou simplement mentionner @DataDrivenConstruction dans votre publication, nous le verrons et le partagerons via notre newsletter et nos canaux sociaux, où des dizaines de milliers de professionnels du bâtiment et d'experts industriels chevronnés suivent notre travail. E-mail pour les liens : ",
     "support.thanks": "Merci. Chaque étoile, chaque partage et chaque histoire maintient véritablement ce projet en vie, construit avec ❤️ pour la communauté du bâtiment.",
+    "support.see_contributors": "Voyez qui le construit deja avec nous",
     "onboarding.finish_pack_seeded": "Projets d'exemple prêts",
     "onboarding.finish_subtitle_pack": "Votre pack prêt à l'emploi est installé. Langue, bases de données de coûts, modules et projets d'exemple sont tous configurés.",
     "onboarding.mod_group_estimation": "Estimation",

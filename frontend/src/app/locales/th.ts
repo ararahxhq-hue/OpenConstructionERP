@@ -5166,6 +5166,7 @@ const resource = {
     "support.action_case_study_tag": "เราจะช่วยขยาย",
     "support.action_case_study_body": "แสดงให้เราเห็นว่าคุณใช้ OpenConstructionERP อย่างไร วิดีโอ กรณีศึกษา บทความ LinkedIn คุณสามารถส่งลิงก์โดยตรงหรือเพียงแค่แท็ก @DataDrivenConstruction ในโพสต์ของคุณ เราจะพบและแชร์ใหม่ผ่านจดหมายข่าวและช่องทางโซเชียลของเรา ซึ่งมีผู้เชี่ยวชาญด้านก่อสร้างและผู้เชี่ยวชาญอาวุโสในอุตสาหกรรมหลายหมื่นคนติดตามผลงานของเรา อีเมลสำหรับลิงก์: ",
     "support.thanks": "ขอบคุณ ทุกดาว ทุกการแชร์ และทุกเรื่องราวช่วยให้โครงการนี้มีชีวิตอยู่จริงๆ สร้างด้วย ❤️ เพื่อชุมชนก่อสร้าง",
+    "support.see_contributors": "ดูว่าใครกำลังสร้างไปกับเราแล้วบ้าง",
     "onboarding.mod_group_estimation": "ประมาณราคา",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM และ 3D",

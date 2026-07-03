@@ -5136,6 +5136,7 @@ const resource = {
     "support.action_case_study_tag": "Kami akan memperkuat",
     "support.action_case_study_body": "Tunjukkan kepada kami bagaimana Anda menggunakan OpenConstructionERP, video, studi kasus, artikel LinkedIn. Anda dapat mengirim tautan langsung, atau cukup tag @DataDrivenConstruction di posting Anda, kami akan melihatnya dan membagikannya kembali melalui buletin dan saluran sosial kami, di mana puluhan ribu profesional konstruksi dan pakar industri senior mengikuti pekerjaan kami. Email untuk tautan: ",
     "support.thanks": "Terima kasih. Setiap bintang, pembagian, dan cerita benar-benar membuat proyek ini tetap hidup, dibangun dengan ❤️ untuk komunitas konstruksi.",
+    "support.see_contributors": "Lihat siapa yang sudah ikut membangun",
     "onboarding.mod_group_estimation": "Estimasi",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM dan 3D",

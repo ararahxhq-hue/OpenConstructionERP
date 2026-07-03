@@ -145,6 +145,17 @@ export function AboutPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [hash, key]);
 
+  // A deep link to the contributor wall (/about#community, used by the "Support
+  // us" dialog) scrolls the "Built with our community" card into view.
+  useEffect(() => {
+    if (hash !== '#community') return;
+    const frame = window.requestAnimationFrame(() => {
+      const community = document.querySelector('[data-community-anchor]');
+      if (community) community.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash, key]);
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Breadcrumb — single-item trail auto-hides (canonical top block). */}
@@ -1200,7 +1211,7 @@ export function AboutPage() {
           otherwise a single inviting line asks for the first backer. Kept in
           sync with /ACKNOWLEDGMENTS.md via acknowledgments.ts. */}
       <Card className="animate-card-in" style={{ animationDelay: '280ms' }}>
-        <div className="p-6">
+        <div className="p-6" data-community-anchor style={{ scrollMarginTop: '80px' }}>
           <div className="flex items-center gap-2.5 mb-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500/10 ring-1 ring-rose-500/20">
               <Heart size={18} className="text-rose-500" fill="currentColor" />

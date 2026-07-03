@@ -6292,6 +6292,7 @@ const resource = {
     "support.action_case_study_tag": "저희가 확산해 드립니다",
     "support.action_case_study_body": "OpenConstructionERP를 어떻게 사용하시는지 보여주세요, 동영상, 사례 연구, LinkedIn 글. 링크를 직접 보내주시거나, 게시물에서 @DataDrivenConstruction을 태그해 주세요, 저희가 발견해 뉴스레터와 소셜 채널을 통해 다시 공유하겠습니다. 수만 명의 건설 전문가와 시니어 산업 전문가가 저희 작업을 따르고 있습니다. 링크용 이메일: ",
     "support.thanks": "감사합니다. 모든 별, 공유, 이야기가 진정으로 이 프로젝트를 살아 있게 합니다, 건설 커뮤니티를 위해 ❤️로 만들었습니다.",
+    "support.see_contributors": "이미 함께 만들고 있는 사람들 보기",
     "onboarding.mod_group_estimation": "견적",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM 및 3D",

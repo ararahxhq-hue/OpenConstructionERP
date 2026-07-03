@@ -5136,6 +5136,7 @@ const resource = {
     "support.action_case_study_tag": "Chúng tôi sẽ lan tỏa",
     "support.action_case_study_body": "Cho chúng tôi thấy bạn sử dụng OpenConstructionERP như thế nào, video, case study, bài viết LinkedIn. Bạn có thể gửi liên kết trực tiếp, hoặc chỉ cần tag @DataDrivenConstruction trong bài đăng, chúng tôi sẽ nhận thấy và chia sẻ lại qua bản tin và kênh xã hội, nơi hàng chục nghìn chuyên gia xây dựng và chuyên gia ngành cấp cao theo dõi công việc của chúng tôi. Email cho liên kết: ",
     "support.thanks": "Cảm ơn. Mỗi ngôi sao, chia sẻ và câu chuyện thực sự giữ cho dự án này sống, xây dựng bằng ❤️ cho cộng đồng xây dựng.",
+    "support.see_contributors": "Xem ai đang cùng chúng tôi xây dựng",
     "onboarding.mod_group_estimation": "Dự toán",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM và 3D",

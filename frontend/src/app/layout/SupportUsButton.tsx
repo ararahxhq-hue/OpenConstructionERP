@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Star,
@@ -16,6 +17,8 @@ import {
   Megaphone,
   Mail,
   Send,
+  Users,
+  ArrowRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { copyToClipboard } from '@/shared/lib/browser';
@@ -234,6 +237,7 @@ interface ModalProps {
 
 function SupportUsModal({ onClose, copied, setCopied }: ModalProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -524,6 +528,20 @@ function SupportUsModal({ onClose, copied, setCopied }: ModalProps) {
                 'Thank you. Every star and every share genuinely keeps this project alive - built with ❤️ for the construction community.',
             })}
           </p>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate('/about#community');
+            }}
+            className="group mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200 transition-colors"
+          >
+            <Users size={13} strokeWidth={2} />
+            {t('support.see_contributors', {
+              defaultValue: 'See who is already building it with us',
+            })}
+            <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
+          </button>
         </div>
       </div>
     </div>

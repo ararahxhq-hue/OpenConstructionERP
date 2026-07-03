@@ -6254,6 +6254,7 @@ const resource = {
     "support.action_case_study_tag": "Biz yaygınlaştırırız",
     "support.action_case_study_body": "OpenConstructionERP'i nasıl kullandığınızı bize gösterin, video, örnek olay, LinkedIn yazısı. Bağlantıyı doğrudan gönderebilir veya gönderinizde @DataDrivenConstruction'ı etiketleyebilirsiniz, fark eder ve bültenimiz ve sosyal kanallarımız aracılığıyla yeniden paylaşırız; orada on binlerce inşaat profesyoneli ve kıdemli sektör uzmanı çalışmamızı takip eder. Bağlantılar için e-posta: ",
     "support.thanks": "Teşekkürler. Her yıldız, paylaşım ve hikaye bu projeyi gerçekten ayakta tutuyor, inşaat topluluğu için ❤️ ile yapıldı.",
+    "support.see_contributors": "Bizimle birlikte kimlerin kurdugunu gorun",
     "onboarding.mod_group_estimation": "Keşif & Metraj",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM ve 3D",

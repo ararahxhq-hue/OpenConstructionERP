@@ -9563,6 +9563,7 @@ const resource = {
     "support.action_case_study_tag": "Vi forsterker den",
     "support.action_case_study_body": "Vis oss hvordan du bruker OpenConstructionERP, en video, en case study, en LinkedIn-artikkel. Du kan sende lenken direkte, eller bare tagge @DataDrivenConstruction i innlegget ditt, vi vil se det og dele det videre gjennom nyhetsbrevet og sosiale kanaler, der titusenvis av byggeprofesjonelle og seniorbransjeeksperter følger arbeidet vårt. E-post for lenker: ",
     "support.thanks": "Takk. Hver stjerne, deling og historie holder virkelig dette prosjektet i live, bygget med ❤️ for byggebransjens fellesskap.",
+    "support.see_contributors": "Se hvem som allerede bygger med oss",
     "onboarding.mod_group_estimation": "Kalkulasjon",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM og 3D",

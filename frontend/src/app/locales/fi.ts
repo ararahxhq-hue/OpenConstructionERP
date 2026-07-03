@@ -6254,6 +6254,7 @@ const resource = {
     "support.action_case_study_tag": "Vahvistamme sitä",
     "support.action_case_study_body": "Näytä meille, miten käytät OpenConstructionERP:tä, video, tapaustutkimus, LinkedIn-artikkeli. Voit lähettää linkin suoraan tai vain tagata @DataDrivenConstruction julkaisuusi, huomaamme sen ja jaamme sen uudelleen uutiskirjeessämme ja sosiaalisissa kanavissamme, joissa kymmenettuhannet rakennusalan ammattilaiset ja senior-asiantuntijat seuraavat työtämme. Sähköposti linkkejä varten: ",
     "support.thanks": "Kiitos. Jokainen tähti, jako ja tarina pitää aidosti tämän projektin elossa, rakennettu rakkaudella ❤️ rakennusyhteisölle.",
+    "support.see_contributors": "Katso, ketka jo rakentavat kanssamme",
     "onboarding.mod_group_estimation": "Kustannuslaskenta",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM ja 3D",

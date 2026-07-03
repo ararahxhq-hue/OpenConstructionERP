@@ -5054,6 +5054,7 @@ const resource = {
     "support.action_case_study_tag": "Mi to pojačavamo",
     "support.action_case_study_body": "Pokažite nam kako koristite OpenConstructionERP, video, studija slučaja, članak na LinkedInu. Možete poslati poveznicu izravno ili jednostavno označiti @DataDrivenConstruction u svojoj objavi, primijetit ćemo i podijeliti je ponovno putem naše newslettera i društvenih kanala, gdje desetke tisuća građevinskih profesionalaca i seniorskih industrijskih stručnjaka prati naš rad. E-mail za poveznice: ",
     "support.thanks": "Hvala. Svaka zvjezdica, podijela i priča stvarno održava ovaj projekt živim, izrađeno s ❤️ za građevinsku zajednicu.",
+    "support.see_contributors": "Pogledajte tko vec gradi s nama",
     "onboarding.mod_group_estimation": "Troškovnik",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM i 3D",

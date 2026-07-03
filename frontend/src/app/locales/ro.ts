@@ -5088,6 +5088,7 @@ const resource = {
     "support.action_case_study_tag": "Îl amplificăm",
     "support.action_case_study_body": "Arată-ne cum folosești OpenConstructionERP, un video, un studiu de caz, un articol pe LinkedIn. Poți trimite linkul direct sau pur și simplu să taghezi @DataDrivenConstruction în postarea ta, îl vom observa și-l vom redistribui prin newsletter și canalele sociale, unde zeci de mii de profesioniști din construcții și experți seniori din industrie urmăresc activitatea noastră. Email pentru linkuri: ",
     "support.thanks": "Mulțumim. Fiecare stea, distribuire și poveste menține cu adevărat acest proiect viu, construit cu ❤️ pentru comunitatea construcțiilor.",
+    "support.see_contributors": "Vedeti cine construieste deja alaturi de noi",
     "onboarding.mod_group_estimation": "Devize",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM și 3D",

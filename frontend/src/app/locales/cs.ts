@@ -6174,6 +6174,7 @@ const resource = {
     "support.action_case_study_tag": "Zesílíme to",
     "support.action_case_study_body": "Ukažte nám, jak používáte OpenConstructionERP, video, případová studie, článek na LinkedIn. Můžete poslat odkaz přímo nebo prostě označit @DataDrivenConstruction ve svém příspěvku, všimneme si a znovu sdílíme přes náš newsletter a sociální kanály, kde desítky tisíc stavebních profesionálů a starších odborníků z oboru sleduje naši práci. E-mail pro odkazy: ",
     "support.thanks": "Děkujeme. Každá hvězdička, sdílení a příběh skutečně udržuje tento projekt naživu, vytvořeno s ❤️ pro stavební komunitu.",
+    "support.see_contributors": "Podivejte se, kdo uz staví s nami",
     "onboarding.mod_group_estimation": "Rozpočtování",
     "onboarding.mod_group_ai": "AI",
     "onboarding.mod_group_bim_advanced": "BIM a 3D",
