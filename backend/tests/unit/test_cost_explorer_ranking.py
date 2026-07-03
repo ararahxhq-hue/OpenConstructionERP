@@ -113,6 +113,24 @@ def test_weighting_shifts_coverage() -> None:
     assert by_code["HASA"].score > by_code["HASB"].score
 
 
+def test_zero_weighted_only_match_reads_as_no_coverage() -> None:
+    # Regression: an item that carries only a resource the caller weighted 0
+    # must read as 0 coverage, not a full match via a degenerate fallback.
+    weights = {"A": 1.0, "B": 0.0}
+    only_b = _item("ONLYB", "100", [("B", "40")])
+    (m,) = ranking.rank(weights, [only_b])
+    assert m.coverage == 0.0
+
+
+def test_all_zero_weights_fall_back_to_uniform_coverage() -> None:
+    # When every requested weight is 0 (degenerate), fall back to uniform so
+    # coverage is measured by count instead of dividing by zero.
+    weights = {"A": 0.0, "B": 0.0}
+    only_a = _item("HASA", "100", [("A", "10")])
+    (m,) = ranking.rank(weights, [only_a])
+    assert m.coverage == 0.5  # 1 of 2 requested, uniform
+
+
 def test_zero_item_total_does_not_crash() -> None:
     req = ["A"]
     item = _item("ZERO", "0", [("A", "10")])

@@ -39,10 +39,11 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-[1fr_220px]">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-content-primary">
+          <label htmlFor="ce-findwork-q" className="mb-1.5 block text-sm font-medium text-content-primary">
             {t('costExplorer.findWork.label', { defaultValue: 'Describe the work' })}
           </label>
           <Input
+            id="ce-findwork-q"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyDown}
@@ -51,10 +52,10 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-content-primary">
+          <label htmlFor="ce-findwork-region" className="mb-1.5 block text-sm font-medium text-content-primary">
             {t('costExplorer.region.label', { defaultValue: 'Price base region' })}
           </label>
-          <RegionSelect value={region} onChange={setRegion} />
+          <RegionSelect id="ce-findwork-region" value={region} onChange={setRegion} />
         </div>
       </div>
 

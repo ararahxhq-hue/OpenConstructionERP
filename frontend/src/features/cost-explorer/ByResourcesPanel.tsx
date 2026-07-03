@@ -6,7 +6,7 @@
 // ranked by how much of your set they cover and how much of the rate those
 // resources drive.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, GitCompareArrows, Repeat2, X } from 'lucide-react';
@@ -20,7 +20,9 @@ import type { CrossNav } from './types';
 interface Picked {
   code: string;
   name: string;
-  weight: number;
+  /** Kept as a raw string so decimals like "1.5" can be typed without the
+   * controlled input coercing mid-entry; parsed to a number only on search. */
+  weight: string;
 }
 
 export function ByResourcesPanel({ nav }: { nav: CrossNav }) {
@@ -33,16 +35,25 @@ export function ByResourcesPanel({ nav }: { nav: CrossNav }) {
     mutationFn: () =>
       findByResources({
         region: region || null,
-        resources: picked.map((p) => ({ code: p.code, weight: p.weight })),
+        resources: picked.map((p) => ({ code: p.code, weight: Math.max(0, Number(p.weight) || 0) })),
         limit: 50,
       }),
   });
+
+  // Results describe the resource set at the time of the search; clear them the
+  // moment that set changes (chip added/removed/reweighted, or "Clear all") so
+  // stale rows and the "no works" message never linger over a different query.
+  const { reset: resetSearch } = search;
+  useEffect(() => {
+    resetSearch();
+    setExpanded(new Set());
+  }, [picked, resetSearch]);
 
   function addResource(r: CatalogResource) {
     setPicked((prev) =>
       prev.some((p) => p.code === r.resource_code)
         ? prev
-        : [...prev, { code: r.resource_code, name: r.name || r.resource_code, weight: 1 }],
+        : [...prev, { code: r.resource_code, name: r.name || r.resource_code, weight: '1' }],
     );
   }
 
@@ -94,9 +105,7 @@ export function ByResourcesPanel({ nav }: { nav: CrossNav }) {
                   step={0.5}
                   value={p.weight}
                   onChange={(e) =>
-                    setPicked((prev) =>
-                      prev.map((x) => (x.code === p.code ? { ...x, weight: Math.max(0, Number(e.target.value) || 0) } : x)),
-                    )
+                    setPicked((prev) => prev.map((x) => (x.code === p.code ? { ...x, weight: e.target.value } : x)))
                   }
                   className="h-8 w-16 rounded-md border border-border bg-surface-primary px-2 text-sm tabular-nums text-content-primary focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
                 />
@@ -189,6 +198,9 @@ function ResultRow({
   nav: CrossNav;
 }) {
   const { t } = useTranslation();
+  // Defensive: a drifted/partial API response should never crash the whole list.
+  const matched = row.matched ?? [];
+  const missing = row.missing_codes ?? [];
   return (
     <div className="rounded-lg border border-border-light">
       <div className="flex items-start gap-3 p-3">
@@ -224,9 +236,9 @@ function ResultRow({
                   unit: row.unit,
                   region: row.region,
                   currency: row.currency,
-                  candidates: row.matched.map((m) => ({ code: m.code, name: m.name })),
-                  resource_code: row.matched[0]?.code,
-                  resource_name: row.matched[0]?.name,
+                  candidates: matched.map((m) => ({ code: m.code, name: m.name })),
+                  resource_code: matched[0]?.code,
+                  resource_name: matched[0]?.name,
                 })
               }
               className="inline-flex items-center gap-1 text-xs text-oe-blue hover:underline"
@@ -245,27 +257,27 @@ function ResultRow({
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         {t('costExplorer.byResources.matched', {
           defaultValue: '{{n}} matched, {{m}} missing',
-          n: row.matched.length,
-          m: row.missing_codes.length,
+          n: matched.length,
+          m: missing.length,
         })}
       </button>
       {expanded && (
         <div className="space-y-2 border-t border-border-light bg-surface-secondary px-3 py-2.5">
-          {row.matched.map((m) => (
+          {matched.map((m) => (
             <div key={m.code} className="flex items-center justify-between gap-3 text-sm">
               <span className="min-w-0">
                 <span className="truncate text-content-primary">{m.name || m.code}</span>{' '}
                 <span className="text-xs text-content-tertiary">{m.code}</span>
               </span>
               <span className="shrink-0 tabular-nums text-content-secondary">
-                {fmtMoney(m.quantity)} × · {fmtMoney(m.cost, row.currency)}
+                × {fmtMoney(m.quantity)} · {fmtMoney(m.cost, row.currency)}
               </span>
             </div>
           ))}
-          {row.missing_codes.length > 0 && (
+          {missing.length > 0 && (
             <div className="pt-1 text-xs text-content-tertiary">
               {t('costExplorer.byResources.notUsed', { defaultValue: 'Not used by this work:' })}{' '}
-              {row.missing_codes.join(', ')}
+              {missing.join(', ')}
             </div>
           )}
         </div>

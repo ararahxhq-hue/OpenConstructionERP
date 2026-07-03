@@ -6,7 +6,7 @@
 // an estimator finds a material / labour / plant line by name instead of having
 // to know its raw code. Reused by the "By resources" and "Substitute" tabs.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +35,8 @@ export function ResourceSearchInput({
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
+  const optionId = (i: number) => `${listboxId}-opt-${i}`;
 
   // Debounce so a fast typist does not fire a request per keystroke.
   useEffect(() => {
@@ -53,9 +55,16 @@ export function ResourceSearchInput({
   const excluded = useMemo(() => new Set(excludeCodes), [excludeCodes]);
   const results = useMemo(() => data ?? [], [data]);
 
+  // Keep the highlighted row on a still-pickable (non-excluded) option, both on
+  // a new search and when the exclude set changes under the cursor.
   useEffect(() => {
-    setHighlight(0);
-  }, [debounced]);
+    setHighlight((h) => {
+      if (results.length === 0) return 0;
+      if (results[h] && !excluded.has(results[h].resource_code)) return h;
+      const first = results.findIndex((r) => !excluded.has(r.resource_code));
+      return first >= 0 ? first : 0;
+    });
+  }, [results, excluded]);
 
   // Close the dropdown on an outside click.
   useEffect(() => {
@@ -74,14 +83,25 @@ export function ResourceSearchInput({
     setOpen(false);
   }
 
+  // Advance the highlight to the next non-excluded option, wrapping around.
+  function nextSelectable(from: number, dir: 1 | -1): number {
+    if (results.length === 0) return from;
+    let i = from;
+    for (let step = 0; step < results.length; step++) {
+      i = (i + dir + results.length) % results.length;
+      if (!excluded.has(results[i].resource_code)) return i;
+    }
+    return from;
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (!open || results.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlight((h) => (h + 1) % results.length);
+      setHighlight((h) => nextSelectable(h, 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlight((h) => (h - 1 + results.length) % results.length);
+      setHighlight((h) => nextSelectable(h, -1));
     } else if (e.key === 'Enter') {
       const chosen = results[highlight];
       if (chosen) {
@@ -126,10 +146,18 @@ export function ResourceSearchInput({
         aria-label={t('costExplorer.picker.aria', { defaultValue: 'Search catalog resources' })}
         role="combobox"
         aria-expanded={showDropdown}
+        aria-controls={showDropdown ? listboxId : undefined}
+        aria-autocomplete="list"
+        aria-activedescendant={showDropdown && results[highlight] ? optionId(highlight) : undefined}
       />
 
       {showDropdown && (
-        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border-light bg-surface-primary shadow-lg">
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={t('costExplorer.picker.aria', { defaultValue: 'Search catalog resources' })}
+          className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border-light bg-surface-primary shadow-lg"
+        >
           {isFetching && results.length === 0 && (
             <div className="px-3 py-2 text-sm text-content-tertiary">
               {t('common.searching', { defaultValue: 'Searching...' })}
@@ -145,6 +173,9 @@ export function ResourceSearchInput({
             return (
               <button
                 key={`${r.resource_code}-${r.region ?? ''}-${i}`}
+                id={optionId(i)}
+                role="option"
+                aria-selected={i === highlight && !isExcluded}
                 type="button"
                 disabled={isExcluded}
                 onMouseEnter={() => setHighlight(i)}

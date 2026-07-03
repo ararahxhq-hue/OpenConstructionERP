@@ -138,6 +138,8 @@ export interface PriceStats {
   p75: string;
   max: string;
   mean: string;
+  /** Currency of the single-region spread (never a cross-currency blend). */
+  currency: string;
 }
 
 export interface PriceRegionRow {
@@ -164,6 +166,8 @@ export interface PriceIntelResponse {
   resource_type: string;
   unit: string;
   stats: PriceStats;
+  /** Region the single-currency spread was computed over (dominant one when unscoped). */
+  stats_region: string | null;
   usage_count: number;
   by_region: PriceRegionRow[];
   top_works: PriceUsageWork[];

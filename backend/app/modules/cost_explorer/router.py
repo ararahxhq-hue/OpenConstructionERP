@@ -97,9 +97,12 @@ async def index_status(session: SessionDep) -> dict:
 async def reindex(
     session: SessionDep,
     region: str | None = Query(default=None, description="Rebuild one region only; omit for all."),
-    sources: list[str] | None = Query(default=None, description="Restrict to cost-item sources."),
 ) -> ReindexResponse:
-    """Rebuild the resource -> work reverse index (manager action)."""
-    report = await _service(session).reindex(region=region, sources=sources)
+    """Rebuild the resource -> work reverse index (manager action).
+
+    Rebuilds a whole region (or every region), never a source-filtered subset,
+    so a partial rebuild can never silently drop another source's edges.
+    """
+    report = await _service(session).reindex(region=region)
     await session.commit()
     return report

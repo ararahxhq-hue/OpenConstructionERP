@@ -14,7 +14,7 @@ lookup. Everything else reads the cost and catalog tables the module depends on.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 
 from sqlalchemy import delete, distinct, func, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,17 +60,32 @@ class CostExplorerRepository:
         stmt = select(CostItem.id).where(CostItem.region.is_(None)).limit(1)
         return (await self.session.execute(stmt)).first() is not None
 
-    async def stream_items_in_region(self, region: str | None, sources: Sequence[str] | None) -> Sequence[object]:
-        """Rows ``(id, code, region, source, components)`` for one region bucket.
+    async def stream_items_in_region(self, region: str | None, batch_size: int = 1000) -> AsyncIterator[object]:
+        """Yield ``(id, code, region, source, components)`` for one region bucket.
 
-        ``region=None`` selects the items whose region IS NULL, not all items,
-        so the reindex can wipe-and-rebuild one bucket at a time.
+        Paged by id keyset in ``batch_size`` chunks so a large base is never
+        materialised in one go during a reindex, yet no server-side cursor is
+        held open while the caller writes edges on the same connection (which
+        asyncpg forbids). ``region=None`` selects the items whose region IS NULL,
+        not all items. Soft-deleted (inactive) items are skipped so a deleted
+        work never lingers in the index.
         """
-        stmt = select(CostItem.id, CostItem.code, CostItem.region, CostItem.source, CostItem.components)
-        stmt = stmt.where(CostItem.region.is_(None)) if region is None else stmt.where(CostItem.region == region)
-        if sources:
-            stmt = stmt.where(CostItem.source.in_(list(sources)))
-        return (await self.session.execute(stmt)).all()
+        after: uuid.UUID | None = None
+        while True:
+            stmt = select(CostItem.id, CostItem.code, CostItem.region, CostItem.source, CostItem.components)
+            stmt = stmt.where(CostItem.region.is_(None)) if region is None else stmt.where(CostItem.region == region)
+            stmt = stmt.where(CostItem.is_active.is_(True))
+            if after is not None:
+                stmt = stmt.where(CostItem.id > after)
+            stmt = stmt.order_by(CostItem.id).limit(batch_size)
+            rows = (await self.session.execute(stmt)).all()
+            if not rows:
+                return
+            for row in rows:
+                yield row
+            if len(rows) < batch_size:
+                return
+            after = rows[-1][0]
 
     async def delete_edges_for_region(self, region: str | None) -> None:
         """Drop all reverse-index rows for one region bucket (None = NULL bucket)."""
@@ -81,6 +96,10 @@ class CostExplorerRepository:
             else stmt.where(CostItemResource.region == region)
         )
         await self.session.execute(stmt)
+
+    async def delete_edges_for_item(self, item_id: uuid.UUID) -> None:
+        """Drop the reverse-index rows for a single cost item (incremental sync)."""
+        await self.session.execute(delete(CostItemResource).where(CostItemResource.cost_item_id == item_id))
 
     async def bulk_insert_edges(self, rows: list[dict]) -> None:
         """Insert a batch of reverse-index rows."""
@@ -96,11 +115,20 @@ class CostExplorerRepository:
         sources: Sequence[str] | None,
         limit: int,
     ) -> list[uuid.UUID]:
-        """Distinct work-item ids that consume at least one requested resource."""
+        """Work-item ids that consume the requested resources, best match first.
+
+        Ordered by how many of the requested resources each item carries, so the
+        candidate cap keeps the most promising items rather than an arbitrary
+        slice (the fine-grained scoring then runs in the ranking engine).
+        """
         if not resource_codes:
             return []
-        stmt = select(distinct(CostItemResource.cost_item_id)).where(
-            CostItemResource.resource_code.in_(list(resource_codes))
+        match_count = func.count().label("matches")
+        stmt = (
+            select(CostItemResource.cost_item_id, match_count)
+            .where(CostItemResource.resource_code.in_(list(resource_codes)))
+            .group_by(CostItemResource.cost_item_id)
+            .order_by(match_count.desc())
         )
         if region is not None:
             stmt = stmt.where(CostItemResource.region == region)
@@ -109,7 +137,7 @@ class CostExplorerRepository:
                 CostItem.source.in_(list(sources))
             )
         stmt = stmt.limit(limit)
-        return list((await self.session.execute(stmt)).scalars().all())
+        return [row[0] for row in (await self.session.execute(stmt)).all()]
 
     async def edges_for_items(self, item_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, list[CostItemResource]]:
         """All reverse-index rows for the given items, grouped by item id."""
@@ -142,7 +170,7 @@ class CostExplorerRepository:
         limit: int,
     ) -> list[CostItem]:
         """Cost items where every token appears in the code or the description."""
-        stmt = select(CostItem)
+        stmt = select(CostItem).where(CostItem.is_active.is_(True))
         for tok in tokens:
             pattern = f"%{_escape_like(tok)}%"
             stmt = stmt.where(
@@ -162,7 +190,7 @@ class CostExplorerRepository:
 
     async def items_by_code(self, code: str, limit: int) -> list[CostItem]:
         """Every priced instance of one rate code (the same work across regions)."""
-        stmt = select(CostItem).where(CostItem.code == code).limit(limit)
+        stmt = select(CostItem).where(CostItem.code == code, CostItem.is_active.is_(True)).limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())
 
     # ── Substitution / price intelligence ────────────────────────────────────
@@ -174,32 +202,72 @@ class CostExplorerRepository:
             stmt = stmt.where(CatalogResource.region == region)
         return (await self.session.execute(stmt.limit(1))).scalars().first()
 
-    async def catalog_rows_for_resource(self, resource_code: str) -> list[CatalogResource]:
-        """All catalog rows for a resource (one per region price book)."""
-        stmt = select(CatalogResource).where(CatalogResource.resource_code == resource_code)
+    async def catalog_rows_for_resource(self, resource_code: str, limit: int = 200) -> list[CatalogResource]:
+        """All catalog rows for a resource (one per region price book), capped."""
+        stmt = select(CatalogResource).where(CatalogResource.resource_code == resource_code).limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def dominant_region_for_resource(self, resource_code: str) -> str | None:
+        """The region carrying the most price rows for this resource.
+
+        Price stats must stay inside one currency; when the caller gives no
+        region this picks the region with the most data so the spread is a
+        single-currency distribution rather than a cross-currency blend.
+        """
+        stmt = (
+            select(CostItemResource.region, func.count().label("n"))
+            .join(CostItem, CostItem.id == CostItemResource.cost_item_id)
+            .where(
+                CostItemResource.resource_code == resource_code,
+                CostItemResource.region.is_not(None),
+                CostItem.is_active.is_(True),
+            )
+            .group_by(CostItemResource.region)
+            .order_by(func.count().desc())
+            .limit(1)
+        )
+        row = (await self.session.execute(stmt)).first()
+        return row[0] if row else None
+
     async def resource_usage_count(self, resource_code: str, region: str | None = None) -> int:
-        """How many distinct works consume this resource."""
-        stmt = select(func.count(distinct(CostItemResource.cost_item_id))).where(
-            CostItemResource.resource_code == resource_code
+        """How many distinct live works consume this resource."""
+        stmt = (
+            select(func.count(distinct(CostItemResource.cost_item_id)))
+            .join(CostItem, CostItem.id == CostItemResource.cost_item_id)
+            .where(CostItemResource.resource_code == resource_code, CostItem.is_active.is_(True))
         )
         if region is not None:
             stmt = stmt.where(CostItemResource.region == region)
         return int((await self.session.execute(stmt)).scalar_one())
 
-    async def edge_prices_for_resource(self, resource_code: str, region: str | None = None) -> list[str]:
-        """The unit prices this resource carries across every work that uses it."""
-        stmt = select(CostItemResource.unit_rate).where(CostItemResource.resource_code == resource_code)
+    async def edge_prices_for_resource(
+        self, resource_code: str, region: str | None = None, limit: int = 5000
+    ) -> list[str]:
+        """A capped sample of the unit prices this resource carries across works.
+
+        Joined to the cost item so a stale edge pointing at a removed / inactive
+        work never skews the spread, and capped so the busiest resource cannot
+        pull an unbounded column into memory for the in-Python percentiles.
+        """
+        stmt = (
+            select(CostItemResource.unit_rate)
+            .join(CostItem, CostItem.id == CostItemResource.cost_item_id)
+            .where(CostItemResource.resource_code == resource_code, CostItem.is_active.is_(True))
+        )
         if region is not None:
             stmt = stmt.where(CostItemResource.region == region)
+        stmt = stmt.limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def top_works_for_resource(
         self, resource_code: str, region: str | None, limit: int
     ) -> list[CostItemResource]:
-        """Reverse-index rows for the works that consume this resource."""
-        stmt = select(CostItemResource).where(CostItemResource.resource_code == resource_code)
+        """Reverse-index rows for the live works that consume this resource."""
+        stmt = (
+            select(CostItemResource)
+            .join(CostItem, CostItem.id == CostItemResource.cost_item_id)
+            .where(CostItemResource.resource_code == resource_code, CostItem.is_active.is_(True))
+        )
         if region is not None:
             stmt = stmt.where(CostItemResource.region == region)
         return list((await self.session.execute(stmt.limit(limit))).scalars().all())

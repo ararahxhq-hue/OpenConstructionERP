@@ -22,7 +22,7 @@ Two concerns, both stdlib-only so they import and unit-test on any interpreter:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 
 def to_decimal(value: object) -> Decimal:
@@ -136,7 +136,9 @@ def price_stats(prices: list[object]) -> PriceStats:
     vals = sorted(v for v in (to_decimal(p) for p in prices) if v > 0)
     if not vals:
         return PriceStats(0, Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0))
-    mean = sum(vals, Decimal(0)) / Decimal(len(vals))
+    # Quantise the mean to a money-friendly 2 dp. Every other stat is an exact
+    # input value; an un-rounded 28-digit mean would read as a UI glitch.
+    mean = (sum(vals, Decimal(0)) / Decimal(len(vals))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return PriceStats(
         count=len(vals),
         min=vals[0],

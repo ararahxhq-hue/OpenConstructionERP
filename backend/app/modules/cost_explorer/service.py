@@ -168,7 +168,7 @@ class CostExplorerService:
         candidates: list[ranking.CandidateItem] = []
         for iid in ids:
             item = items_by_id.get(iid)
-            if item is None:
+            if item is None or getattr(item, "is_active", True) is False:
                 continue
             lines = [
                 ranking.ResourceLine(
@@ -362,8 +362,15 @@ class CostExplorerService:
     async def price_intelligence(self, resource_code: str, region: str | None = None) -> PriceIntelResponse:
         """Summarise a resource's price spread, reach and top consuming works."""
         cat = await self.repo.catalog_resource(resource_code, region) or await self.repo.catalog_resource(resource_code)
-        prices = await self.repo.edge_prices_for_resource(resource_code, region)
+
+        # The price spread must stay within one currency. Scope it to the given
+        # region, or to the dominant region (most price rows) when none was
+        # asked for, so we never blend price bases in different currencies into
+        # one meaningless distribution.
+        stats_region = region if region is not None else await self.repo.dominant_region_for_resource(resource_code)
+        prices = await self.repo.edge_prices_for_resource(resource_code, stats_region)
         stats = pricing.price_stats(prices)
+        stats_currency = _resolve_currency(None, stats_region)
         usage = await self.repo.resource_usage_count(resource_code, region)
 
         cat_rows = await self.repo.catalog_rows_for_resource(resource_code)
@@ -406,7 +413,9 @@ class CostExplorerService:
                 p75=_fmt(stats.p75),
                 max=_fmt(stats.max),
                 mean=_fmt(stats.mean),
+                currency=stats_currency,
             ),
+            stats_region=stats_region,
             usage_count=usage,
             by_region=by_region,
             top_works=top_works,
@@ -414,11 +423,14 @@ class CostExplorerService:
 
     # ── Reindex ──────────────────────────────────────────────────────────────
 
-    async def reindex(self, region: str | None = None, sources: list[str] | None = None) -> ReindexResponse:
+    async def reindex(self, region: str | None = None) -> ReindexResponse:
         """(Re)build the reverse index for one region, or all when region is None.
 
         Each region bucket is wiped and rebuilt in one transaction-visible pass,
-        so a rebuild is idempotent and never leaves half-updated edges.
+        so a rebuild is idempotent and never leaves half-updated edges. Items are
+        streamed and edges flushed in bounded batches, so even a large single
+        region never materialises its whole item set (with the heavy components
+        JSON) in memory at once.
         """
         if region is not None:
             buckets: list[str | None] = [region]
@@ -434,9 +446,8 @@ class CostExplorerService:
 
         for bucket in buckets:
             await self.repo.delete_edges_for_region(bucket)
-            rows = await self.repo.stream_items_in_region(bucket, sources)
             edge_rows: list[dict] = []
-            for item_id, code, item_region, _source, components in rows:
+            async for item_id, code, item_region, _source, components in self.repo.stream_items_in_region(bucket):
                 items_scanned += 1
                 for comp in parse_components(components):
                     edge_rows.append(
@@ -453,9 +464,13 @@ class CostExplorerService:
                         }
                     )
                     resources_seen.add(comp["resource_code"])
-            for start in range(0, len(edge_rows), _INSERT_CHUNK):
-                await self.repo.bulk_insert_edges(edge_rows[start : start + _INSERT_CHUNK])
-            edges_written += len(edge_rows)
+                if len(edge_rows) >= _INSERT_CHUNK:
+                    await self.repo.bulk_insert_edges(edge_rows)
+                    edges_written += len(edge_rows)
+                    edge_rows = []
+            if edge_rows:
+                await self.repo.bulk_insert_edges(edge_rows)
+                edges_written += len(edge_rows)
             done.append(bucket if bucket is not None else "(none)")
 
         return ReindexResponse(
@@ -464,6 +479,59 @@ class CostExplorerService:
             edges_written=edges_written,
             resources_seen=len(resources_seen),
         )
+
+    async def refresh_item(self, item_id: uuid.UUID) -> int:
+        """Rebuild the reverse-index edges for one cost item (incremental sync).
+
+        Wipes the item's edges and re-derives them from its current components,
+        keeping the index in step with a create / update without a full rebuild.
+        A missing or soft-deleted item is left with no edges. Returns the number
+        of edges written.
+        """
+        await self.repo.delete_edges_for_item(item_id)
+        item = await self.repo.get_item(item_id)
+        if item is None or getattr(item, "is_active", True) is False:
+            return 0
+        edge_rows = [
+            {
+                "cost_item_id": item.id,
+                "rate_code": (item.code or "")[:100],
+                "region": item.region,
+                "resource_code": comp["resource_code"],
+                "resource_name": comp["resource_name"],
+                "resource_type": comp["resource_type"],
+                "quantity": comp["quantity"],
+                "unit_rate": comp["unit_rate"],
+                "cost": comp["cost"],
+            }
+            for comp in parse_components(item.components)
+        ]
+        await self.repo.bulk_insert_edges(edge_rows)
+        return len(edge_rows)
+
+
+# Advisory-lock namespace so two instances booting against an empty index do
+# not both run a full build (PostgreSQL only; single-process SQLite needs none).
+_BUILD_LOCK_KEY = 0x0C05E7E5
+
+
+async def _try_build_lock(session: object) -> bool:
+    """Take a transaction-scoped advisory lock on PostgreSQL; True if acquired.
+
+    Returns True on non-PostgreSQL backends (no cross-process race to guard) and
+    is best-effort: any failure to read the dialect or take the lock falls back
+    to proceeding, so a lock hiccup never blocks the build.
+    """
+    try:
+        from sqlalchemy import text
+
+        dialect = getattr(getattr(session, "bind", None), "dialect", None)
+        if getattr(dialect, "name", "") != "postgresql":
+            return True
+        got = (await session.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _BUILD_LOCK_KEY})).scalar()
+        return bool(got)
+    except Exception:  # pragma: no cover - lock is advisory; proceed on any hiccup
+        return True
 
 
 async def build_index_if_empty() -> None:
@@ -478,6 +546,9 @@ async def build_index_if_empty() -> None:
 
     try:
         async with async_session_factory() as session:
+            if not await _try_build_lock(session):
+                # Another instance is already building the index; let it finish.
+                return
             repo = CostExplorerRepository(session)
             if await repo.count_edges() > 0:
                 return

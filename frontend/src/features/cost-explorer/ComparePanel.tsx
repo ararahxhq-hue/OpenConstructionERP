@@ -46,12 +46,13 @@ export function ComparePanel({ code, onCodeChange }: { code: string; onCodeChang
   return (
     <div className="space-y-4">
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-content-primary">
+        <label htmlFor="ce-compare-code" className="mb-1.5 block text-sm font-medium text-content-primary">
           {t('costExplorer.compare.label', { defaultValue: 'Rate code' })}
         </label>
         <div className="flex gap-2">
           <div className="flex-1">
             <Input
+              id="ce-compare-code"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}

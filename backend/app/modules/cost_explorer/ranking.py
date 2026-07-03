@@ -134,11 +134,18 @@ def score_candidate(weights: dict[str, float], item: CandidateItem) -> ScoredMat
     matched_codes = [c for c in requested_codes if c in by_code]
     missing_codes = sorted(c for c in requested_codes if c not in by_code)
 
-    total_weight = sum(weights.values())
-    if total_weight <= 0:
-        total_weight = float(len(requested_codes) or 1)
-    matched_weight = sum(weights[c] for c in matched_codes) or float(len(matched_codes))
-    coverage = matched_weight / total_weight if total_weight else 0.0
+    # Coverage = share of the requested weight this item actually carries.
+    # Normalise a fully degenerate (all-zero) weight set to uniform up front, so
+    # a genuine zero-weighted-only match reads as 0 coverage instead of being
+    # inflated by a per-item fallback.
+    raw_total = sum(weights.values())
+    if raw_total > 0:
+        eff_weights = weights
+    else:
+        eff_weights = dict.fromkeys(weights, 1.0)
+        raw_total = float(len(eff_weights) or 1)
+    matched_weight = sum(eff_weights[c] for c in matched_codes)
+    coverage = matched_weight / raw_total if raw_total else 0.0
     coverage = max(0.0, min(1.0, coverage))
 
     matched_cost = sum((by_code[c].cost for c in matched_codes), Decimal(0))
@@ -184,8 +191,8 @@ def rank(
     """Rank candidate work items by how well they match the requested resources.
 
     Only items that consume at least one requested resource are returned. Ties
-    fall back to coverage, then cost weight, then the shorter recipe (fewer
-    total resources), so the most focused match wins. ``limit`` caps the result.
+    fall back to coverage, then cost weight, then fewer missing requested codes,
+    so the most complete match wins. ``limit`` caps the result.
     """
     weights = normalise_weights(requested)
     if not weights:

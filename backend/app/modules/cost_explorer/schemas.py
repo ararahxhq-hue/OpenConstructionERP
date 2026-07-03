@@ -8,7 +8,14 @@ library instead of routing a precision-critical rate through a float.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from decimal import Decimal, InvalidOperation
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# A unit price above a trillion is nonsense for construction cost data; bounding
+# it stops a caller from smuggling a huge-exponent Decimal (e.g. "1E999999")
+# into the pricing maths, where the multiply would overflow the Decimal context.
+_MAX_ABS_PRICE = Decimal("1e12")
 
 # ── By resources: request ───────────────────────────────────────────────────
 
@@ -21,7 +28,7 @@ class ResourceQuery(BaseModel):
     ranking engine so it can never invert the result.
     """
 
-    code: str = Field(..., description="Resource code (CatalogResource.resource_code)")
+    code: str = Field(..., max_length=64, description="Resource code (CatalogResource.resource_code)")
     weight: float = Field(1.0, ge=0, description="Relative importance, default 1.0")
 
 
@@ -40,6 +47,7 @@ class ByResourcesRequest(BaseModel):
     )
     sources: list[str] | None = Field(
         None,
+        max_length=20,
         description="Restrict to cost-item sources (e.g. ['cwicr']). Omit for all.",
     )
     limit: int = Field(50, ge=1, le=200, description="Maximum work items to return.")
@@ -94,7 +102,7 @@ class FindWorkRequest(BaseModel):
 
     q: str = Field(..., min_length=1, max_length=200, description="Search text.")
     region: str | None = Field(None, description="Restrict to one price base.")
-    sources: list[str] | None = Field(None, description="Restrict to cost-item sources.")
+    sources: list[str] | None = Field(None, max_length=20, description="Restrict to cost-item sources.")
     limit: int = Field(30, ge=1, le=200)
 
 
@@ -132,8 +140,8 @@ class CompareRequest(BaseModel):
     ``cost_item_id`` to resolve the code from. One of the two is required.
     """
 
-    code: str | None = Field(None, description="Rate code shared across regions.")
-    cost_item_id: str | None = Field(None, description="Resolve the code from this item id instead.")
+    code: str | None = Field(None, max_length=64, description="Rate code shared across regions.")
+    cost_item_id: str | None = Field(None, max_length=64, description="Resolve the code from this item id instead.")
     limit: int = Field(60, ge=1, le=200)
 
     @model_validator(mode="after")
@@ -181,12 +189,32 @@ class SubstituteRequest(BaseModel):
     to pull the price from another catalog resource. One of the two is required.
     """
 
-    cost_item_id: str = Field(..., description="The work item whose rate is tested.")
-    resource_code: str = Field(..., description="The resource line inside the item to re-price.")
-    new_unit_rate: str | None = Field(None, description="Explicit replacement unit price.")
+    cost_item_id: str = Field(..., max_length=64, description="The work item whose rate is tested.")
+    resource_code: str = Field(..., max_length=64, description="The resource line inside the item to re-price.")
+    new_unit_rate: str | None = Field(None, max_length=32, description="Explicit replacement unit price.")
     substitute_resource_code: str | None = Field(
-        None, description="Take the replacement price from this catalog resource instead."
+        None, max_length=64, description="Take the replacement price from this catalog resource instead."
     )
+
+    @field_validator("new_unit_rate")
+    @classmethod
+    def _finite_price(cls, value: str | None) -> str | None:
+        """Reject a non-numeric, non-finite, or absurdly large explicit price.
+
+        Without this a caller could pass a huge-exponent Decimal string that
+        parses fine but overflows the Decimal context inside the pricing maths.
+        """
+        if value is None or value.strip() == "":
+            return value
+        try:
+            parsed = Decimal(value)
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError("new_unit_rate must be a number") from exc
+        if not parsed.is_finite():
+            raise ValueError("new_unit_rate must be a finite number")
+        if abs(parsed) > _MAX_ABS_PRICE:
+            raise ValueError("new_unit_rate is out of range")
+        return value
 
     @model_validator(mode="after")
     def _need_price(self) -> SubstituteRequest:
@@ -224,7 +252,11 @@ class SubstituteResponse(BaseModel):
 
 
 class PriceStatsOut(BaseModel):
-    """Spread of a resource's unit price across the rows that carry it."""
+    """Spread of a resource's unit price across the rows that carry it.
+
+    The spread is scoped to a single region (``currency``) so it never blends
+    price bases in different currencies into one meaningless distribution.
+    """
 
     count: int = 0
     min: str = "0"
@@ -233,6 +265,7 @@ class PriceStatsOut(BaseModel):
     p75: str = "0"
     max: str = "0"
     mean: str = "0"
+    currency: str = ""
 
 
 class PriceRegionRow(BaseModel):
@@ -265,6 +298,10 @@ class PriceIntelResponse(BaseModel):
     resource_type: str = ""
     unit: str = ""
     stats: PriceStatsOut = Field(default_factory=PriceStatsOut)
+    stats_region: str | None = Field(
+        None,
+        description="Region the single-currency price spread was computed over (the dominant one when no region was requested).",
+    )
     usage_count: int = 0
     by_region: list[PriceRegionRow] = Field(default_factory=list)
     top_works: list[PriceUsageWork] = Field(default_factory=list)

@@ -107,6 +107,14 @@ def test_price_stats_single_value() -> None:
     assert s.p25 == Decimal("42")
 
 
+def test_price_stats_mean_is_quantized_to_two_dp() -> None:
+    # Regression: a repeating mean must render as a short money value, not a
+    # 28-significant-digit Decimal.
+    s = pricing.price_stats(["10", "20", "40"])
+    assert s.mean == Decimal("23.33")
+    assert str(s.mean) == "23.33"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

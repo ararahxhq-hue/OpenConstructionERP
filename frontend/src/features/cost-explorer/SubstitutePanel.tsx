@@ -63,6 +63,7 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
   }
   function pickSubstitute(r: CatalogResource) {
     setSubResource({ code: r.resource_code, name: r.name || r.resource_code });
+    sub.reset();
   }
 
   const canRun =
@@ -138,13 +139,19 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
       {/* Price intelligence for the selected line */}
       {resourceCode && stats && stats.count > 0 && (
         <div className="rounded-lg border border-border-light bg-surface-secondary p-3">
-          <div className="mb-2 text-xs font-medium text-content-tertiary">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium text-content-tertiary">
             {t('costExplorer.substitute.priceTitle', { defaultValue: 'Where this resource is priced' })}
+            {priceQ.data?.stats_region && (
+              <span className="rounded bg-surface-tertiary px-1.5 py-0.5 font-normal text-content-tertiary">
+                {priceQ.data.stats_region}
+                {stats.currency ? ` · ${stats.currency}` : ''}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            <Stat label={t('costExplorer.substitute.min', { defaultValue: 'Low' })} value={fmtMoney(stats.min)} />
-            <Stat label={t('costExplorer.substitute.median', { defaultValue: 'Median' })} value={fmtMoney(stats.median)} />
-            <Stat label={t('costExplorer.substitute.max', { defaultValue: 'High' })} value={fmtMoney(stats.max)} />
+            <Stat label={t('costExplorer.substitute.min', { defaultValue: 'Low' })} value={fmtMoney(stats.min, stats.currency)} />
+            <Stat label={t('costExplorer.substitute.median', { defaultValue: 'Median' })} value={fmtMoney(stats.median, stats.currency)} />
+            <Stat label={t('costExplorer.substitute.max', { defaultValue: 'High' })} value={fmtMoney(stats.max, stats.currency)} />
             <Stat
               label={t('costExplorer.substitute.usage', { defaultValue: 'Used in' })}
               value={t('costExplorer.substitute.usageWorks', { defaultValue: '{{count}} works', count: priceQ.data?.usage_count ?? 0 })}
@@ -181,7 +188,11 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
                 min={0}
                 step="any"
                 value={newRate}
-                onChange={(e) => setNewRate(e.target.value)}
+                onChange={(e) => {
+                  setNewRate(e.target.value);
+                  if (sub.data) sub.reset();
+                }}
+                aria-label={t('costExplorer.substitute.pricePlaceholder', { defaultValue: 'New unit price for this resource' })}
                 placeholder={t('costExplorer.substitute.pricePlaceholder', { defaultValue: 'New unit price for this resource' })}
               />
             ) : (

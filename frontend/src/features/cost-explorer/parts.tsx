@@ -20,12 +20,14 @@ export function fmtMoney(value: string | number | null | undefined, currency?: s
 
 /** A 0..1 fraction as a whole percentage. */
 export function pct(fraction: number): string {
-  return `${Math.round((fraction ?? 0) * 100)}%`;
+  const f = Number.isFinite(fraction) ? fraction : 0;
+  return `${Math.round(f * 100)}%`;
 }
 
 /** A signed percentage (already in percent units, e.g. -10 -> "-10%"). */
 export function signedPct(value: number): string {
-  const rounded = Math.round((value ?? 0) * 10) / 10;
+  const v = Number.isFinite(value) ? value : 0;
+  const rounded = Math.round(v * 10) / 10;
   return `${rounded > 0 ? '+' : ''}${rounded}%`;
 }
 
@@ -33,7 +35,8 @@ export type MeterTone = 'blue' | 'green' | 'amber';
 
 /** Compact horizontal bar for a 0..1 value with a trailing label. */
 export function Meter({ value, label, tone = 'blue' }: { value: number; label: string; tone?: MeterTone }) {
-  const w = Math.max(0, Math.min(1, value ?? 0)) * 100;
+  const safe = Number.isFinite(value) ? value : 0;
+  const w = Math.max(0, Math.min(1, safe)) * 100;
   const bar = tone === 'green' ? 'bg-semantic-success' : tone === 'amber' ? 'bg-semantic-warning' : 'bg-oe-blue';
   return (
     <div className="flex items-center gap-2">
