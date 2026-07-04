@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Change register and impact',
   descKey: 'cases.change_register_and_impact.desc',
   descDefault:
-    'Log every change in one register, read the time and cost impact scored against the real ledger, then report the trend to the client.',
+    'Capture every change in one register, read the time and cost impact scored against the real project ledger, and put the trend in front of the client before it becomes a surprise.',
   estMinutes: 11,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Log the change',
       whatKey: 'cases.change_register_and_impact.step.register.what',
       whatDefault:
-        'Capture each change with its origin, status and value in one register so nothing lives only in an email thread.',
+        'Record each change as it lands with its origin, current status and value in a single register, so no instruction survives only as a line buried in an email thread.',
       whyKey: 'cases.change_register_and_impact.step.register.why',
       whyDefault:
-        'Unlogged changes are unpaid changes. A single register is what turns scattered instructions into a claimable, trackable list.',
+        'A change that never made the register is a change you will not get paid for. One shared list is what turns a scatter of verbal instructions and site memos into a claimable, auditable position.',
       moduleLabel: 'Change orders',
       moduleLabelKey: 'nav.change_orders',
       to: '/change-orders',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Read the impact',
       whatKey: 'cases.change_register_and_impact.step.impact.what',
       whatDefault:
-        'Read the time and cost impact scored against the project ledger, the Pareto of the biggest drivers and the run rate of new changes.',
+        'Read the time and cost impact scored against the actual project ledger, the Pareto of the few changes driving most of the money, and the rate at which new ones keep arriving.',
       whyKey: 'cases.change_register_and_impact.step.impact.why',
       whyDefault:
-        'A pile of small changes hides a big one. Scoring the impact against real data is what surfaces the drift before it becomes an overrun.',
+        'Twenty small variations feel harmless right up until they add up to the one that blows the budget. Scoring impact against real spend is what surfaces the drift while there is still room to act.',
       moduleLabel: 'Change intelligence',
       moduleLabelKey: 'nav.change_intelligence',
       to: '/change-intelligence',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Report the trend',
       whatKey: 'cases.change_register_and_impact.step.report.what',
       whatDefault:
-        'Produce the change report with the cumulative value, the open versus agreed split and the effect on the forecast final account.',
+        'Produce the change report showing cumulative value, the open versus agreed split, and the effect each item carries on the forecast final account.',
       whyKey: 'cases.change_register_and_impact.step.report.why',
       whyDefault:
-        'A client accepts a change trend they saw coming, not one sprung at the end. Reporting it early is what keeps the final account calm.',
+        'A client will accept a change trend they watched build; they fight the one dropped on them at the final account. Reporting early and plainly is what keeps that last conversation calm.',
       moduleLabel: 'Reports',
       moduleLabelKey: 'nav.reports',
       to: '/reports',

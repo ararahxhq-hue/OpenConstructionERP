@@ -71,8 +71,14 @@ export const CONTRIBUTORS: Acknowledged[] = [
 ];
 
 /**
- * Sponsors and donors - GitHub Sponsors and PayPal supporters. Empty for now.
- * Add entries here as backers come in (name plus a handle or url) and the
- * About page will surface a "Sponsors and donors" subsection automatically.
+ * Sponsors and donors - GitHub Sponsors and PayPal supporters. Rendered as
+ * text-only nickname chips (no avatars) in the "Sponsors and donors"
+ * subsection on the About page. Add entries here as backers come in - a
+ * display name is enough; a handle or url is optional and only used to link
+ * the chip out to a public profile.
  */
-export const SPONSORS: Acknowledged[] = [];
+export const SPONSORS: Acknowledged[] = [
+  { name: 'm-braun' },
+  { name: 'sitewise88' },
+  { name: 'novak_build' },
+];

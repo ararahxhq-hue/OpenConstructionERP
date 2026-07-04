@@ -44,7 +44,7 @@ import {
   HardHat,
   Users,
   HelpCircle,
-  GraduationCap,
+  Route,
   AlertOctagon,
   FileCheck,
   Mail,
@@ -104,7 +104,6 @@ import { useGlobalSearchStore } from '@/stores/useGlobalSearchStore';
 import { getModuleNavItems } from '@/modules/_registry';
 import { APP_VERSION } from '@/shared/lib/version';
 import { useSidebarBadges } from '@/shared/hooks/useSidebarBadges';
-import { useModulePresence } from '@/shared/hooks/useModulePresence';
 import { useHiddenModules } from '@/shared/hooks/useHiddenModules';
 import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import {
@@ -218,7 +217,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.project_files', to: '/files', icon: HardDrive },
       // Cases (playbooks) - guided, cross-module worked examples. Sits in
       // Overview so the "learn by example" entry is discoverable from the top.
-      { labelKey: 'nav.cases', to: '/cases', icon: GraduationCap },
+      { labelKey: 'nav.cases', to: '/cases', icon: Route },
     ],
   },
   // ── 2. TAKEOFF ─────────────────────────────────────────────────────
@@ -1074,7 +1073,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const isAdvanced = useViewModeStore((s) => s.isAdvanced);
   const setViewMode = useViewModeStore((s) => s.setMode);
   const badgeCounts = useSidebarBadges();
-  const modulePresence = useModulePresence();
   const openSearch = useGlobalSearchStore((s) => s.openModal);
   const iconified = useSidebarCollapseStore((s) => s.iconified);
   const toggleIconified = useSidebarCollapseStore((s) => s.toggle);
@@ -1678,21 +1676,16 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   const notNeeded = g != null && !g.enabled;
                   const needed = g != null && g.enabled;
                   const seq = needed ? (routeSeq += 1) : null;
-                  // Module-presence dimming: modules with no data for
-                  // this project render at 55 % opacity so users see at
-                  // a glance which surfaces are populated. Only applies
-                  // when project-focus is OFF (project-focus already
-                  // greys-out unrelated rows more strongly via opacity-45).
-                  const isEmptyForProject =
-                    !notNeeded && !modulePresence.isPopulated(item.to);
+                  // No opacity dimming: every visible nav row renders at full
+                  // strength. Modules that are empty for the current project or
+                  // outside the project focus are no longer greyed out, since
+                  // the faded rows read as broken or disabled rather than as a
+                  // hint. Project focus still annotates needed rows with a
+                  // sequence number and keeps them compact.
                   return (
                     <li
                       key={item.to}
-                      className={clsx(
-                        'oe-stagger',
-                        notNeeded && 'opacity-45',
-                        isEmptyForProject && 'opacity-55',
-                      )}
+                      className="oe-stagger"
                       style={{ animationDelay: `${i * 18}ms` }}
                     >
                       <SidebarItem

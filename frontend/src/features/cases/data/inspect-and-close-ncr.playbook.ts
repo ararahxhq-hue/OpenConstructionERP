@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Inspect work and close a non-conformance',
   descKey: 'cases.inspect_and_close_ncr.desc',
   descDefault:
-    'Inspect against the criteria, raise a non-conformance when work fails, follow the correction and re-inspect to close it out.',
+    'Inspect the work against its acceptance criteria, raise a non-conformance the moment it fails, drive the correction and re-inspect so the record shows the defect proven fixed.',
   estMinutes: 10,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Inspect the work',
       whatKey: 'cases.inspect_and_close_ncr.step.inspect.what',
       whatDefault:
-        'Run the inspection against its checklist and record a pass or fail for each point, with a photo where it helps. A hold or witness point stops work until it is signed off.',
+        'Work through the inspection checklist point by point and mark each as pass or fail, adding a photo where the state of the work needs showing. A hold point stops the next operation until it is signed, and a witness point brings the client or engineer to see it before you move on.',
       whyKey: 'cases.inspect_and_close_ncr.step.inspect.why',
       whyDefault:
-        'Inspecting against written criteria takes the argument out of quality. The record shows what was checked, by whom and against what standard.',
+        'Checking against written criteria replaces opinion with a standard both sides already agreed. The signed record shows exactly what was examined, who examined it and which specification it was measured against.',
       moduleLabel: 'Inspections',
       moduleLabelKey: 'inspections.title',
       to: '/projects/:projectId/inspections',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Raise a non-conformance',
       whatKey: 'cases.inspect_and_close_ncr.step.ncr.what',
       whatDefault:
-        'When work fails, raise an NCR from the inspection. Describe the defect, link the evidence and assign who must correct it and by when.',
+        'On a failure, raise the NCR straight from the inspection. Set out the defect plainly, attach the photos and the failed checklist, and name the party who must put it right and the date it is due.',
       whyKey: 'cases.inspect_and_close_ncr.step.ncr.why',
       whyDefault:
-        'An NCR turns a problem into a tracked action with an owner and a date. Defects that are only mentioned get built over; defects that are logged get fixed.',
+        'An NCR converts a loose complaint into a tracked action with a named owner and a due date. A defect mentioned in passing gets built over and buried, while a defect on the register gets chased until it is corrected.',
       moduleLabel: 'NCR',
       moduleLabelKey: 'ncr.title',
       to: '/projects/:projectId/ncr',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Re-inspect and close',
       whatKey: 'cases.inspect_and_close_ncr.step.close.what',
       whatDefault:
-        'Once the correction is done, re-inspect the work and, if it passes, close the NCR with the closing evidence attached.',
+        'When the fix is reported complete, go back and re-inspect the same points. If they now pass, close the NCR with the closing photos and sign-off attached so the trail runs from raised to resolved.',
       whyKey: 'cases.inspect_and_close_ncr.step.close.why',
       whyDefault:
-        'A non-conformance is only closed when the fix is proven, not when it is promised. The closing record is what the handover pack relies on.',
+        'A non-conformance closes on proof, not on a promise that it was dealt with. That closing evidence is exactly what the handover pack and the client auditor will look for later.',
       moduleLabel: 'Inspections',
       moduleLabelKey: 'inspections.title',
       to: '/projects/:projectId/inspections',

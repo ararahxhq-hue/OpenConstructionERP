@@ -100,6 +100,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   userRole: null,
 
   setTokens: (access, refresh, remember = false, email) => {
+    // Capture the previously signed-in account before we overwrite it below, so
+    // we can detect a genuine account switch (a different user signing in on the
+    // same browser) versus a same-user token refresh.
+    const previousEmail = localStorage.getItem(KEY_EMAIL);
     if (remember) {
       localStorage.setItem(KEY_REMEMBER, '1');
       localStorage.setItem(KEY_ACCESS, access);
@@ -118,6 +122,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // syncRoleFromServer(). Clear any persisted name from a previous session
     // so a different user's name never briefly leaks into the greeting.
     localStorage.removeItem(KEY_FULL_NAME);
+    // On a genuine account switch, drop the previous user's per-browser
+    // onboarding fast-path flag. It is set once the dashboard confirms the
+    // signed-in user completed onboarding, but it is not scoped per account, so
+    // a completed/demo user leaves it behind and the next (brand-new) user on
+    // the same browser would never see the first-run wizard - the dashboard
+    // redirect short-circuits on the stale flag before it ever consults the
+    // server's authoritative per-user ``completed`` value. Clearing only on an
+    // email change leaves same-user token refreshes untouched.
+    if (email && email !== previousEmail) {
+      localStorage.removeItem('oe_onboarding_completed');
+    }
     set({
       accessToken: access,
       isAuthenticated: true,

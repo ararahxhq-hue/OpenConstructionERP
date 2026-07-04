@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Procure materials from the BOQ',
   descKey: 'cases.procure_from_boq.desc',
   descDefault:
-    'Take the quantities you already priced and buy them: raise a requisition from the bill, order from a supplier and receive the goods on site.',
+    'Buy the quantities you already priced: raise a requisition off the bill, place the order with a supplier and book the goods in on site.',
   estMinutes: 10,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Pick the positions to buy',
       whatKey: 'cases.procure_from_boq.step.boq.what',
       whatDefault:
-        'Open the bill and select the positions whose materials you need to order. Their quantities become the requisition, so you buy what you priced, not a fresh guess.',
+        'Open the bill and tick the positions whose materials you are ready to order. Their quantities flow straight into the requisition, so you buy what was priced rather than a fresh back-of-envelope figure.',
       whyKey: 'cases.procure_from_boq.step.boq.why',
       whyDefault:
-        'Buying straight from the estimate keeps the order tied to the budget. Any difference between ordered and estimated shows up at once, not at the final account.',
+        'Ordering off the estimate keeps every purchase pinned to the budget. Any drift between what was priced and what gets bought shows the moment it happens, not months later at the final account.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'boq.title',
       to: '/projects/:projectId/boq',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Raise the requisition',
       whatKey: 'cases.procure_from_boq.step.requisition.what',
       whatDefault:
-        'In Procurement, create a requisition from those positions and send it for approval. It records what is needed, how much and by when.',
+        'In Procurement, raise a requisition from those positions and route it for approval. It captures what is needed, in what quantity and by when it must be on site.',
       whyKey: 'cases.procure_from_boq.step.requisition.why',
       whyDefault:
-        'A requisition is the controlled request that sits between a need and a spend. It gives the buyer and the approver one clear document to act on.',
+        'The requisition is the controlled step between a site need and committed spend. It gives the buyer and the approver a single document to check, so nothing gets ordered on a verbal say-so.',
       moduleLabel: 'Procurement',
       moduleLabelKey: 'procurement.title',
       to: '/projects/:projectId/procurement',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Order from a supplier',
       whatKey: 'cases.procure_from_boq.step.order.what',
       whatDefault:
-        'Turn the approved requisition into a purchase order, pick the supplier and their catalogue price, and issue it. The order carries the lines, prices and delivery date.',
+        'Convert the approved requisition into a purchase order, choose the supplier and their catalogue price, and issue it. The order carries the lines, the agreed prices and the delivery date.',
       whyKey: 'cases.procure_from_boq.step.order.why',
       whyDefault:
-        'A purchase order is your commitment on paper. Issuing it from the requisition keeps quantities and prices consistent from estimate to spend.',
+        'A purchase order is a legal commitment, not a wish list. Raising it from the requisition keeps quantities and prices consistent all the way from estimate to spend, with no silent edits in between.',
       moduleLabel: 'Procurement',
       moduleLabelKey: 'procurement.title',
       to: '/projects/:projectId/procurement',
@@ -73,10 +73,10 @@ const playbook: Playbook = {
       titleDefault: 'Receive against the order',
       whatKey: 'cases.procure_from_boq.step.receive.what',
       whatDefault:
-        'When the delivery arrives, record what actually came in against the order. Short or over deliveries are flagged so the invoice can be checked against them.',
+        'When the lorry arrives, book in what physically turned up against the order. Short loads and over deliveries are flagged straight away so the invoice can be checked against goods actually received.',
       whyKey: 'cases.procure_from_boq.step.receive.why',
       whyDefault:
-        'Receiving closes the loop between ordered, delivered and invoiced. It is how you pay only for what you got and catch a wrong delivery before it is paid.',
+        'Receiving joins the dots between ordered, delivered and invoiced. It is the check that means you pay for what landed on site and catch the wrong or short delivery before finance settles it.',
       moduleLabel: 'Procurement',
       moduleLabelKey: 'procurement.title',
       to: '/projects/:projectId/procurement',

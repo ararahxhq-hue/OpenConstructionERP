@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Coordinate models and resolve clashes',
   descKey: 'cases.coordinate_models_and_clashes.desc',
   descDefault:
-    'Combine the discipline models, run the clash test, filter out the noise and drive the real conflicts to closure where site can act.',
+    'Bring the discipline models together on one coordinate base, run the clash test, clear the noise, and push the conflicts that matter to the people who can fix them.',
   estMinutes: 13,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Federate the models',
       whatKey: 'cases.coordinate_models_and_clashes.step.federate.what',
       whatDefault:
-        'Combine the architectural, structural and MEP models into one federation and confirm they share the same origin and levels.',
+        'Load the architectural, structural and MEP models into a single federation and confirm every one lands on the same project origin, the same shared grid and the same level naming.',
       whyKey: 'cases.coordinate_models_and_clashes.step.federate.why',
       whyDefault:
-        'Clashes only mean something when the models line up. A shared origin is what stops a whole building reading as one giant clash.',
+        'If one model sits a metre off the others, the clash engine reports the whole building colliding with itself. Getting the coordinate base right is the quiet work that makes everything after it meaningful.',
       moduleLabel: 'Federations',
       moduleLabelKey: 'nav.federations',
       to: '/bim/federations',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Run and triage the clash test',
       whatKey: 'cases.coordinate_models_and_clashes.step.clash.what',
       whatDefault:
-        'Run the clash test between disciplines, group the results and filter out tolerances and duplicates so only the real hits remain.',
+        'Run the tests between the disciplines that actually interfere, group the hits by system, and strip out the tolerance touches, insulation overlaps and duplicates so a workable list remains.',
       whyKey: 'cases.coordinate_models_and_clashes.step.clash.why',
       whyDefault:
-        'A raw clash list is thousands of hits nobody reads. Triage is what turns it into the short list that actually needs a decision.',
+        'A raw run returns thousands of hits and nobody opens it twice. Triage is what turns that dump into the handful of real conflicts a coordination meeting can actually decide on.',
       moduleLabel: 'Clash detection',
       moduleLabelKey: 'nav.clash',
       to: '/clash',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Drive the conflicts to closure',
       whatKey: 'cases.coordinate_models_and_clashes.step.resolve.what',
       whatDefault:
-        'Raise the surviving conflicts as trackable issues, assign the owning discipline and follow each one until the model is corrected.',
+        'Raise each surviving conflict as a tracked issue, assign it to the discipline that owns the fix, and follow it through re-issue until the corrected model clears the re-run.',
       whyKey: 'cases.coordinate_models_and_clashes.step.resolve.why',
       whyDefault:
-        'A clash found in the model costs an hour to fix. The same clash found on site costs a rework order and a delay.',
+        'A duct clashing a beam is a ten-minute model edit today. Discovered on site with the steel already up, it becomes a rework order, a variation and a hole in the programme.',
       moduleLabel: 'Non-conformance',
       moduleLabelKey: 'nav.ncr',
       to: '/projects/:projectId/ncr',

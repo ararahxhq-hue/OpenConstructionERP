@@ -24,7 +24,7 @@ const playbook: Playbook = {
   titleDefault: 'Price a building from a PDF',
   descKey: 'cases.price_from_pdf.desc',
   descDefault:
-    'Start from a PDF drawing and finish with a priced, validated estimate you can export. Five steps, end to end.',
+    'Start from a flat PDF drawing and finish with a priced, validated estimate ready to export. You measure it, price it, check it and hand it on. Five steps, end to end.',
   estMinutes: 15,
   steps: [
     {
@@ -34,10 +34,10 @@ const playbook: Playbook = {
       titleDefault: 'Upload the PDF drawing',
       whatKey: 'cases.price_from_pdf.step.upload.what',
       whatDefault:
-        'Open the project files and drag in the PDF plan you want to price. The file is stored against the project so every later step can reach it.',
+        'Open the project files area and drag the PDF plan you intend to price onto it. The drawing is filed against the project so takeoff, pricing and every export can reach the exact same sheet.',
       whyKey: 'cases.price_from_pdf.step.upload.why',
       whyDefault:
-        'Everything downstream works from this one source drawing. Getting it into the project first keeps the takeoff, the estimate and the exports tied to the same document.',
+        'Every number downstream traces back to this one drawing. Filing it against the project up front keeps the measurement, the bill and the outputs locked to a single revision rather than scattered copies.',
       moduleLabel: 'Documents',
       moduleLabelKey: 'nav.project_files',
       to: '/projects/:projectId/files',
@@ -49,10 +49,10 @@ const playbook: Playbook = {
       titleDefault: 'Measure quantities on the PDF',
       whatKey: 'cases.price_from_pdf.step.takeoff.what',
       whatDefault:
-        'Open the PDF in Takeoff and measure areas, lengths and counts. Let the auto-measure tools find repeated items, then confirm what looks right.',
+        'Open the sheet in Takeoff and set the scale first, then measure the areas, running lengths and counts you need. Let auto-measure pick up repeated items like doors and columns, and eyeball each one before you accept it.',
       whyKey: 'cases.price_from_pdf.step.takeoff.why',
       whyDefault:
-        'Quantities are the backbone of any estimate. Measuring straight off the drawing means the numbers you price later trace back to something you can point at.',
+        'Quantities carry the whole estimate, so a slip here multiplies through every rate. Measuring on the drawing itself means each figure points back to a line you can show the client, not a number from thin air.',
       moduleLabel: 'Takeoff',
       moduleLabelKey: 'nav.pdf_measurements',
       to: '/takeoff?tab=measurements',
@@ -64,10 +64,10 @@ const playbook: Playbook = {
       titleDefault: 'Build the priced BOQ',
       whatKey: 'cases.price_from_pdf.step.boq.what',
       whatDefault:
-        'Turn the measured quantities into bill positions, then apply unit rates from the cost database or your own assemblies to get a live total.',
+        'Send the measured quantities into bill positions, then attach unit rates from the cost database or your own assemblies. The total updates the moment a rate lands.',
       whyKey: 'cases.price_from_pdf.step.boq.why',
       whyDefault:
-        'The Bill of Quantities is the priced estimate. This is where quantities meet money, with rates and assemblies rolling up into a total you can defend.',
+        'The bill of quantities is where the drawing turns into money. Rates and built-up assemblies roll into a total you can break down line by line and defend across a negotiating table.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'boq.title',
       to: '/projects/:projectId/boq',
@@ -79,10 +79,10 @@ const playbook: Playbook = {
       titleDefault: 'Validate the estimate',
       whatKey: 'cases.price_from_pdf.step.validate.what',
       whatDefault:
-        'Run the validation rules over the bill. Check for missing quantities, zero prices and duplicates, plus structure rules such as DIN 276 where they apply.',
+        'Run the rule sets across the finished bill. It hunts for blank quantities, zero rates and duplicate lines, and where they apply it checks structure rules such as the DIN 276 cost groups.',
       whyKey: 'cases.price_from_pdf.step.validate.why',
       whyDefault:
-        'Catching gaps and errors before the estimate leaves your desk is far cheaper than after. The traffic-light report shows exactly what to fix and where.',
+        'A mistake caught at your desk costs minutes; the same mistake caught by the client costs credibility. The traffic-light report points straight at the line and the rule that tripped.',
       moduleLabel: 'Validation',
       moduleLabelKey: 'validation.title',
       to: '/validation',
@@ -94,10 +94,10 @@ const playbook: Playbook = {
       titleDefault: 'Export the priced bill',
       whatKey: 'cases.price_from_pdf.step.export.what',
       whatDefault:
-        'Generate the output you need from Reports: a PDF summary, an Excel sheet, or a GAEB file to hand on for tendering.',
+        'Produce the output the next person needs from Reports: a PDF summary for the client, an Excel sheet for the commercial team or a GAEB file to push into tendering.',
       whyKey: 'cases.price_from_pdf.step.export.why',
       whyDefault:
-        'The estimate only delivers value once it is in a form others can use. Exporting in an open format keeps the numbers portable and the data yours.',
+        'An estimate only pays off once somebody else can open it. Exporting to an open format keeps the figures portable between tools and keeps the underlying data yours.',
       moduleLabel: 'Reports',
       moduleLabelKey: 'nav.reports',
       to: '/reports',

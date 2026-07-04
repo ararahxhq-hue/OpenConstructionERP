@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Set contingency from cost risk',
   descKey: 'cases.cost_risk_and_contingency.desc',
   descDefault:
-    'Turn a single-point estimate into a range, run a Monte Carlo over the risky lines, read the spread and set a contingency you can defend.',
+    'Turn a single-point estimate into a range, run a Monte Carlo over the genuinely uncertain lines, read the P50 to P90 spread and set a contingency you can defend line by line.',
   estMinutes: 11,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Fix the base estimate',
       whatKey: 'cases.cost_risk_and_contingency.step.baseline.what',
       whatDefault:
-        'Confirm the BOQ is complete and priced, then flag the lines that are genuinely uncertain in quantity or rate.',
+        'Check the bill is complete and fully priced first, then mark the handful of lines that are genuinely uncertain, whether in quantity, in rate or in ground conditions you cannot yet see.',
       whyKey: 'cases.cost_risk_and_contingency.step.baseline.why',
       whyDefault:
-        'Risk analysis on a broken estimate just launders the error. A clean base is what makes the range mean something.',
+        'Running risk over a bill with gaps or errors just dresses that error up in a confident looking curve. A clean, complete base estimate is the only thing that makes the resulting range worth trusting.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'nav.boq',
       to: '/boq',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Run the Monte Carlo',
       whatKey: 'cases.cost_risk_and_contingency.step.simulate.what',
       whatDefault:
-        'Give the uncertain lines a low, likely and high value, set any correlations and run the simulation to get a cost distribution.',
+        'Give each uncertain line a low, most likely and high value, link the ones that move together such as fuel and haulage, then run the simulation across thousands of iterations to build a cost distribution.',
       whyKey: 'cases.cost_risk_and_contingency.step.simulate.why',
       whyDefault:
-        'One number hides the risk. A P50 to P90 curve tells you how much cover you need to hit a confidence level you can stand behind.',
+        'A single headline figure hides how much the outturn could swing. The P50 to P90 curve tells you plainly how much cover you need to carry to hit a confidence level you are willing to sign up to.',
       moduleLabel: 'Cost risk',
       moduleLabelKey: 'nav.risks',
       to: '/risks?tab=montecarlo',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Set contingency and report it',
       whatKey: 'cases.cost_risk_and_contingency.step.report.what',
       whatDefault:
-        'Pick the confidence level, read the contingency it implies from the S-curve and export the tornado of the biggest drivers.',
+        'Choose the confidence level the job warrants, read the contingency that point on the S-curve implies and export the tornado chart that ranks the biggest drivers of the spread.',
       whyKey: 'cases.cost_risk_and_contingency.step.report.why',
       whyDefault:
-        'A contingency backed by a distribution survives a challenge. Showing the top drivers tells the client exactly what the money is covering.',
+        'A contingency drawn from a distribution holds up in front of a board or a client in a way that a flat ten percent never does. The tornado shows exactly which risks the money is set aside for, so the number reads as reasoned rather than padded.',
       moduleLabel: 'Reports',
       moduleLabelKey: 'nav.reports',
       to: '/reports',

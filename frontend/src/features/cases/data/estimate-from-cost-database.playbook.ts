@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Estimate from a cost database',
   descKey: 'cases.estimate_from_cost_database.desc',
   descDefault:
-    'Find priced items in a cost database, build the BOQ from them, bundle repeat work into assemblies and validate before you commit a number.',
+    'Pull priced items from a real cost database, build the bill from them, bundle recurring build-ups into assemblies and run the checks before you commit to a tender figure.',
   estMinutes: 12,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Find the right priced items',
       whatKey: 'cases.estimate_from_cost_database.step.browse.what',
       whatDefault:
-        'Search the cost database by trade, keyword or code and read what each rate actually includes before you pull it in.',
+        'Search the database by trade, keyword or classification code, then read the item description and inclusions before you pull the rate in. Check the unit and what labour, material and plant the rate is built from.',
       whyKey: 'cases.estimate_from_cost_database.step.browse.why',
       whyDefault:
-        'A rate is only right if its scope matches your work. Reading the item before you use it stops a labour-only line being priced as full supply and fix.',
+        'A rate is only correct if its scope matches the work in front of you. Reading the item first stops you pricing a labour-only fix line as full supply and fix, a mismatch that can double or halve a whole trade.',
       moduleLabel: 'Cost Explorer',
       moduleLabelKey: 'nav.cost_explorer',
       to: '/cost-explorer',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Build the BOQ',
       whatKey: 'cases.estimate_from_cost_database.step.build.what',
       whatDefault:
-        'Drop the chosen items into the BOQ, set your quantities and let the totals roll up. Group the lines the way you will report them.',
+        'Place the chosen items into the bill, enter your quantities and let the line and section totals roll up live. Order the sections the way you intend to report and tender them, by trade or by element.',
       whyKey: 'cases.estimate_from_cost_database.step.build.why',
       whyDefault:
-        'The BOQ is where scope becomes money. Starting from database items means every line already carries a defensible source and unit rate.',
+        'The bill is where scope turns into money, so its structure has to survive scrutiny. Starting each line from a database item means it already carries a traceable source and a rate you can justify, rather than a number typed from memory.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'nav.boq',
       to: '/boq',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Bundle repeat work into assemblies',
       whatKey: 'cases.estimate_from_cost_database.step.assemblies.what',
       whatDefault:
-        'Turn recurring build-ups, like a wall with formwork and rebar, into a single assembly so one quantity drives all its components.',
+        'Bundle a recurring build-up, such as a concrete wall with its formwork and reinforcement, into one assembly, so entering a single square metre quantity drives concrete, shutter and steel together in the right proportions.',
       whyKey: 'cases.estimate_from_cost_database.step.assemblies.why',
       whyDefault:
-        'Assemblies keep repeated pricing consistent and fast. Change the rate once and every BOQ line that uses it updates together.',
+        'Assemblies keep repeated pricing both fast and consistent across a big bill. Adjust a component rate once and every line built on that assembly moves with it, so a steel price rise cannot be applied in one place and forgotten in ten others.',
       moduleLabel: 'Assemblies',
       moduleLabelKey: 'nav.assemblies',
       to: '/assemblies',
@@ -73,10 +73,10 @@ const playbook: Playbook = {
       titleDefault: 'Validate before you commit',
       whatKey: 'cases.estimate_from_cost_database.step.validate.what',
       whatDefault:
-        'Run the estimate through the checks for zero prices, missing quantities, duplicates and unit rates that look off against the benchmark.',
+        'Put the finished estimate through the checks for zero prices, blank quantities, duplicated positions and unit rates sitting well outside the benchmark band for that item.',
       whyKey: 'cases.estimate_from_cost_database.step.validate.why',
       whyDefault:
-        'A single missed quantity or stray zero can wreck a tender number. Validation catches the honest mistakes before the client sees them.',
+        'One blank quantity or a stray zero in a big rate can move a tender by a serious sum, and it is always found the day after submission. Validation surfaces those honest slips while you can still fix them privately.',
       moduleLabel: 'Validation',
       moduleLabelKey: 'nav.validation',
       to: '/validation',

@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import {
   GraduationCap,
+  Route,
   ArrowRight,
   Clock,
   ListChecks,
@@ -38,6 +39,7 @@ import { PLAYBOOKS, getPlaybook } from './playbooks';
 import { PlaybookRunner } from './PlaybookRunner';
 import { useCasesStore } from './useCasesStore';
 import { completedCount } from './progress';
+import { CATEGORY_META, tintFor, NEUTRAL_TINT } from './categories';
 import type { Playbook, CaseCategory } from './types';
 
 const ICON_MAP: Record<string, ComponentType<LucideProps>> = {
@@ -62,25 +64,6 @@ function iconFor(name: string | undefined): ComponentType<LucideProps> {
   return Sparkles;
 }
 
-/** Category filter metadata: display order, label default and chip icon.
- *  Labels are i18n keys with an inline English default (same pattern as the
- *  case content). Keep the keys in step with the `CaseCategory` union. */
-const CATEGORY_META: {
-  id: CaseCategory;
-  labelKey: string;
-  labelDefault: string;
-  icon: ComponentType<LucideProps>;
-}[] = [
-  { id: 'estimating', labelKey: 'cases.cat.estimating', labelDefault: 'Estimating & costing', icon: Calculator },
-  { id: 'tendering', labelKey: 'cases.cat.tendering', labelDefault: 'Tendering & procurement', icon: PackageCheck },
-  { id: 'planning', labelKey: 'cases.cat.planning', labelDefault: 'Planning & controls', icon: CalendarClock },
-  { id: 'bim', labelKey: 'cases.cat.bim', labelDefault: 'BIM & takeoff', icon: Box },
-  { id: 'site', labelKey: 'cases.cat.site', labelDefault: 'Site & field', icon: HardHat },
-  { id: 'quality', labelKey: 'cases.cat.quality', labelDefault: 'Quality & safety', icon: BadgeCheck },
-  { id: 'commercial', labelKey: 'cases.cat.commercial', labelDefault: 'Commercial & contracts', icon: FileSignature },
-  { id: 'handover', labelKey: 'cases.cat.handover', labelDefault: 'Handover & lifecycle', icon: ShieldCheck },
-];
-
 export function CasesPage() {
   const { playbookId } = useParams<{ playbookId?: string }>();
   const { t } = useTranslation();
@@ -93,7 +76,7 @@ export function CasesPage() {
       return (
         <div className="py-8 animate-fade-in">
           <EmptyState
-            icon={<GraduationCap size={28} />}
+            icon={<Route size={28} />}
             title={t('cases.not_found_title', { defaultValue: 'Case not found' })}
             description={t('cases.not_found_body', {
               defaultValue: 'This case does not exist or was removed. Browse the full list instead.',
@@ -160,7 +143,7 @@ function CasesList() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue ring-1 ring-inset ring-oe-blue/20">
-          <GraduationCap size={20} strokeWidth={1.9} />
+          <Route size={20} strokeWidth={1.9} />
         </span>
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-content-primary">
@@ -200,6 +183,7 @@ function CasesList() {
               label={t('cases.cat.all', { defaultValue: 'All' })}
               count={PLAYBOOKS.length}
               icon={Layers}
+              activeClass={NEUTRAL_TINT.chip}
             />
             {availableCategories.map((c) => {
               const count = PLAYBOOKS.filter((p) => p.category === c.id).length;
@@ -211,6 +195,7 @@ function CasesList() {
                   label={t(c.labelKey, { defaultValue: c.labelDefault })}
                   count={count}
                   icon={c.icon}
+                  activeClass={c.tint.chip}
                 />
               );
             })}
@@ -221,7 +206,7 @@ function CasesList() {
       {/* ── Cards ───────────────────────────────────────────────────────── */}
       {PLAYBOOKS.length === 0 ? (
         <EmptyState
-          icon={<GraduationCap size={28} />}
+          icon={<Route size={28} />}
           title={t('cases.empty_title', { defaultValue: 'No cases yet' })}
           description={t('cases.empty_body', {
             defaultValue: 'Guided playbooks will appear here as they are added.',
@@ -239,6 +224,7 @@ function CasesList() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((pb) => {
             const Icon = iconFor(pb.icon);
+            const tint = tintFor(pb.category);
             const total = pb.steps.length;
             const done = bestDoneFor(pb);
             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -250,13 +236,24 @@ function CasesList() {
                 type="button"
                 onClick={() => navigate(`/cases/${pb.id}`)}
                 className={clsx(
-                  'group flex h-full flex-col rounded-2xl border border-border-light bg-surface-primary p-5 text-left',
+                  'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-5 pl-6 text-left',
                   'shadow-xs transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md',
                   'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
                 )}
               >
+                {/* Soft left rail tints the card by discipline (positioned so it
+                    never fights the card border). */}
+                <span
+                  aria-hidden="true"
+                  className={clsx('absolute inset-y-0 left-0 w-1', tint.accent)}
+                />
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-oe-blue/15 to-oe-blue/5 text-oe-blue ring-1 ring-inset ring-oe-blue/15">
+                  <span
+                    className={clsx(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
+                      tint.tile,
+                    )}
+                  >
                     <Icon size={19} strokeWidth={1.9} />
                   </span>
                   {complete ? (
@@ -353,12 +350,15 @@ function CategoryChip({
   label,
   count,
   icon: Icon,
+  activeClass,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   count: number;
   icon: ComponentType<LucideProps>;
+  /** Soft tint classes applied when the chip is the active filter. */
+  activeClass: string;
 }) {
   return (
     <button
@@ -368,18 +368,13 @@ function CategoryChip({
       className={clsx(
         'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
         active
-          ? 'border-oe-blue/40 bg-oe-blue/10 text-oe-blue'
+          ? activeClass
           : 'border-border-light bg-surface-primary text-content-secondary hover:border-oe-blue/30 hover:text-content-primary',
       )}
     >
       <Icon size={13} strokeWidth={2} aria-hidden="true" />
       {label}
-      <span
-        className={clsx(
-          'ml-0.5 tabular-nums',
-          active ? 'text-oe-blue/70' : 'text-content-tertiary',
-        )}
-      >
+      <span className={clsx('ml-0.5 tabular-nums', active ? 'opacity-70' : 'text-content-tertiary')}>
         {count}
       </span>
     </button>

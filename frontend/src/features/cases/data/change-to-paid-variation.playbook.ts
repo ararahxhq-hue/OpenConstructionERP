@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Turn a change into a paid variation',
   descKey: 'cases.change_to_paid_variation.desc',
   descDefault:
-    'Catch a scope change, price it as a contract variation and bill it in a progress claim, so extra work is recovered instead of absorbed.',
+    'Capture a scope change while it is fresh, price it as a contract variation on your agreed rates and bill it in the next progress claim, so the extra work is recovered rather than quietly absorbed.',
   estMinutes: 11,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Raise the change',
       whatKey: 'cases.change_to_paid_variation.step.change.what',
       whatDefault:
-        'Record the change: what moved, who instructed it and the drawing or instruction behind it. Capture the time and cost impact while it is fresh.',
+        'Write down exactly what changed, who instructed it and the drawing revision or site instruction that drove it. Note the likely time and cost impact now, while the crew and the facts are still in front of you.',
       whyKey: 'cases.change_to_paid_variation.step.change.why',
       whyDefault:
-        'A change logged at the moment it happens is a change you can prove. The ones absorbed quietly are the ones that erode the margin.',
+        'A change recorded the day it happens is a change you can substantiate and get paid for. The ones the team just gets on with, without a note, are the ones that eat the margin with nothing to show for it.',
       moduleLabel: 'Change orders',
       moduleLabelKey: 'nav.change_orders',
       to: '/change-orders',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Price it as a variation',
       whatKey: 'cases.change_to_paid_variation.step.variation.what',
       whatDefault:
-        'Turn the change into a contract variation, price the added or omitted work against your rates and route it for the client instruction.',
+        'Promote the change into a formal contract variation, price the added and omitted work line by line against your agreed or star rates, then send it out for the client instruction that authorises it.',
       whyKey: 'cases.change_to_paid_variation.step.variation.why',
       whyDefault:
-        'A variation is the contractual home of a change. Pricing it against agreed rates is what makes it defensible when it is challenged.',
+        'The variation is where a change becomes a contractual entitlement rather than a favour. Building the price from agreed rates is what lets it stand up when the quantity surveyor questions it.',
       moduleLabel: 'Contracts',
       moduleLabelKey: 'onboarding.mod_contracts',
       to: '/projects/:projectId/contracts',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Bill it in a progress claim',
       whatKey: 'cases.change_to_paid_variation.step.claim.what',
       whatDefault:
-        'Include the agreed variation in the next progress claim against the contract, so it is invoiced alongside the measured work.',
+        'Roll the instructed variation into the next progress claim on the contract so it is certified and invoiced next to the measured work, not left sitting on a list of things owed.',
       whyKey: 'cases.change_to_paid_variation.step.claim.why',
       whyDefault:
-        'Priced and instructed is only paid once it is claimed. Rolling the variation into the claim is the step that actually recovers the money.',
+        'Priced and instructed still earns you nothing until it is claimed and certified. Folding the variation into the claim is the step that finally turns agreed extra work into cash in the bank.',
       moduleLabel: 'Contracts',
       moduleLabelKey: 'onboarding.mod_contracts',
       to: '/projects/:projectId/contracts',

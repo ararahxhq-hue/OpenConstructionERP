@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'As-built and O and M handover',
   descKey: 'cases.as_built_and_om_handover.desc',
   descDefault:
-    'Gather the as-built record, confirm the quality file is complete, then issue the operation and maintenance package the operator will use.',
+    'Pull the as-built record together, prove the quality file has no gaps, then issue an operation and maintenance package the operator can actually run the building from.',
   estMinutes: 12,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Gather the as-built record',
       whatKey: 'cases.as_built_and_om_handover.step.asbuilt.what',
       whatDefault:
-        'Collect the as-built drawings, product data, warranties and manuals into the project files, structured so each system is findable.',
+        'Gather the as-built drawings, product datasheets, warranties and manuals into the project files, structured by system so a facilities engineer can find a valve or a fan five years on.',
       whyKey: 'cases.as_built_and_om_handover.step.asbuilt.why',
       whyDefault:
-        'The operator runs the building from this record for decades. As-built means what was actually installed, not what was once drawn.',
+        'The operator runs this building off your record for the next few decades. As-built has to mean what the fitters actually installed, field changes and all, not the pristine version once on the drawing.',
       moduleLabel: 'Files',
       moduleLabelKey: 'nav.documents',
       to: '/projects/:projectId/files',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Confirm the quality file',
       whatKey: 'cases.as_built_and_om_handover.step.quality.what',
       whatDefault:
-        'Check the quality records, test certificates and commissioning results are complete and that no non-conformance is left open.',
+        'Verify the inspection records, test and commissioning certificates and material approvals are all present, and confirm not a single non-conformance is left sitting open.',
       whyKey: 'cases.as_built_and_om_handover.step.quality.why',
       whyDefault:
-        'The quality file is the proof the building is fit to occupy. A gap here is the one an insurer or the client finds later.',
+        'The quality file is the evidence the building is safe and fit to occupy. A missing fire-damper certificate is exactly the gap an insurer or the client lawyer turns up long after the crew has gone.',
       moduleLabel: 'Quality management',
       moduleLabelKey: 'nav.qms',
       to: '/projects/:projectId/qms',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Issue the O and M package',
       whatKey: 'cases.as_built_and_om_handover.step.issue.what',
       whatDefault:
-        'Assemble the close-out package, confirm the handover gates are met and issue the signed O and M set to the operator.',
+        'Assemble the close-out package, check every handover gate and outstanding-item list is cleared, and issue the signed operation and maintenance set to the operator.',
       whyKey: 'cases.as_built_and_om_handover.step.issue.why',
       whyDefault:
-        'A clean issue discharges the obligation and starts the defects period cleanly. It is also the last impression the client keeps.',
+        'A clean handover discharges the contract and starts the defects liability period on solid ground. It is also the last thing the client remembers, and it colours the next job they send your way.',
       moduleLabel: 'Close-out',
       moduleLabelKey: 'nav.closeout',
       to: '/closeout',

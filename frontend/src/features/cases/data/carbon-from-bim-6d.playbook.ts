@@ -25,7 +25,7 @@ const playbook: Playbook = {
   titleDefault: 'Get 6D carbon from a BIM model',
   descKey: 'cases.carbon_from_bim_6d.desc',
   descDefault:
-    'Turn a converted BIM model into an embodied-carbon footprint. Auto-enrich pulls quantities from the geometry and matches materials to factors, then you set a reduction target and report. Five steps.',
+    'Turn a converted BIM model into an embodied carbon footprint. Auto-enrich reads quantities off the geometry and pairs each material with an emission factor, then you set a reduction target and issue the report. Five steps.',
   estMinutes: 12,
   steps: [
     {
@@ -35,10 +35,10 @@ const playbook: Playbook = {
       titleDefault: 'Import a BIM model',
       whatKey: 'cases.carbon_from_bim_6d.step.import-model.what',
       whatDefault:
-        'Open BIM and import the model for this project. Once it is converted, every element carries its material and its geometry quantities.',
+        'Open BIM and import the converted model for this job. Once conversion finishes, every wall, slab and column carries both its material tag and the quantity measured from the solid geometry.',
       whyKey: 'cases.carbon_from_bim_6d.step.import-model.why',
       whyDefault:
-        'The footprint is built from the model. A converted model gives each wall, slab and column a material and a measured quantity, which is exactly what the carbon match reads.',
+        'The whole footprint is read from the model, so garbage in means garbage out. A converted model hands the carbon match a clean material and a real quantity instead of a figure somebody typed by hand.',
       moduleLabel: 'BIM',
       moduleLabelKey: 'nav.bim',
       to: '/projects/:projectId/bim',
@@ -50,10 +50,10 @@ const playbook: Playbook = {
       titleDefault: 'Open Carbon and start an inventory',
       whatKey: 'cases.carbon_from_bim_6d.step.inventory.what',
       whatDefault:
-        'Open Carbon and create an inventory for the project, scoped cradle-to-gate or cradle-to-grave. This is the one snapshot every entry rolls up into.',
+        'Move to Carbon and open a fresh inventory for the project. Fix the system boundary up front, cradle to gate for the shell or cradle to grave when you also need the in-use and end of life stages.',
       whyKey: 'cases.carbon_from_bim_6d.step.inventory.why',
       whyDefault:
-        'The inventory is the container for the footprint. Setting it up first gives the auto-enrich a place to write the embodied entries it proposes.',
+        'Boundary choice drives the whole result, so pin it down before any entry lands. Two footprints only compare when they cover the same stages, and the inventory is the one place every material line adds up.',
       moduleLabel: 'Carbon',
       moduleLabelKey: 'nav.carbon',
       to: '/projects/:projectId/carbon',
@@ -65,10 +65,10 @@ const playbook: Playbook = {
       titleDefault: 'Auto-enrich embodied carbon from BIM',
       whatKey: 'cases.carbon_from_bim_6d.step.enrich.what',
       whatDefault:
-        'In the inventory, run Auto-enrich from BIM. Pick the model, preview the proposed entries, then confirm. It matches each element material to a carbon factor and pulls the quantity from the geometry. Nothing is written until you confirm.',
+        'Run Auto-enrich from BIM inside the inventory. Choose the model, look over the proposed lines in the preview, then confirm. Each element material is matched to an emission factor and the quantity is pulled straight off the geometry. Nothing is saved until you accept it.',
       whyKey: 'cases.carbon_from_bim_6d.step.enrich.why',
       whyDefault:
-        'This is the 6D shortcut. Instead of adding materials by hand, you get a ready list of embodied entries straight from the model, each with a confidence score on its match.',
+        'This is where 6D earns its keep. Rather than keying concrete, steel and insulation one line at a time, you get a full embodied list from the model in seconds, and every row shows how sure the match is.',
       moduleLabel: 'Carbon',
       moduleLabelKey: 'nav.carbon',
       to: '/projects/:projectId/carbon',
@@ -80,10 +80,10 @@ const playbook: Playbook = {
       titleDefault: 'Review the linked entries and confidence',
       whatKey: 'cases.carbon_from_bim_6d.step.review.what',
       whatDefault:
-        'Go through the added entries. Each links back to its BIM element and carries a match confidence, so check the low-confidence rows and fix the factor or quantity where it looks off.',
+        'Work down the added lines. Every entry points back to the BIM element that produced it and shows a match confidence, so open the amber and red rows first and correct the factor or the quantity where the pairing looks wrong.',
       whyKey: 'cases.carbon_from_bim_6d.step.review.why',
       whyDefault:
-        'AI proposes, you confirm. The confidence badge tells you where to look first, so the footprint you report is one you can stand behind.',
+        'The tool suggests, the estimator signs off. A generic factor on a specialist product can swing the total by tonnes, so the confidence flag tells you exactly which rows deserve a second look.',
       moduleLabel: 'Carbon',
       moduleLabelKey: 'nav.carbon',
       to: '/projects/:projectId/carbon',
@@ -95,10 +95,10 @@ const playbook: Playbook = {
       titleDefault: 'Set a target and report',
       whatKey: 'cases.carbon_from_bim_6d.step.target.what',
       whatDefault:
-        'Set a reduction target as a total or per square metre, then generate a report for the period in the framework you need. The target tracks live against the inventory.',
+        'Set a reduction target, either as an absolute total or per square metre of floor area, then generate the report for the period in the framework your client asks for. The target tracks live as the inventory changes.',
       whyKey: 'cases.carbon_from_bim_6d.step.target.why',
       whyDefault:
-        'A number on its own does not drive change. A target shows the trajectory, and the report packages the footprint into a record you can share for disclosure and audit.',
+        'A raw carbon figure convinces no one on its own. A target draws the line you are trying to beat, and the exported report turns the footprint into a dated record you can put in front of an assessor or a planning officer.',
       moduleLabel: 'Carbon',
       moduleLabelKey: 'nav.carbon',
       to: '/projects/:projectId/carbon',

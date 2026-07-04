@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Measure quantities from a DWG',
   descKey: 'cases.takeoff_from_dwg.desc',
   descDefault:
-    'Open a drawing, set the scale, measure the areas and lengths you need, then send the measured quantities into a bill to price.',
+    'Load a DWG, lock the scale against a known dimension, measure the areas, lengths and counts you need, then push those quantities straight into a priced bill.',
   estMinutes: 10,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Open the drawing',
       whatKey: 'cases.takeoff_from_dwg.step.open.what',
       whatDefault:
-        'Load the DWG and confirm the scale so a measured length reads in real metres. Pick the layers you want to measure over.',
+        'Bring in the DWG and calibrate the scale against a dimension you trust, such as a gridline spacing or a door width, so a measured line reads in real metres. Switch off the layers you do not need so the sheet is clean to trace over.',
       whyKey: 'cases.takeoff_from_dwg.step.open.why',
       whyDefault:
-        'A wrong scale turns every measurement wrong by the same factor. Setting it once at the start is the cheapest check you can make.',
+        'A scale that is out by even a few percent multiplies through every area and length you take off, and nobody notices until the concrete order comes back wrong. Calibrating once at the start is a two minute job that protects the whole take-off.',
       moduleLabel: 'DWG take-off',
       moduleLabelKey: 'onboarding.mod_dwg_takeoff',
       to: '/dwg-takeoff',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Measure the work',
       whatKey: 'cases.takeoff_from_dwg.step.measure.what',
       whatDefault:
-        'Draw the areas, lengths and counts you need. Group measurements so a wall run, a floor area and a door count each roll up under their own heading.',
+        'Trace polygons for floor areas, run polylines along walls and skirtings, and drop point markers on doors and fittings. Keep each type in its own named group so a wall run, a slab area and a door count stay separate.',
       whyKey: 'cases.takeoff_from_dwg.step.measure.why',
       whyDefault:
-        'Grouped measurements price cleanly and check easily. When a quantity looks wrong, you can trace it straight back to the shape you drew.',
+        'Measurements kept in tidy groups price without untangling and audit in seconds. When a figure looks high, you click the group and see the exact shape that produced it, instead of defending a number you cannot explain.',
       moduleLabel: 'Take-off',
       moduleLabelKey: 'nav.takeoff_overview',
       to: '/takeoff?tab=measurements',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Price the quantities',
       whatKey: 'cases.takeoff_from_dwg.step.boq.what',
       whatDefault:
-        'Send the measured quantities into a bill and apply rates. Each position keeps a link back to the measurement it came from.',
+        'Feed the grouped quantities into the bill and attach a rate to each line. Every position holds a live link back to the shape it was measured from, so a revised drawing flows through to the quantity.',
       whyKey: 'cases.takeoff_from_dwg.step.boq.why',
       whyDefault:
-        'Measuring and pricing in one flow removes the rekeying that loses quantities. The bill stays tied to the drawing it was measured from.',
+        'Typing quantities from a drawing into a separate spreadsheet is where numbers get transposed and areas get dropped. Measuring and pricing in one chain removes that hand-off, and the priced bill can always be traced back to the sheet it came from.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'boq.title',
       to: '/projects/:projectId/boq',

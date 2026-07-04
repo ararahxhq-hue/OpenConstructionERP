@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Get quantities from a BIM model',
   descKey: 'cases.quantities_from_bim.desc',
   descDefault:
-    'Load a converted model, read the element quantities straight off the geometry, carry them into a bill and validate the result.',
+    'Load a converted model, lift the element quantities straight off the geometry, carry them into a priced bill and validate what you mapped.',
   estMinutes: 12,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Open the model',
       whatKey: 'cases.quantities_from_bim.step.import.what',
       whatDefault:
-        'Open the converted model in the viewer and browse the elements by category and level. Areas, volumes and lengths come from the geometry, not a manual count.',
+        'Open the converted model in the viewer and browse elements by category and by level. Areas, volumes and lengths are computed from the solid geometry, not counted off a sheet by eye.',
       whyKey: 'cases.quantities_from_bim.step.import.why',
       whyDefault:
-        'Quantities read off the model are quantities you can trace to an element. When the design changes, you re-read rather than re-measure.',
+        'A quantity read from the model ties back to a specific element you can select and inspect. When the design moves, you re-read the geometry instead of measuring the whole thing again.',
       moduleLabel: 'BIM',
       moduleLabelKey: 'nav.bim_viewer',
       to: '/projects/:projectId/bim',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Carry them into a bill',
       whatKey: 'cases.quantities_from_bim.step.boq.what',
       whatDefault:
-        'Map the element quantities onto bill positions and apply your rates. Each position keeps a link back to the model elements it came from.',
+        'Map the model quantities onto bill positions and apply your rates. Each position keeps a live link back to the elements it was drawn from.',
       whyKey: 'cases.quantities_from_bim.step.boq.why',
       whyDefault:
-        'The link from a priced line back to the model is the audit trail. Anyone can see where a number came from and check it against the design.',
+        'That link from a priced line to a model element is the audit trail. Anyone reviewing the bill can trace a number back to the design and check it, rather than take it on trust.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'boq.title',
       to: '/projects/:projectId/boq',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Validate the take-off',
       whatKey: 'cases.quantities_from_bim.step.validate.what',
       whatDefault:
-        'Run the validation rules to check the mapped quantities are complete and consistent, and that classification is present where it is required.',
+        'Run the validation rules to confirm the mapped quantities are complete and consistent, and that a classification is present wherever the rule set demands one.',
       whyKey: 'cases.quantities_from_bim.step.validate.why',
       whyDefault:
-        'A model can be complete and still miss what you need to price. Validation catches the unmapped element and the missing property before it reaches the client.',
+        'A model can be perfectly modelled and still miss the one property you need to price. Validation catches the unmapped element and the blank classification before the bill reaches the client.',
       moduleLabel: 'Validation',
       moduleLabelKey: 'validation.title',
       to: '/validation',

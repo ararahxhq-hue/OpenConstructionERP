@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Compare bids and award',
   descKey: 'cases.compare_bids_and_award.desc',
   descDefault:
-    'Open the tender, level the returned bids like for like, spot the gaps and outliers, then produce a defensible award recommendation.',
+    'Take a folder of returned tenders that never quite match, strip them back to the same scope, and hand the client an award call that survives scrutiny.',
   estMinutes: 12,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Open the tender package',
       whatKey: 'cases.compare_bids_and_award.step.open.what',
       whatDefault:
-        'Confirm the tender scope, the bidder list and the return deadline, and check every invited party has the same priced schedule.',
+        'Pull up the tender record, verify the bidder list against who was actually invited, and check that every return prices the same issued schedule and the same drawing revision.',
       whyKey: 'cases.compare_bids_and_award.step.open.why',
       whyDefault:
-        'A fair comparison starts from an identical ask. If bidders priced different scopes, the cheapest number is meaningless.',
+        'Bidders working from an earlier drawing set or a trimmed schedule are not competing on the same job. Nailing the common baseline now is what keeps the whole comparison downstream honest.',
       moduleLabel: 'Tendering',
       moduleLabelKey: 'nav.tendering',
       to: '/tendering',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Level the bids',
       whatKey: 'cases.compare_bids_and_award.step.level.what',
       whatDefault:
-        'Line the returns up side by side, normalise qualifications and exclusions and flag the outliers and the coverage gaps.',
+        'Set the returns out column by column, then push every qualification, exclusion and provisional sum back into the price so line rates read against each other. Mark the gaps where a bidder simply left scope out.',
       whyKey: 'cases.compare_bids_and_award.step.level.why',
       whyDefault:
-        'The headline price rarely wins on merit alone. Levelling exposes the bidder who left out scope to look cheap.',
+        'The lowest headline number often belongs to whoever forgot the most. Once the missing builders work and the daywork assumptions go back in, the genuinely keen bid is usually a different one.',
       moduleLabel: 'Bid management',
       moduleLabelKey: 'nav.bid_management',
       to: '/bid-management',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Recommend the award',
       whatKey: 'cases.compare_bids_and_award.step.award.what',
       whatDefault:
-        'Produce the comparison report with the price spread, coverage and your recommended bidder and the reasons behind the choice.',
+        'Write up the recommendation: the levelled spread, coverage against the full scope, any commercial or programme risk, and the bidder you would appoint with the reasoning set beside the figures.',
       whyKey: 'cases.compare_bids_and_award.step.award.why',
       whyDefault:
-        'An award is a decision someone will question later. A written recommendation with the numbers behind it is what makes it stick.',
+        'An award gets second-guessed by a director, an auditor, or the losing bidder. A short paper showing both the math and the judgement behind the pick closes that conversation before it starts.',
       moduleLabel: 'Reports',
       moduleLabelKey: 'nav.reports',
       to: '/reports',

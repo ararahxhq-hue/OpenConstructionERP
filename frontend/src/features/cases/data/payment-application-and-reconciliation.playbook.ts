@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Payment application and reconciliation',
   descKey: 'cases.payment_application_and_reconciliation.desc',
   descDefault:
-    'Value the work done this period against the contract, raise the payment application and reconcile what was certified against what was paid.',
+    'Value the work put in place this period against the contract, raise the application with the evidence behind it, and reconcile what you certified against what actually landed in the account.',
   estMinutes: 12,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Confirm the contract position',
       whatKey: 'cases.payment_application_and_reconciliation.step.contract.what',
       whatDefault:
-        'Check the contract value, agreed variations and retention terms so the application is built on the current agreed sum.',
+        'Confirm the current contract sum, every agreed variation and the retention and payment terms, so the application is built on the number both sides have actually signed up to.',
       whyKey: 'cases.payment_application_and_reconciliation.step.contract.why',
       whyDefault:
-        'An application off a stale contract sum gets rejected. Starting from the agreed position is what makes it certifiable first time.',
+        'An application worked off a stale figure, before the agreed variations went in, gets kicked straight back. Starting from the true contract position is what gets it certified without a fight.',
       moduleLabel: 'Contracts',
       moduleLabelKey: 'nav.contracts',
       to: '/projects/:projectId/contracts',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Raise the payment application',
       whatKey: 'cases.payment_application_and_reconciliation.step.apply.what',
       whatDefault:
-        'Value the work done this period, add materials on site and approved variations, deduct retention and previous payments and issue it.',
+        'Measure the work done this cycle, add materials properly on site and approved variations, then deduct retention and everything previously paid before you issue the application.',
       whyKey: 'cases.payment_application_and_reconciliation.step.apply.why',
       whyDefault:
-        'Cash flow is what keeps a job alive. A clear, evidenced application is what gets the certificate signed on time.',
+        'Cash flow is the oxygen of a construction business, and subcontractors feel a late certificate first. An application that is clear and fully evidenced is the one that gets signed on the due date.',
       moduleLabel: 'Finance',
       moduleLabelKey: 'nav.finance',
       to: '/projects/:projectId/finance',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Reconcile certified against paid',
       whatKey: 'cases.payment_application_and_reconciliation.step.reconcile.what',
       whatDefault:
-        'Match what you applied for against what was certified and paid, and chase any shortfall or wrongly withheld amount.',
+        'Line up what you applied for against what the certifier allowed and what was actually paid, then chase every under-certification, wrongly held retention or dropped line.',
       whyKey: 'cases.payment_application_and_reconciliation.step.reconcile.why',
       whyDefault:
-        'Money quietly lost to under-certification never comes back on its own. Reconciling each cycle is what recovers it while it is fresh.',
+        'A few percent shaved off each valuation vanishes quietly and never returns by itself. Reconciling every cycle, while the backup is still to hand, is how that money finds its way home.',
       moduleLabel: 'Reconciliation',
       moduleLabelKey: 'nav.reconciliation',
       to: '/projects/:projectId/reconciliation',

@@ -27,7 +27,7 @@ const playbook: Playbook = {
   titleDefault: 'Set up a project and hand it over',
   descKey: 'cases.project_end_to_end.desc',
   descDefault:
-    'Take a project from first setup all the way to handover. Create it, price the work, plan the schedule, track progress on site, then close it out. Five steps across the whole lifecycle.',
+    'Take a job from the very first setup right through to handover. Create it, price the work, plan the programme, track it on site, then close it out clean. Five steps across the full lifecycle.',
   estMinutes: 20,
   steps: [
     {
@@ -37,10 +37,10 @@ const playbook: Playbook = {
       titleDefault: 'Create the project',
       whatKey: 'cases.project_end_to_end.step.create.what',
       whatDefault:
-        'Open the new project form and fill in the basics: name, client, location and currency. Save it to get a project that everything else hangs off.',
+        'Open the new project form and enter the essentials: name, client, site location and the currency you will bill in. Save it to spin up the project record everything else attaches to.',
       whyKey: 'cases.project_end_to_end.step.create.why',
       whyDefault:
-        'The project is the container that ties the estimate, the schedule and the site records together. Setting it up first gives every later step a home.',
+        'The project record is the spine that holds the estimate, the programme and the site log together. Get it right first and every later module has one place to write to.',
       moduleLabel: 'Projects',
       moduleLabelKey: 'nav.projects',
       to: '/projects/new',
@@ -52,10 +52,10 @@ const playbook: Playbook = {
       titleDefault: 'Build the estimate',
       whatKey: 'cases.project_end_to_end.step.estimate.what',
       whatDefault:
-        'Open the Bill of Quantities and add positions with quantities and unit rates, drawn from the cost database or your own assemblies. The total rolls up live as you work.',
+        'Open the bill of quantities and build up positions with their quantities and unit rates, pulling from the cost database or your saved assemblies. The running total climbs as you go.',
       whyKey: 'cases.project_end_to_end.step.estimate.why',
       whyDefault:
-        'The BOQ is the priced scope of work. It sets the budget that the schedule and the site tracking are measured against later on.',
+        'The priced bill is the agreed scope in numbers. It sets the budget line the programme is resourced against and that site progress gets measured back to.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'boq.title',
       to: '/projects/:projectId/boq',
@@ -67,10 +67,10 @@ const playbook: Playbook = {
       titleDefault: 'Plan the schedule',
       whatKey: 'cases.project_end_to_end.step.schedule.what',
       whatDefault:
-        'Open the schedule and lay out the activities, their durations and the links between them. The critical path shows which tasks drive the finish date.',
+        'Open the schedule and lay out the activities, give each a duration and link them in the sequence the trades actually follow. The critical path lights up the tasks that set the completion date.',
       whyKey: 'cases.project_end_to_end.step.schedule.why',
       whyDefault:
-        'A schedule turns the priced scope into a dated plan. It tells the site team what to build and when, and flags slippage early enough to act on.',
+        'A schedule converts a priced scope into dated work fronts. It tells the site team what comes next and surfaces a slip while there is still float to absorb it.',
       moduleLabel: 'Schedule',
       moduleLabelKey: 'nav.schedule',
       to: '/schedule',
@@ -82,10 +82,10 @@ const playbook: Playbook = {
       titleDefault: 'Track work on site',
       whatKey: 'cases.project_end_to_end.step.track.what',
       whatDefault:
-        'Use the daily diary to log what happened each day: progress, crews, equipment, deliveries and weather. Each entry adds to a dated record of the job.',
+        'Keep the daily diary as the job runs, logging progress, the crews on site, plant, deliveries and the weather each day. Every entry stacks into a dated history of the works.',
       whyKey: 'cases.project_end_to_end.step.track.why',
       whyDefault:
-        'A daily site record shows real progress against the plan and the budget. It is also the evidence you reach for if a delay or a claim comes up.',
+        'A daily record shows actual progress against both the programme and the budget. It is also the first file you open when a delay, a variation or a claim needs proving.',
       moduleLabel: 'Daily Diary',
       moduleLabelKey: 'nav.daily_diary',
       to: '/projects/:projectId/daily-diary',
@@ -97,10 +97,10 @@ const playbook: Playbook = {
       titleDefault: 'Hand over the project',
       whatKey: 'cases.project_end_to_end.step.handover.what',
       whatDefault:
-        'Open handover and closeout to work through the punch list, gather the closeout documents and sign the project off to the client.',
+        'Open handover and closeout to clear the punch list, gather the O and M manuals and warranties, and get the client sign-off.',
       whyKey: 'cases.project_end_to_end.step.handover.why',
       whyDefault:
-        'A clean handover closes the loop: the client gets a finished, documented building, and you keep a complete record of how it was delivered.',
+        'A tidy handover closes the job cleanly. The client walks away with a finished, documented building and you keep a full record of how it was delivered, snags and all.',
       moduleLabel: 'Handover',
       moduleLabelKey: 'closeout.title',
       to: '/closeout',

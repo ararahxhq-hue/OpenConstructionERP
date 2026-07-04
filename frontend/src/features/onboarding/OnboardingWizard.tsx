@@ -199,6 +199,10 @@ interface ProviderOption {
   recommended?: boolean;
 }
 
+// The full provider catalogue, kept in step with the AIProvider union and the
+// Settings AI page so onboarding offers exactly the same choice of models. The
+// two local/self-hosted runtimes (Ollama, vLLM) need a base URL rather than a
+// key, so their doc link points at the runtime docs.
 const AI_PROVIDERS: ProviderOption[] = [
   {
     id: 'anthropic',
@@ -209,7 +213,7 @@ const AI_PROVIDERS: ProviderOption[] = [
   },
   {
     id: 'openai',
-    name: 'OpenAI GPT-4',
+    name: 'OpenAI',
     description: 'Widely supported',
     docsUrl: 'https://platform.openai.com/api-keys',
   },
@@ -218,6 +222,108 @@ const AI_PROVIDERS: ProviderOption[] = [
     name: 'Google Gemini',
     description: 'Multimodal capabilities',
     docsUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: 'One key for many models',
+    docsUrl: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral AI',
+    description: 'European open models',
+    docsUrl: 'https://console.mistral.ai/api-keys/',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    description: 'Very fast inference',
+    docsUrl: 'https://console.groq.com/keys',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    description: 'Low cost, strong reasoning',
+    docsUrl: 'https://platform.deepseek.com/api_keys',
+  },
+  {
+    id: 'together',
+    name: 'Together AI',
+    description: 'Open models at scale',
+    docsUrl: 'https://api.together.ai/settings/api-keys',
+  },
+  {
+    id: 'fireworks',
+    name: 'Fireworks AI',
+    description: 'Fast hosted open models',
+    docsUrl: 'https://fireworks.ai/account/api-keys',
+  },
+  {
+    id: 'perplexity',
+    name: 'Perplexity',
+    description: 'Answers with sources',
+    docsUrl: 'https://www.perplexity.ai/settings/api',
+  },
+  {
+    id: 'cohere',
+    name: 'Cohere',
+    description: 'Enterprise language models',
+    docsUrl: 'https://dashboard.cohere.com/api-keys',
+  },
+  {
+    id: 'ai21',
+    name: 'AI21 Labs',
+    description: 'Jamba long-context models',
+    docsUrl: 'https://studio.ai21.com/account/api-key',
+  },
+  {
+    id: 'xai',
+    name: 'xAI Grok',
+    description: 'Grok models',
+    docsUrl: 'https://console.x.ai/',
+  },
+  {
+    id: 'zhipu',
+    name: 'Zhipu AI',
+    description: 'GLM models',
+    docsUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+  },
+  {
+    id: 'baidu',
+    name: 'Baidu ERNIE',
+    description: 'ERNIE models',
+    docsUrl: 'https://console.bce.baidu.com/',
+  },
+  {
+    id: 'yandex',
+    name: 'YandexGPT',
+    description: 'Yandex Cloud models',
+    docsUrl: 'https://yandex.cloud/en/docs/foundation-models/',
+  },
+  {
+    id: 'gigachat',
+    name: 'GigaChat',
+    description: 'Sber hosted models',
+    docsUrl: 'https://developers.sber.ru/portal/products/gigachat',
+  },
+  {
+    id: 'kimi',
+    name: 'Moonshot Kimi',
+    description: 'Long-context Chinese models',
+    docsUrl: 'https://platform.moonshot.cn/console/api-keys',
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama (local)',
+    description: 'Runs models on your machine',
+    docsUrl: 'https://ollama.com/',
+  },
+  {
+    id: 'vllm',
+    name: 'vLLM (self-hosted)',
+    description: 'Your own OpenAI-compatible server',
+    docsUrl: 'https://docs.vllm.ai/',
   },
 ];
 
@@ -1129,8 +1235,8 @@ function ReadyPackPicker({
           case), so the picker is never an empty dead end. Each card sets the
           language and loads that market's CWICR cost database in one click. */}
       {!isLoading && packs.length === 0 && (
-        <div className="mt-7 w-full max-w-3xl">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mt-7 w-full max-w-5xl">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {COUNTRY_PACKS.map((pack) => {
               const busy = countryInstallingId === pack.id;
               const label = t(pack.labelKey, { defaultValue: pack.labelDefault });
@@ -1205,7 +1311,7 @@ function ReadyPackPicker({
 
       {/* Pack icon grid — tidy square tiles, one per pack. */}
       {!isLoading && packs.length > 0 && (
-        <div className="mt-7 grid w-full max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mt-7 grid w-full max-w-5xl grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {packs.map((pack) => {
             const isSelected = selectedSlug === pack.slug;
             const country = packCountryName(pack);
@@ -1484,8 +1590,9 @@ function StepCompanyProfile({
         })}
       </p>
 
-      {/* Profile cards: 2 column grid on desktop, 1 on mobile */}
-      <div className="mt-6 w-full max-w-2xl grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Profile cards: three columns on desktop, matching the width of the
+          earlier start-choice step, two on tablet, one on mobile. */}
+      <div className="mt-6 w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {presets.filter((p) => p.key !== 'full_enterprise').map((preset) => {
           const isSelected = selectedType === preset.key;
           const Icon = presetIcon(preset.icon);
@@ -1688,7 +1795,7 @@ function StepModuleConfig({
         <div className="flex items-center justify-between rounded-xl bg-surface-elevated shadow-sm shadow-black/[0.04] px-4 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 dark:bg-violet-950/30 shrink-0">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-violet-600"><path d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6a4 4 0 0 1 4-4Z"/><path d="M16 11v1a4 4 0 1 1-8 0v-1"/><path d="M12 19v3"/><path d="M8 22h8"/></svg>
+              <Sparkles size={18} className="text-violet-600" />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-content-primary">

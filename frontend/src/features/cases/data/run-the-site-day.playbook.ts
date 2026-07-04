@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Run the site day',
   descKey: 'cases.run_the_site_day.desc',
   descDefault:
-    'The daily site loop: write the diary, book labour and plant hours, capture photos and log a safety observation, so the day is on the record.',
+    'Close the day out properly: record the diary, book the labour and plant hours, upload the photos and log a safety observation, so the day survives as evidence you can lean on.',
   estMinutes: 9,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Write the site diary',
       whatKey: 'cases.run_the_site_day.step.diary.what',
       whatDefault:
-        'Log the weather, who was on site, what was done and anything that held work up. This is the contemporaneous record of the day.',
+        'Note the weather, the gangs and visitors on site, the work each area achieved and any hold-up such as a late delivery or a service strike. Written the same day, this is your contemporaneous record.',
       whyKey: 'cases.run_the_site_day.step.diary.why',
       whyDefault:
-        'The diary written on the day carries weight a memo written months later never will. It is the first thing anyone reaches for in a dispute.',
+        'A diary entry made on the day carries evidential weight that a reconstruction written months later never will. When a delay claim or a dispute lands, this is the first record the commercial team reaches for.',
       moduleLabel: 'Site diary',
       moduleLabelKey: 'onboarding.mod_daily_diary',
       to: '/projects/:projectId/daily-diary',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Book labour and plant hours',
       whatKey: 'cases.run_the_site_day.step.hours.what',
       whatDefault:
-        'Record the hours worked by each gang and the plant on site against the project, with a cost code so they land in the right place.',
+        'Book the hours each gang and every item of plant put in against this project, tagged to the right cost code so the spend lands where the budget expects it.',
       whyKey: 'cases.run_the_site_day.step.hours.why',
       whyDefault:
-        'Hours captured daily are hours you can bill, cost and check. Left to the end of the month they become an estimate, and estimates leak money.',
+        'Hours captured while the shift is fresh are hours you can bill, cost against the budget and check against output. Reconstructed at month end they turn into guesswork, and guesswork on labour is where margin quietly disappears.',
       moduleLabel: 'Field time',
       moduleLabelKey: 'nav.field_time',
       to: '/projects/:projectId/field-time',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Capture site photos',
       whatKey: 'cases.run_the_site_day.step.photos.what',
       whatDefault:
-        'Upload the photos from the day from the project files. They are tagged as site pictures and appear in the gallery, the strip and the diary.',
+        'Add the day photos from the project files. They are tagged as site pictures and show up in the gallery, the day strip and the diary entry, dated and in sequence.',
       whyKey: 'cases.run_the_site_day.step.photos.why',
       whyDefault:
-        'A dated photo settles arguments no words can. It is proof of progress, of condition and of what was covered before it was covered up.',
+        'A dated photo ends an argument that words drag out. It proves progress, records the condition you inherited and captures reinforcement or services before the pour or the plasterboard hides them for good.',
       moduleLabel: 'Files',
       moduleLabelKey: 'nav.documents',
       to: '/projects/:projectId/files',
@@ -73,10 +73,10 @@ const playbook: Playbook = {
       titleDefault: 'Log a safety observation',
       whatKey: 'cases.run_the_site_day.step.safety.what',
       whatDefault:
-        'Record any hazard, near miss or positive observation from the day and assign who closes it out. Toolbox talks go here too.',
+        'Log any hazard spotted, near miss reported or good practice worth repeating, and name who owns the close-out. Record the toolbox talk and who attended it here as well.',
       whyKey: 'cases.run_the_site_day.step.safety.why',
       whyDefault:
-        'Safety recorded is safety managed. A near miss logged today is the incident you did not have next week.',
+        'What gets recorded gets acted on, and the trend across many small entries is what warns you before a serious event. A near miss written up today is often the injury you avoid next week.',
       moduleLabel: 'Safety',
       moduleLabelKey: 'safety.title',
       to: '/projects/:projectId/safety',

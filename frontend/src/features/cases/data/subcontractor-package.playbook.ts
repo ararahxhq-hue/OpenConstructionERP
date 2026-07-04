@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Run a subcontractor package',
   descKey: 'cases.subcontractor_package.desc',
   descDefault:
-    'Set a trade package up with a subcontractor, put it on a contract with retention, then pay it down through progress claims.',
+    'Award a trade package to a subcontractor, place it on a subcontract with a schedule of values and retention, then pay it down claim by claim against work actually done.',
   estMinutes: 11,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Set up the subcontractor',
       whatKey: 'cases.subcontractor_package.step.subbie.what',
       whatDefault:
-        'Add the subcontractor and their scope, and record the checks you hold them to: insurance, qualifications and any prequalification.',
+        'Set up the subcontractor with their scope of works, and log the checks you require before they start: current insurance, trade qualifications, method statements and any prequalification score.',
       whyKey: 'cases.subcontractor_package.step.subbie.why',
       whyDefault:
-        'The package is only as sound as the firm delivering it. Recording the checks up front is what protects you if the work or the paperwork later falls short.',
+        'A package is only as reliable as the firm you handed it to. The insurance certificate and qualification checks captured up front are what cover you if the work turns bad or a claim lands and the paperwork is challenged.',
       moduleLabel: 'Subcontractors',
       moduleLabelKey: 'onboarding.mod_subcontractors',
       to: '/projects/:projectId/subcontractors',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Put it on a contract',
       whatKey: 'cases.subcontractor_package.step.contract.what',
       whatDefault:
-        'Create the subcontract with the agreed sum, the schedule of values to bill against and the retention percentage to hold.',
+        'Draw up the subcontract with the agreed lump sum, the schedule of values that each claim will be measured against and the retention percentage you will hold on every payment.',
       whyKey: 'cases.subcontractor_package.step.contract.why',
       whyDefault:
-        'A contract with a clear schedule of values is what every later claim is measured against. Retention held now is your cover for defects later.',
+        'A clear schedule of values is the ruler every future claim gets measured with, so there is no arguing over what a payment covers. The retention you withhold now is the leverage that gets snags fixed after the subcontractor has moved on.',
       moduleLabel: 'Contracts',
       moduleLabelKey: 'onboarding.mod_contracts',
       to: '/projects/:projectId/contracts',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Pay down with progress claims',
       whatKey: 'cases.subcontractor_package.step.claim.what',
       whatDefault:
-        'Each period, certify the work done against the schedule of values, apply retention and record the payment. The contract keeps the running balance.',
+        'Each valuation period, certify the percentage complete against each schedule of values line, deduct retention and record what is actually paid. The subcontract carries the running balance forward automatically.',
       whyKey: 'cases.subcontractor_package.step.claim.why',
       whyDefault:
-        'Certifying against the schedule of values means you pay for progress, not for optimism. The running balance stops over-payment before it happens.',
+        'Certifying line by line against the schedule of values means you pay for work in the ground, not for a subcontractor optimistic view of it. The running balance flags an over-claim before you certify it, not after the money has gone.',
       moduleLabel: 'Contracts',
       moduleLabelKey: 'onboarding.mod_contracts',
       to: '/projects/:projectId/contracts',

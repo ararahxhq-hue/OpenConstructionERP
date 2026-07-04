@@ -1234,10 +1234,37 @@ export function AboutPage() {
               <p className="mb-3 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
                 {t('about.thanks_sponsors_label', { defaultValue: 'Sponsors and donors' })}
               </p>
-              <div className="flex flex-wrap gap-3">
-                {SPONSORS.map(s => (
-                  <AckAvatar key={s.handle ?? s.name} entry={s} prominent />
-                ))}
+              {/* Text-only nickname chips - no avatars or remote images, so the
+                  wall stays self-contained and reads cleanly offline. When a
+                  sponsor supplies a handle or url the chip links to it. */}
+              <div className="flex flex-wrap items-center gap-2">
+                {SPONSORS.map(s => {
+                  const url = acknowledgedUrl(s);
+                  const chipCls =
+                    'inline-flex items-center gap-1.5 rounded-md border border-emerald-300/50 bg-emerald-50/50 dark:border-emerald-500/25 dark:bg-emerald-900/10 px-2.5 py-1 text-xs font-medium text-content-secondary';
+                  const label = (
+                    <>
+                      <HandCoins size={12} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span>{s.name}</span>
+                    </>
+                  );
+                  return url ? (
+                    <a
+                      key={s.handle ?? s.name}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={s.name}
+                      className={clsx(chipCls, 'transition-colors hover:border-emerald-400/70 hover:text-content-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1')}
+                    >
+                      {label}
+                    </a>
+                  ) : (
+                    <span key={s.handle ?? s.name} title={s.name} className={chipCls}>
+                      {label}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           ) : (

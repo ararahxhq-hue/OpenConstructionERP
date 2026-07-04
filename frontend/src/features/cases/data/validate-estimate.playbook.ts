@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Check an estimate before you send it',
   descKey: 'cases.validate_estimate.desc',
   descDefault:
-    'Run the validation rules over a priced bill, clear the warnings and errors, then export a clean report you can hand to the client.',
+    'Put a priced bill through the validation rules, clear every warning and error, then export a clean report you can hand straight to the client.',
   estMinutes: 8,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Open the priced bill',
       whatKey: 'cases.validate_estimate.step.boq.what',
       whatDefault:
-        'Open the BOQ you are about to send and confirm every position carries a quantity and a rate. Empty cells and stray zeros are the first thing the validator looks for.',
+        'Open the bill you are about to issue and confirm every position carries both a quantity and a rate. Blank cells and stray zeros are the first thing the validator hunts down, so a quick scan now saves surprises.',
       whyKey: 'cases.validate_estimate.step.boq.why',
       whyDefault:
-        'A gap you miss becomes a gap the client finds. Reviewing the bill first means the validation pass confirms your work instead of surprising you.',
+        'A gap you overlook is a gap the client finds first, usually in the meeting. Reviewing the bill yourself means the validation pass confirms good work rather than exposing a hole.',
       moduleLabel: 'BOQ',
       moduleLabelKey: 'boq.title',
       to: '/projects/:projectId/boq',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Run the validation rules',
       whatKey: 'cases.validate_estimate.step.validate.what',
       whatDefault:
-        'Run the rule sets over the bill and read the traffic-light result. Each error and warning links back to the exact position so you can jump to it and fix the cause.',
+        'Run the rule sets across the bill and read the traffic-light result. Each error and warning is linked to the exact position, so you can jump to the offending line and fix the cause rather than the symptom.',
       whyKey: 'cases.validate_estimate.step.validate.why',
       whyDefault:
-        'Missing quantities, zero prices, duplicate positions and out-of-range rates are cheap to fix now and expensive to explain later. The score is your go or no-go.',
+        'Missing quantities, zero prices, duplicate lines and rates outside a sane band are cheap to correct today and awkward to explain after issue. The score is your honest go or no-go signal.',
       moduleLabel: 'Validation',
       moduleLabelKey: 'validation.title',
       to: '/validation',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Export the report',
       whatKey: 'cases.validate_estimate.step.report.what',
       whatDefault:
-        'Once the bill is green, export the summary and the detailed breakdown. The report carries the cost split and the validation result together.',
+        'Once the bill reads green, export the executive summary alongside the detailed breakdown. The report ships the cost split and the validation outcome in one document.',
       whyKey: 'cases.validate_estimate.step.report.why',
       whyDefault:
-        'A report backed by a passed validation is a report you can defend. It shows the client not just the number but that the number was checked.',
+        'A report that sits on a passed validation is one you can stand behind under questioning. It shows the client not only the total but the fact that the total was checked against rules.',
       moduleLabel: 'Reports',
       moduleLabelKey: 'nav.reporting',
       to: '/reports',

@@ -47,6 +47,7 @@ import { Button, Badge } from '@/shared/ui';
 import { projectsApi, type Project } from '@/features/projects/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import type { Playbook, PlaybookStep } from './types';
+import { tintFor } from './categories';
 import { useCasesStore, EMPTY_PROGRESS } from './useCasesStore';
 import {
   clampStepIndex,
@@ -211,6 +212,19 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
     total,
   });
 
+  // Visual identity + the focused step, resolved once for the detail stage.
+  const tint = tintFor(playbook.category);
+  const PlaybookIcon = iconFor(playbook.icon);
+  const currentStep = playbook.steps[currentIndex];
+  const CurIcon = iconFor(currentStep?.icon);
+  const curDone = currentStep ? isStepDone(progress, currentStep.id) : false;
+  const curTitle = currentStep ? t(currentStep.titleKey, { defaultValue: currentStep.titleDefault }) : '';
+  const curModule = currentStep
+    ? currentStep.moduleLabelKey
+      ? t(currentStep.moduleLabelKey, { defaultValue: currentStep.moduleLabel })
+      : currentStep.moduleLabel
+    : '';
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -224,9 +238,20 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           {t('cases.back_to_list', { defaultValue: 'All cases' })}
         </button>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight text-content-primary">{title}</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-content-secondary">{desc}</p>
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              className={clsx(
+                'mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
+                tint.tile,
+              )}
+              aria-hidden="true"
+            >
+              <PlaybookIcon size={20} strokeWidth={1.9} />
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight text-content-primary">{title}</h1>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-content-secondary">{desc}</p>
+            </div>
           </div>
           <Button
             variant="ghost"
@@ -243,199 +268,238 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         </div>
       </div>
 
-      {/* ── Progress strip: dots + counter ─────────────────────────────── */}
-      <div
-        className="flex items-center gap-3"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={doneCount}
-        aria-valuetext={progressLabel}
-        aria-label={t('cases.progress_label', { defaultValue: 'Case progress' })}
-        aria-live="polite"
-      >
-        <ol className="flex flex-1 items-center" aria-hidden="true">
-          {playbook.steps.map((step, i) => {
-            const done = isStepDone(progress, step.id);
-            const isCurrent = i === currentIndex;
-            return (
-              <li key={step.id} className="flex flex-1 items-center last:flex-none">
-                <span
-                  className={clsx(
-                    'flex h-2.5 w-2.5 shrink-0 rounded-full transition-colors',
-                    done
-                      ? 'bg-oe-blue'
-                      : isCurrent
-                        ? 'bg-oe-blue/30 ring-2 ring-oe-blue'
-                        : 'bg-border',
-                  )}
-                />
-                {i < total - 1 && (
-                  <span
-                    className={clsx(
-                      'mx-1 h-0.5 flex-1 rounded-full transition-colors',
-                      done ? 'bg-oe-blue' : 'bg-border',
-                    )}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ol>
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-xs font-medium tabular-nums text-content-secondary"
-        >
-          {progressLabel}
-        </span>
-      </div>
-
-      {/* ── Sample-project picker ───────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border-light bg-surface-secondary/40 px-3.5 py-2.5">
-        <label htmlFor={selectId} className="text-xs font-semibold text-content-secondary">
-          {t('cases.run_on', { defaultValue: 'Run on' })}
-        </label>
-        <select
-          id={selectId}
-          value={selectedRaw}
-          onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
-          className="h-8 max-w-full rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-        >
-          <option value="">
-            {t('cases.run_on_none', { defaultValue: 'No sample project (just open the module)' })}
-          </option>
-          {sortedProjects.map((p) => {
-            const label = isDemoProject(p)
-              ? t('cases.run_on_sample_option', { defaultValue: '{{name}} (sample)', name: p.name })
-              : p.name;
-            return (
-              <option key={p.id} value={p.id}>
-                {label}
-              </option>
-            );
-          })}
-        </select>
-        <span className="text-2xs text-content-tertiary">
-          {t('cases.run_on_hint', {
-            defaultValue: 'Pick a sample project to follow the steps on, or leave empty.',
-          })}
-        </span>
-      </div>
-
-      {/* ── Steps ───────────────────────────────────────────────────────── */}
-      <ol className="space-y-2.5" aria-label={title}>
-        {playbook.steps.map((step, i) => {
-          const done = isStepDone(progress, step.id);
-          const isCurrent = i === currentIndex;
-          const StepIcon = iconFor(step.icon);
-          const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
-          const moduleLabel = step.moduleLabelKey
-            ? t(step.moduleLabelKey, { defaultValue: step.moduleLabel })
-            : step.moduleLabel;
-          return (
-            <li key={step.id}>
+      {/* ── Work area: a compact step rail beside the focused step ───────── */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:items-start">
+        {/* Rail: progress, sample project, and the ordered step list */}
+        <aside className="space-y-3 lg:sticky lg:top-4">
+          {/* Progress */}
+          <div
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-valuenow={doneCount}
+            aria-valuetext={progressLabel}
+            aria-label={t('cases.progress_label', { defaultValue: 'Case progress' })}
+            aria-live="polite"
+          >
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                {t('cases.progress_label', { defaultValue: 'Case progress' })}
+              </span>
+              <span className="text-2xs font-medium tabular-nums text-content-secondary">
+                {progressLabel}
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-secondary">
               <div
-                className={clsx(
-                  'rounded-xl border transition-shadow',
-                  isCurrent
-                    ? 'border-oe-blue/50 bg-oe-blue/[0.04] shadow-sm ring-1 ring-oe-blue/20'
-                    : 'border-border-light bg-surface-primary hover:shadow-sm',
-                )}
-              >
-                {/* Row: status + number + title + module chip */}
-                <button
-                  type="button"
-                  ref={(el) => {
-                    stepRefs.current[i] = el;
-                  }}
-                  onClick={() => selectStep(i)}
-                  onKeyDown={(e) => onStepKeyDown(e, i)}
-                  aria-current={isCurrent ? 'step' : undefined}
-                  aria-expanded={isCurrent}
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-                >
-                  <span
+                className="h-full rounded-full bg-oe-blue transition-all"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Sample-project picker (compact) */}
+          <div className="rounded-xl border border-dashed border-border-light bg-surface-secondary/40 p-2.5">
+            <label
+              htmlFor={selectId}
+              className="mb-1 block text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
+            >
+              {t('cases.run_on', { defaultValue: 'Run on' })}
+            </label>
+            <select
+              id={selectId}
+              value={selectedRaw}
+              onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
+              className="h-8 w-full rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            >
+              <option value="">
+                {t('cases.run_on_none', { defaultValue: 'No sample project (just open the module)' })}
+              </option>
+              {sortedProjects.map((p) => {
+                const label = isDemoProject(p)
+                  ? t('cases.run_on_sample_option', { defaultValue: '{{name}} (sample)', name: p.name })
+                  : p.name;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Step list: compact, selectable rows (detail shows in the stage) */}
+          <ol className="space-y-1.5" aria-label={title}>
+            {playbook.steps.map((step, i) => {
+              const done = isStepDone(progress, step.id);
+              const isCurrent = i === currentIndex;
+              const StepIcon = iconFor(step.icon);
+              const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
+              return (
+                <li key={step.id}>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      stepRefs.current[i] = el;
+                    }}
+                    onClick={() => selectStep(i)}
+                    onKeyDown={(e) => onStepKeyDown(e, i)}
+                    aria-current={isCurrent ? 'step' : undefined}
                     className={clsx(
-                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
-                      done
-                        ? 'bg-oe-blue text-white'
-                        : isCurrent
-                          ? 'bg-oe-blue/15 text-oe-blue ring-1 ring-inset ring-oe-blue/30'
-                          : 'bg-surface-secondary text-content-tertiary',
+                      'flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                      isCurrent
+                        ? 'border-oe-blue/50 bg-oe-blue/[0.06]'
+                        : 'border-transparent hover:bg-surface-secondary/60',
                     )}
-                    aria-hidden="true"
                   >
-                    {done ? <Check size={15} strokeWidth={2.5} /> : i + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
                     <span
                       className={clsx(
-                        'block truncate text-sm font-semibold',
-                        done ? 'text-content-secondary' : 'text-content-primary',
+                        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold transition-colors',
+                        done
+                          ? 'bg-oe-blue text-white'
+                          : isCurrent
+                            ? 'bg-oe-blue/15 text-oe-blue ring-1 ring-inset ring-oe-blue/30'
+                            : 'bg-surface-secondary text-content-tertiary',
+                      )}
+                      aria-hidden="true"
+                    >
+                      {done ? <Check size={13} strokeWidth={2.5} /> : i + 1}
+                    </span>
+                    <span
+                      className={clsx(
+                        'min-w-0 flex-1 truncate text-xs font-medium',
+                        isCurrent
+                          ? 'text-content-primary'
+                          : done
+                            ? 'text-content-secondary'
+                            : 'text-content-primary',
                       )}
                     >
                       {stepTitle}
                     </span>
-                  </span>
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-light bg-surface-secondary px-2 py-1 text-2xs font-medium text-content-secondary">
-                    <StepIcon size={12} strokeWidth={2} aria-hidden="true" />
-                    {moduleLabel}
-                  </span>
-                </button>
+                    <StepIcon
+                      size={13}
+                      strokeWidth={2}
+                      className={clsx('shrink-0', isCurrent ? 'text-oe-blue' : 'text-content-tertiary')}
+                      aria-hidden="true"
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </aside>
 
-                {/* Detail: what + why + actions (focused step only) */}
-                {isCurrent && (
-                  <div className="border-t border-border-light px-3.5 py-3.5">
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-2xs font-semibold uppercase tracking-wide text-oe-blue">
-                          {t('cases.step.what', { defaultValue: 'What you do' })}
-                        </p>
-                        <p className="mt-1 text-[13px] leading-relaxed text-content-secondary">
-                          {t(step.whatKey, { defaultValue: step.whatDefault })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                          {t('cases.step.why', { defaultValue: 'Why' })}
-                        </p>
-                        <p className="mt-1 text-[13px] leading-relaxed text-content-secondary">
-                          {t(step.whyKey, { defaultValue: step.whyDefault })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        icon={<ArrowRight size={13} />}
-                        iconPosition="right"
-                        onClick={() => handleGo(step)}
-                        aria-label={t('cases.step.go_to', {
-                          defaultValue: 'Go to {{module}}',
-                          module: moduleLabel,
-                        })}
-                      >
-                        {t('cases.step.go', { defaultValue: 'Go' })}
-                      </Button>
-                      <Button
-                        variant={done ? 'ghost' : 'secondary'}
-                        size="sm"
-                        icon={done ? <RotateCcw size={13} /> : <Check size={13} />}
-                        onClick={() => handleToggle(step)}
-                      >
-                        {done
-                          ? t('cases.step.mark_undone', { defaultValue: 'Mark not done' })
-                          : t('cases.step.mark_done', { defaultValue: 'Mark done' })}
-                      </Button>
-                    </div>
-                  </div>
-                )}
+        {/* Stage: the focused step in full ────────────────────────────────── */}
+        <section aria-live="polite" className="min-w-0">
+          {currentStep && (
+            <div className="rounded-2xl border border-border-light bg-surface-primary p-5 shadow-xs sm:p-6">
+              {/* Eyebrow: step counter + module chip */}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t('cases.step_counter', {
+                    defaultValue: 'Step {{n}} of {{total}}',
+                    n: currentIndex + 1,
+                    total,
+                  })}
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-light bg-surface-secondary px-2 py-1 text-2xs font-medium text-content-secondary">
+                  <CurIcon size={12} strokeWidth={2} aria-hidden="true" />
+                  {curModule}
+                </span>
               </div>
-            </li>
-          );
-        })}
-      </ol>
+
+              {/* Title with status badge */}
+              <div className="flex items-start gap-3">
+                <span
+                  className={clsx(
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                    curDone
+                      ? 'bg-oe-blue text-white'
+                      : 'bg-oe-blue/15 text-oe-blue ring-1 ring-inset ring-oe-blue/30',
+                  )}
+                  aria-hidden="true"
+                >
+                  {curDone ? <Check size={17} strokeWidth={2.5} /> : currentIndex + 1}
+                </span>
+                <h2 className="mt-1 text-base font-semibold leading-snug text-content-primary">
+                  {curTitle}
+                </h2>
+              </div>
+
+              {/* What + Why */}
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className={clsx('text-2xs font-semibold uppercase tracking-wide', tint.text)}>
+                    {t('cases.step.what', { defaultValue: 'What you do' })}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-content-secondary">
+                    {t(currentStep.whatKey, { defaultValue: currentStep.whatDefault })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                    {t('cases.step.why', { defaultValue: 'Why' })}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-content-secondary">
+                    {t(currentStep.whyKey, { defaultValue: currentStep.whyDefault })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Primary actions */}
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<ArrowRight size={13} />}
+                  iconPosition="right"
+                  onClick={() => handleGo(currentStep)}
+                  aria-label={t('cases.step.go_to', {
+                    defaultValue: 'Go to {{module}}',
+                    module: curModule,
+                  })}
+                >
+                  {t('cases.step.go', { defaultValue: 'Go' })}
+                </Button>
+                <Button
+                  variant={curDone ? 'ghost' : 'secondary'}
+                  size="sm"
+                  icon={curDone ? <RotateCcw size={13} /> : <Check size={13} />}
+                  onClick={() => handleToggle(currentStep)}
+                >
+                  {curDone
+                    ? t('cases.step.mark_undone', { defaultValue: 'Mark not done' })
+                    : t('cases.step.mark_done', { defaultValue: 'Mark done' })}
+                </Button>
+              </div>
+
+              {/* Step-to-step navigation */}
+              <div className="mt-5 flex items-center justify-between gap-2 border-t border-border-light pt-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<ArrowLeft size={13} />}
+                  onClick={() => selectStep(clampStepIndex(currentIndex - 1, total))}
+                  disabled={currentIndex === 0}
+                >
+                  {t('cases.prev_step', { defaultValue: 'Previous' })}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<ArrowRight size={13} />}
+                  iconPosition="right"
+                  onClick={() => selectStep(clampStepIndex(currentIndex + 1, total))}
+                  disabled={currentIndex === total - 1}
+                >
+                  {t('cases.next_step', { defaultValue: 'Next' })}
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
 
       {/* ── Completion note ─────────────────────────────────────────────── */}
       {allDone && (

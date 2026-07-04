@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Answer an RFI',
   descKey: 'cases.answer_an_rfi.desc',
   descDefault:
-    'Turn a site question into a tracked request, chase the answer through the right party and file the response so it becomes the record.',
+    'Turn a question from the working face into a tracked request, drive it to the party who owns the answer, and file the response so it becomes part of the record.',
   estMinutes: 9,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Raise the request',
       whatKey: 'cases.answer_an_rfi.step.raise.what',
       whatDefault:
-        'Log the RFI with a clear question, the affected location and drawing, and a needed-by date driven by the programme.',
+        'Open the RFI with the actual question, the location and drawing reference it affects, and a needed-by date set from when the crew reaches that work, not an arbitrary week away.',
       whyKey: 'cases.answer_an_rfi.step.raise.why',
       whyDefault:
-        'A vague question gets a slow answer. A precise RFI with a date attached is what lets a late reply be pinned to a delay.',
+        'A woolly question buys a woolly answer and a week of delay. A tight RFI carrying a real date is also what lets a slow reply be tied back to lost time if it comes to that.',
       moduleLabel: 'RFIs',
       moduleLabelKey: 'nav.rfi',
       to: '/projects/:projectId/rfi',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Route and chase it',
       whatKey: 'cases.answer_an_rfi.step.chase.what',
       whatDefault:
-        'Send it to the party who owns the answer and track the correspondence so the open item and its due date stay visible.',
+        'Route it to the designer or consultant who owns the response and keep the correspondence in one thread, with the open item and its due date sitting where everyone can see the clock.',
       whyKey: 'cases.answer_an_rfi.step.chase.why',
       whyDefault:
-        'RFIs go quiet in inboxes. Routing and chasing in one thread is what keeps the answer moving and the trail intact.',
+        'RFIs die quietly at the bottom of an inbox. Keeping the routing, the reminders and the reply in a single visible trail is what keeps the answer moving and the history defensible.',
       moduleLabel: 'Correspondence',
       moduleLabelKey: 'nav.correspondence',
       to: '/projects/:projectId/correspondence',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'File the answer',
       whatKey: 'cases.answer_an_rfi.step.file.what',
       whatDefault:
-        'Attach the response and any revised drawing to the project files and close the RFI so the record is complete.',
+        'Attach the answer and any superseded or revised drawing to the project files, link it back to the affected work, and close the RFI so the loop is shut.',
       whyKey: 'cases.answer_an_rfi.step.file.why',
       whyDefault:
-        'The answer only helps if the crew can find it. A filed, closed RFI is what stops the same question being asked twice.',
+        'An answer buried in a single inbox helps nobody at the trowel. A filed, closed RFI is what stops the same question being asked again next month by the next trade.',
       moduleLabel: 'Files',
       moduleLabelKey: 'nav.documents',
       to: '/projects/:projectId/files',

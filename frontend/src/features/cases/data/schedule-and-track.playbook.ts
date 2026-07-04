@@ -18,7 +18,7 @@ const playbook: Playbook = {
   titleDefault: 'Build a baseline and track progress',
   descKey: 'cases.schedule_and_track.desc',
   descDefault:
-    'Plan the programme, freeze a baseline to measure against, capture real progress from site and read the variance so slippage shows early.',
+    'Plan the programme, freeze a baseline to measure against, feed real progress back from site and read the variance so slippage surfaces early.',
   estMinutes: 12,
   steps: [
     {
@@ -28,10 +28,10 @@ const playbook: Playbook = {
       titleDefault: 'Lay out the programme',
       whatKey: 'cases.schedule_and_track.step.plan.what',
       whatDefault:
-        'Build the activities, durations and links so the critical path is clear. Group the work the way you will report it, by trade, zone or phase.',
+        'Build out the activities, set a duration on each and link them in the order the trades follow so the critical path falls out. Group the work the way you will report it later, by trade, by zone or by phase.',
       whyKey: 'cases.schedule_and_track.step.plan.why',
       whyDefault:
-        'The programme is the promise you make about time. A clear critical path tells you which delays actually move the finish date and which do not.',
+        'The programme is the promise you make on time. A clear critical path separates the delays that genuinely push the finish date from the ones that only eat float.',
       moduleLabel: 'Schedule',
       moduleLabelKey: 'schedule.title',
       to: '/schedule',
@@ -43,10 +43,10 @@ const playbook: Playbook = {
       titleDefault: 'Freeze the baseline',
       whatKey: 'cases.schedule_and_track.step.baseline.what',
       whatDefault:
-        'Save the agreed plan as a baseline before work starts. Every later update is compared against this frozen copy.',
+        'Save the agreed programme as a baseline before a spade goes in the ground. From here on every update is read against this frozen copy.',
       whyKey: 'cases.schedule_and_track.step.baseline.why',
       whyDefault:
-        'Without a baseline there is nothing to be late against. Freezing it is what turns a plan into a yardstick you can defend in a claim.',
+        'With no baseline there is nothing to be late against. Freezing it is what converts a plan into a yardstick that holds up when an extension of time is argued.',
       moduleLabel: 'Advanced scheduling',
       moduleLabelKey: 'onboarding.mod_schedule_advanced',
       to: '/schedule-advanced',
@@ -58,10 +58,10 @@ const playbook: Playbook = {
       titleDefault: 'Capture real progress',
       whatKey: 'cases.schedule_and_track.step.actuals.what',
       whatDefault:
-        'Record actual start and finish and the hours worked from the field so the schedule reflects what really happened this period.',
+        'Record actual start and finish dates and the hours booked from the field, so the schedule mirrors what the crews really did this period.',
       whyKey: 'cases.schedule_and_track.step.actuals.why',
       whyDefault:
-        'A plan nobody updates is fiction by the second week. Feeding real site data back is what keeps the forecast honest.',
+        'A programme nobody updates is fiction by the second week. Feeding site data back is the only thing that keeps the forecast honest and the completion date believable.',
       moduleLabel: 'Field time',
       moduleLabelKey: 'nav.field_time',
       to: '/projects/:projectId/field-time',
@@ -73,10 +73,10 @@ const playbook: Playbook = {
       titleDefault: 'Read the variance',
       whatKey: 'cases.schedule_and_track.step.variance.what',
       whatDefault:
-        'Compare the updated schedule against the baseline and read the slippage and float. The advanced view shows the critical path shifting as progress lands.',
+        'Set the updated programme against the baseline and read the slippage and the remaining float. The advanced view shows the critical path shifting as each progress update lands.',
       whyKey: 'cases.schedule_and_track.step.variance.why',
       whyDefault:
-        'Variance seen early is a decision you can still make. The point of tracking is to act on a two-week slip, not to record a two-month one.',
+        'A variance spotted early is still a decision you can make. The whole point of tracking is to act on a two-week slip now, not to document a two-month one at the end.',
       moduleLabel: 'Advanced scheduling',
       moduleLabelKey: 'onboarding.mod_schedule_advanced',
       to: '/schedule-advanced',

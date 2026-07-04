@@ -19,6 +19,7 @@ import {
   toggleStep,
 } from './progress';
 import { PLAYBOOKS, getPlaybook } from './playbooks';
+import { CATEGORY_META } from './categories';
 import type { Playbook, PlaybookProgress } from './types';
 
 /** A small synthetic playbook so the helper tests do not depend on shipped content. */
@@ -237,5 +238,63 @@ describe('playbook auto-discovery (import.meta.glob)', () => {
     expect(getPlaybook('price-from-pdf')?.id).toBe('price-from-pdf');
     expect(getPlaybook('does-not-exist')).toBeUndefined();
     expect(getPlaybook(undefined)).toBeUndefined();
+  });
+});
+
+/* ── Shipped-content integrity: every case must be usable end to end ─────── */
+
+const VALID_CATEGORIES = new Set(CATEGORY_META.map((c) => c.id));
+
+describe('shipped cases integrity', () => {
+  it('ships the full expected catalogue', () => {
+    // Guards against a data file silently dropping out of the glob.
+    expect(PLAYBOOKS.length).toBeGreaterThanOrEqual(24);
+  });
+
+  it('every case has a known category and a positive time estimate', () => {
+    for (const pb of PLAYBOOKS) {
+      expect(VALID_CATEGORIES.has(pb.category)).toBe(true);
+      expect(pb.estMinutes).toBeGreaterThan(0);
+    }
+  });
+
+  it('orders are unique so the list is deterministic', () => {
+    const orders = PLAYBOOKS.map((p) => p.order);
+    expect(new Set(orders).size).toBe(orders.length);
+  });
+
+  it('every step route resolves to a usable path, scoped and unscoped', () => {
+    for (const pb of PLAYBOOKS) {
+      for (const step of pb.steps) {
+        // A project slot may only appear as the standard prefix.
+        if (step.to.includes(':projectId')) {
+          expect(step.to.startsWith('/projects/:projectId')).toBe(true);
+        }
+        // Both resolutions must yield a clean absolute path with no leftover
+        // slot and no doubled slashes.
+        for (const pid of ['p1', null] as const) {
+          const r = resolveStepRoute(step.to, pid);
+          expect(r.startsWith('/')).toBe(true);
+          expect(r).not.toContain(':projectId');
+          expect(r).not.toContain('//');
+        }
+      }
+    }
+  });
+
+  it('all copy is plain ASCII with no long dashes or smart quotes', () => {
+    // en/em dashes, curly quotes and ellipsis - the no-long-dash rule applies
+    // to shipped copy too, and this catches stray non-ASCII. Escapes keep this
+    // source file itself ASCII-clean.
+    const badChar = /[\u2010-\u2015\u2018\u2019\u201C\u201D\u2026]/;
+    for (const pb of PLAYBOOKS) {
+      const strings = [pb.titleDefault, pb.descDefault];
+      for (const step of pb.steps) {
+        strings.push(step.titleDefault, step.whatDefault, step.whyDefault, step.moduleLabel);
+      }
+      for (const s of strings) {
+        expect(badChar.test(s), `bad character in "${s}"`).toBe(false);
+      }
+    }
   });
 });
