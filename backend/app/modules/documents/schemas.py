@@ -23,7 +23,7 @@ class DocumentUpdate(BaseModel):
     description: str | None = None
     category: str | None = Field(
         default=None,
-        pattern=r"^(drawing|contract|specification|photo|correspondence|other)$",
+        pattern=r"^(drawing|contract|specification|photo|correspondence|reality_capture|other)$",
     )
     tags: list[str] | None = None
     metadata: dict[str, Any] | None = None
