@@ -256,6 +256,11 @@ interface Measurement {
   height?: number; // Height for rectangle/highlight
   fillAlpha?: number; // Per-measurement fill opacity 0..1 (issue #311)
   strokeWidth?: number; // Per-measurement stroke width in CSS px (issue #312)
+  /** Custom colour of this measurement's GROUP (issue #313), mirrored onto the
+   *  measurement so the group colour scheme round-trips server-side through the
+   *  metadata blob (like fillAlpha/strokeWidth) instead of being localStorage-
+   *  only. Distinct from `color`, which is a per-measurement override. */
+  groupColor?: string;
   /** Free-form notes entered via the properties panel. */
   notes?: string;
   /** Opening deduction: an `area` measurement that represents a void
@@ -421,6 +426,10 @@ export default function TakeoffViewerModule({
   useEffect(() => {
     try { localStorage.setItem('takeoff.showSidebar', String(showSidebar)); } catch { /* ignore */ }
   }, [showSidebar]);
+  /** Mirror of showSidebar so the keydown handler can tell whether the panel is
+   *  collapsed (#315) without joining the handler's dependency array. */
+  const showSidebarRef = useRef(showSidebar);
+  showSidebarRef.current = showSidebar;
   /** Independently hide the on-canvas measurement name badges and the dimension
    *  values, so a dense sheet can be decluttered without hiding geometry; the
    *  numbers stay in the Ledger and hover tooltip either way (#314). Persisted. */
@@ -1024,6 +1033,46 @@ export default function TakeoffViewerModule({
       /* ignore quota / private-mode failures */
     }
   }, [documentId, customGroupColors]);
+
+  /* Server-side group-colour persistence (issue #313). localStorage alone left
+   * a re-coloured group blue for a second user / another machine. The metadata
+   * blob on each measurement DOES round-trip to the server (like the #311/#312
+   * per-measurement styles), so mirror each group's custom colour onto its
+   * measurements' `groupColor`: that stamps the sync-signature, PATCHes the
+   * rows, and comes back through `fromApiFormat` -> the reconstruction effect
+   * below. Guarded so it only re-renders when a colour actually drifts (no
+   * migration, no new schema). */
+  useEffect(() => {
+    setMeasurements((prev) => {
+      let changed = false;
+      const next = prev.map((m) => {
+        const gc = customGroupColors[m.group];
+        if (gc === undefined || m.groupColor === gc) return m;
+        changed = true;
+        return { ...m, groupColor: gc };
+      });
+      return changed ? next : prev;
+    });
+  }, [customGroupColors, measurements]);
+
+  /* Rebuild the group-colour map from measurements loaded off the server
+   * (issue #313): a colour set on another machine arrives in each measurement's
+   * `groupColor`, so fold it back into `customGroupColors` where the canvas,
+   * legend and colour picker read it. Guarded to avoid a render loop with the
+   * stamping effect above (they converge to the same value). */
+  useEffect(() => {
+    setCustomGroupColors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const m of measurements) {
+        if (m.groupColor && next[m.group] !== m.groupColor) {
+          next[m.group] = m.groupColor;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [measurements]);
 
   /* ── Reset per-document caches when the open PDF changes ──────────────
    * Thumbnails and extracted text layers are keyed by page number, so they
@@ -3373,6 +3422,23 @@ export default function TakeoffViewerModule({
       next[name] = moved;
       return next;
     });
+    // Carry the hidden / collapsed state across to the new name (issue #313):
+    // without this a hidden group reappears and a collapsed one expands after a
+    // rename because those sets still key on the old name.
+    setHiddenGroups((prev) => {
+      if (!prev.has(activeGroup)) return prev;
+      const next = new Set(prev);
+      next.delete(activeGroup);
+      next.add(name);
+      return next;
+    });
+    setCollapsedGroups((prev) => {
+      if (!prev.has(activeGroup)) return prev;
+      const next = new Set(prev);
+      next.delete(activeGroup);
+      next.add(name);
+      return next;
+    });
     setActiveGroup(name);
   }, [activeGroup, t]);
 
@@ -5005,8 +5071,20 @@ export default function TakeoffViewerModule({
         // of appending to the one just finished (#307/#308).
         if (activeTool === 'count') {
           e.preventDefault();
-          countLabelRef.current?.focus();
-          countLabelRef.current?.select();
+          const focusCountLabel = () => {
+            countLabelRef.current?.focus();
+            countLabelRef.current?.select();
+          };
+          // The Count Label input lives in the right sidebar, which #315 can
+          // collapse with display:none - a hidden element cannot take focus, so
+          // the shortcut was a silent no-op when the panel was closed. Expand
+          // the panel first, then focus once it has rendered on the next frame.
+          if (!showSidebarRef.current) {
+            setShowSidebar(true);
+            requestAnimationFrame(focusCountLabel);
+          } else {
+            focusCountLabel();
+          }
           return;
         }
       }

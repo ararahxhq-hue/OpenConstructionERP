@@ -9,45 +9,18 @@
 // mark-done / reset controls. Progress and the sample-project choice are owned
 // by useCasesStore and persist across reloads.
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  type ComponentType,
-  type KeyboardEvent,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  RotateCcw,
-  CheckCircle2,
-  Upload,
-  Ruler,
-  Table2,
-  ShieldCheck,
-  FileBarChart,
-  FileSpreadsheet,
-  Layers,
-  Calculator,
-  Handshake,
-  ScanLine,
-  ClipboardCheck,
-  Send,
-  Building2,
-  Sparkles,
-  type LucideProps,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { Button, Badge } from '@/shared/ui';
 import { projectsApi, type Project } from '@/features/projects/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import type { Playbook, PlaybookStep } from './types';
 import { tintFor } from './categories';
+import { iconFor } from './icons';
 import { useCasesStore, EMPTY_PROGRESS } from './useCasesStore';
 import {
   clampStepIndex,
@@ -60,30 +33,6 @@ import {
   runKey,
   toggleStep,
 } from './progress';
-
-/* ── Icon resolution (curated, teaching-oriented set) ───────────────────── */
-
-const ICON_MAP: Record<string, ComponentType<LucideProps>> = {
-  Upload,
-  Ruler,
-  Table2,
-  ShieldCheck,
-  FileBarChart,
-  FileSpreadsheet,
-  Layers,
-  Calculator,
-  Handshake,
-  ScanLine,
-  ClipboardCheck,
-  Send,
-  Building2,
-  Sparkles,
-};
-
-function iconFor(name: string | undefined): ComponentType<LucideProps> {
-  if (name && name in ICON_MAP) return ICON_MAP[name]!;
-  return Sparkles;
-}
 
 /** Returns true for seeded sample projects (they carry `metadata.demo_id`). */
 function isDemoProject(p: Project): boolean {

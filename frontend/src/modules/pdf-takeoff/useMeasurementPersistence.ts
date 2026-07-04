@@ -39,6 +39,11 @@ interface Measurement {
   /** Per-measurement stroke width override in CSS px (issue #312). Round-trips
    *  via metadata; falls back to the 2px hairline when unset. */
   strokeWidth?: number;
+  /** Custom colour of this measurement's GROUP (issue #313), distinct from the
+   *  per-measurement `color` override. Round-trips via the metadata blob the
+   *  same way `fillAlpha` / `strokeWidth` do, so a re-coloured group survives a
+   *  server sync and is visible to other users (not localStorage-only). */
+  groupColor?: string;
   /** Opening deduction (area void). Stored as positive gross area; the
    *  rollup subtracts it. Round-trips so a void survives a server sync. */
   isDeduction?: boolean;
@@ -297,6 +302,9 @@ function toApiFormat(
       // a re-styled measurement survives a server sync.
       fill_alpha: m.fillAlpha,
       stroke_width: m.strokeWidth,
+      // Group colour (issue #313): mirrored onto each measurement so the group
+      // colour scheme round-trips server-side like the per-measurement styles.
+      group_custom_color: m.groupColor,
       area: areaValue ?? undefined,
       frontend_id: m.id,
       // Per-page calibration intent (issue #277): distinguishes a real
@@ -341,6 +349,9 @@ function syncSignature(m: Measurement): string {
     // must re-sync so the server copy carries it.
     fa: m.fillAlpha ?? null,
     sw: m.strokeWidth ?? null,
+    // Group colour (issue #313): a group re-colour restyles every measurement
+    // in the group, so include it here to trigger the PATCH that persists it.
+    gc: m.groupColor ?? null,
     a: m.annotation || m.label || null,
     n: m.text ?? null,
   });
@@ -385,6 +396,9 @@ function toApiUpdate(
       // PATCH because the server replaces the metadata blob wholesale.
       fill_alpha: m.fillAlpha,
       stroke_width: m.strokeWidth,
+      // Group colour (issue #313): re-sent on PATCH so a group re-colour /
+      // rename persists server-side (the server replaces metadata wholesale).
+      group_custom_color: m.groupColor,
       area: areaValue ?? undefined,
       frontend_id: m.id,
       // Preserve the per-page calibration intent (issue #277): the server
@@ -424,6 +438,7 @@ function fromApiFormat(r: MeasurementResponse): Measurement {
     height: (meta.height as number) ?? undefined,
     fillAlpha: (meta.fill_alpha as number) ?? undefined,
     strokeWidth: (meta.stroke_width as number) ?? undefined,
+    groupColor: (meta.group_custom_color as string) ?? undefined,
     isDeduction: r.is_deduction ?? undefined,
     linkedPositionId: r.linked_boq_position_id ?? undefined,
     linkedBoqId: (meta.linked_boq_id as string) ?? undefined,

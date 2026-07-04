@@ -3,9 +3,11 @@
 """Built-in estimating-methodology templates (pure data + a pure builder).
 
 This module is the data-driven catalogue of methodology templates the platform
-ships with: a neutral international default, core templates for several popular
-countries, the Uzbekistan cascading methodology, the Mexican APU cascading
-methodology, and a Railway-infrastructure industry template. The service layer
+ships with: a neutral international default, flat templates for many popular
+countries across every region, the Uzbekistan cascading methodology, the
+Mexican APU cascading methodology, and a set of industry packs (railway, roads,
+bridges, tunnelling, earthworks, water and wastewater, power, industrial plant,
+residential and commercial buildings, and building services). The service layer
 (:mod:`app.modules.methodology.service`) installs any of these into a project
 idempotently.
 
@@ -250,6 +252,284 @@ def _cbs_dimension() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Industry building blocks (typed hierarchies, dimensions and the shared
+# heavy-civil cascade). Each industry template below composes these with the
+# SMR-vs-equipment or flat cascade already defined above, so a specialist
+# estimator gets the right breakdown regardless of country. Every figure is an
+# editable, clearly-labelled starting point once installed.
+# ---------------------------------------------------------------------------
+
+# Road and highway typed hierarchy: Route section (a chainage stretch) ->
+# Structure (a discrete asset within it) -> Work line.
+_ROAD_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "route_section", "label": "Route section", "order": 0},
+    {"key": "structure", "label": "Structure", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Bridge and structures typed hierarchy: Structure -> Span or Element -> Work.
+_BRIDGE_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "structure", "label": "Structure", "order": 0},
+    {"key": "span", "label": "Span or element", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Utility network typed hierarchy (water, wastewater, power): Network ->
+# Section or Asset -> Work. Shared by the linear-network industries.
+_NETWORK_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "network", "label": "Network", "order": 0},
+    {"key": "section", "label": "Section or asset", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Building typed hierarchy: Building -> Level -> Work.
+_BUILDING_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "building", "label": "Building", "order": 0},
+    {"key": "level", "label": "Level", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Process and industrial plant typed hierarchy: Area -> System -> Work.
+_PLANT_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "area", "label": "Area", "order": 0},
+    {"key": "system", "label": "System", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Building services (MEP) typed hierarchy: System -> Zone -> Work.
+_MEP_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "system", "label": "System", "order": 0},
+    {"key": "zone", "label": "Zone", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Tunnelling and underground typed hierarchy: Drive or bore -> Structure ->
+# Work.
+_TUNNEL_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "drive", "label": "Drive or bore", "order": 0},
+    {"key": "structure", "label": "Structure", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+# Earthworks and site development typed hierarchy: Zone -> Area -> Work.
+_EARTHWORKS_HIERARCHY: list[dict[str, Any]] = [
+    {"key": "zone", "label": "Zone", "order": 0},
+    {"key": "area", "label": "Area", "order": 1},
+    {"key": "work", "label": "Work", "order": 2},
+]
+
+
+def _flat_dimension(key: str, label: str, values: list[tuple[str, str]]) -> dict[str, Any]:
+    """Build a flat reference dimension from (code, label) pairs.
+
+    A small helper so each industry can declare its characteristic analytical
+    dimension as data. All industry dimensions are optional (``is_required``
+    False) and fully editable once the methodology is installed.
+    """
+    return {
+        "key": key,
+        "label": label,
+        "kind": "flat",
+        "is_required": False,
+        "values": [{"code": code, "label": text} for code, text in values],
+    }
+
+
+def _pavement_layer_dimension() -> dict[str, Any]:
+    """Road pavement layers, subgrade up to running surface."""
+    return _flat_dimension(
+        "pavement_layer",
+        "Pavement layer",
+        [
+            ("subgrade", "Subgrade"),
+            ("subbase", "Subbase"),
+            ("base", "Base course"),
+            ("binder", "Binder course"),
+            ("surface", "Surface course"),
+        ],
+    )
+
+
+def _bridge_element_dimension() -> dict[str, Any]:
+    """Bridge structural elements, foundation up to deck furniture."""
+    return _flat_dimension(
+        "bridge_element",
+        "Structural element",
+        [
+            ("foundation", "Foundation"),
+            ("substructure", "Substructure"),
+            ("superstructure", "Superstructure"),
+            ("deck", "Deck"),
+            ("bearings", "Bearings and joints"),
+            ("finishes", "Waterproofing and finishes"),
+        ],
+    )
+
+
+def _asset_type_dimension() -> dict[str, Any]:
+    """Water and wastewater asset types."""
+    return _flat_dimension(
+        "asset_type",
+        "Asset type",
+        [
+            ("pipeline", "Pipeline"),
+            ("treatment", "Treatment plant"),
+            ("pumping", "Pumping station"),
+            ("storage", "Storage or reservoir"),
+            ("chamber", "Chamber or manhole"),
+        ],
+    )
+
+
+def _voltage_level_dimension() -> dict[str, Any]:
+    """Power transmission and distribution voltage levels."""
+    return _flat_dimension(
+        "voltage_level",
+        "Voltage level",
+        [
+            ("lv", "Low voltage"),
+            ("mv", "Medium voltage"),
+            ("hv", "High voltage"),
+            ("ehv", "Extra high voltage"),
+        ],
+    )
+
+
+def _discipline_dimension() -> dict[str, Any]:
+    """Engineering disciplines for a process or industrial plant."""
+    return _flat_dimension(
+        "discipline",
+        "Discipline",
+        [
+            ("civil", "Civil"),
+            ("structural", "Structural"),
+            ("mechanical", "Mechanical"),
+            ("piping", "Piping"),
+            ("electrical", "Electrical"),
+            ("instrumentation", "Instrumentation and control"),
+        ],
+    )
+
+
+def _mep_discipline_dimension() -> dict[str, Any]:
+    """Building services (MEP) disciplines."""
+    return _flat_dimension(
+        "mep_discipline",
+        "Services discipline",
+        [
+            ("mechanical", "Mechanical and HVAC"),
+            ("electrical", "Electrical"),
+            ("plumbing", "Plumbing and drainage"),
+            ("fire", "Fire protection"),
+            ("controls", "Controls and building management"),
+        ],
+    )
+
+
+def _building_trade_dimension() -> dict[str, Any]:
+    """Building trade packages, substructure through external works."""
+    return _flat_dimension(
+        "trade",
+        "Trade package",
+        [
+            ("substructure", "Substructure"),
+            ("superstructure", "Superstructure"),
+            ("envelope", "Facade and envelope"),
+            ("finishes", "Internal finishes"),
+            ("services", "Building services"),
+            ("external", "External works"),
+        ],
+    )
+
+
+def _tunnel_method_dimension() -> dict[str, Any]:
+    """Tunnelling construction methods."""
+    return _flat_dimension(
+        "tunnel_method",
+        "Construction method",
+        [
+            ("bored", "Bored (mechanised)"),
+            ("drill_blast", "Drill and blast"),
+            ("cut_cover", "Cut and cover"),
+            ("mined", "Sequential mined"),
+        ],
+    )
+
+
+def _earthworks_type_dimension() -> dict[str, Any]:
+    """Earthworks and site development operation types."""
+    return _flat_dimension(
+        "earthworks_type",
+        "Earthworks operation",
+        [
+            ("clearing", "Site clearing"),
+            ("excavation", "Excavation"),
+            ("fill", "Fill and embankment"),
+            ("compaction", "Compaction"),
+            ("stabilisation", "Slope and stabilisation"),
+        ],
+    )
+
+
+def _infra_cascade_steps(*, vat: str = "0") -> list[dict[str, Any]]:
+    """The heavy-civil SMR-and-equipment cascade shared by infra industries.
+
+    Mirrors the railway cascade: temporary/winter works and other contractor
+    costs apply to SMR (labor, machinery, materials); a contingency reserve and
+    VAT then apply to SMR plus installed equipment plus the prior steps. All
+    rates default to a clearly-labelled, editable starting point.
+
+    Args:
+        vat: VAT rate, percent, as a string. Defaults to ``"0"`` because an
+            industry template is country-neutral until installed.
+    """
+    return [
+        {
+            "key": "other_temp_winter",
+            "label": "Temporary buildings and winter works",
+            "category": "temp_winter",
+            "kind": "percentage",
+            "rate": "0",
+            "amount": "0",
+            "base": ["SMR"],
+        },
+        {
+            "key": "contractor_other",
+            "label": "Other contractor costs",
+            "category": "contractor_other",
+            "kind": "percentage",
+            "rate": "0",
+            "amount": "0",
+            "base": ["SMR", "other_temp_winter"],
+        },
+        {
+            "key": "contingency",
+            "label": "Contingency reserve",
+            "category": "contingency",
+            "kind": "percentage",
+            "rate": "0",
+            "amount": "0",
+            "base": ["SMR", "equipment", "other_temp_winter", "contractor_other"],
+        },
+        {
+            "key": "vat",
+            "label": "VAT",
+            "category": "tax",
+            "kind": "percentage",
+            "rate": vat,
+            "amount": "0",
+            "base": [
+                "SMR",
+                "equipment",
+                "other_temp_winter",
+                "contractor_other",
+                "contingency",
+            ],
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
 # The template catalogue
 # ---------------------------------------------------------------------------
 #
@@ -394,6 +674,269 @@ _COUNTRY_TEMPLATES: list[dict[str, Any]] = [
         "composites": _FLAT_COMPOSITES,
         "cascade_steps": _flat_steps(overhead="12", profit="8", vat="10"),
         "vat_rate": "10",
+    },
+    {
+        "slug": "canada",
+        "name": "Canada",
+        "description": (
+            "Canadian flat estimate with general conditions, overhead and profit. "
+            "Sales tax (GST/HST) varies by province, so the tax step defaults low."
+        ),
+        "country_code": "CA",
+        "industry": None,
+        "currency": "CAD",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": "CSI",
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="10", profit="10", vat="5"),
+        "vat_rate": "5",
+    },
+    {
+        "slug": "spain",
+        "name": "Spain",
+        "description": "Spanish flat estimate with overhead (gastos generales), profit and IVA.",
+        "country_code": "ES",
+        "industry": None,
+        "currency": "EUR",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="13", profit="6", vat="21"),
+        "vat_rate": "21",
+    },
+    {
+        "slug": "italy",
+        "name": "Italy",
+        "description": "Italian flat estimate with site overhead, profit and IVA.",
+        "country_code": "IT",
+        "industry": None,
+        "currency": "EUR",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="15", profit="10", vat="22"),
+        "vat_rate": "22",
+    },
+    {
+        "slug": "netherlands",
+        "name": "Netherlands",
+        "description": "Dutch flat estimate with overhead (AK), profit and BTW.",
+        "country_code": "NL",
+        "industry": None,
+        "currency": "EUR",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="8", profit="5", vat="21"),
+        "vat_rate": "21",
+    },
+    {
+        "slug": "poland",
+        "name": "Poland",
+        "description": "Polish flat estimate with overhead (koszty posrednie), profit and VAT.",
+        "country_code": "PL",
+        "industry": None,
+        "currency": "PLN",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="23"),
+        "vat_rate": "23",
+    },
+    {
+        "slug": "austria",
+        "name": "Austria",
+        "description": "Austrian flat estimate with site overhead, profit and USt.",
+        "country_code": "AT",
+        "industry": None,
+        "currency": "EUR",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": "ONORM",
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="20"),
+        "vat_rate": "20",
+    },
+    {
+        "slug": "switzerland",
+        "name": "Switzerland",
+        "description": "Swiss flat estimate with overhead, profit and MWST.",
+        "country_code": "CH",
+        "industry": None,
+        "currency": "CHF",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="8.1"),
+        "vat_rate": "8.1",
+    },
+    {
+        "slug": "sweden",
+        "name": "Sweden",
+        "description": "Swedish flat estimate with overhead, profit and moms.",
+        "country_code": "SE",
+        "industry": None,
+        "currency": "SEK",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="10", profit="7", vat="25"),
+        "vat_rate": "25",
+    },
+    {
+        "slug": "norway",
+        "name": "Norway",
+        "description": "Norwegian flat estimate with overhead, profit and MVA.",
+        "country_code": "NO",
+        "industry": None,
+        "currency": "NOK",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="25"),
+        "vat_rate": "25",
+    },
+    {
+        "slug": "brazil",
+        "name": "Brazil",
+        "description": (
+            "Brazilian flat estimate with indirect costs and profit (the BDI "
+            "tradition). Taxes vary by municipality and regime, so the tax step "
+            "defaults to zero."
+        ),
+        "country_code": "BR",
+        "industry": None,
+        "currency": "BRL",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="18", profit="8", vat="0"),
+        "vat_rate": "0",
+    },
+    {
+        "slug": "saudi_arabia",
+        "name": "Saudi Arabia",
+        "description": "Saudi flat estimate with preliminaries, profit and VAT.",
+        "country_code": "SA",
+        "industry": None,
+        "currency": "SAR",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="15"),
+        "vat_rate": "15",
+    },
+    {
+        "slug": "south_africa",
+        "name": "South Africa",
+        "description": "South African flat estimate with preliminaries, profit and VAT.",
+        "country_code": "ZA",
+        "industry": None,
+        "currency": "ZAR",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="15"),
+        "vat_rate": "15",
+    },
+    {
+        "slug": "china",
+        "name": "China",
+        "description": "Chinese flat estimate with overhead, profit and VAT.",
+        "country_code": "CN",
+        "industry": None,
+        "currency": "CNY",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="10", profit="7", vat="9"),
+        "vat_rate": "9",
+    },
+    {
+        "slug": "japan",
+        "name": "Japan",
+        "description": "Japanese flat estimate with site overhead, profit and consumption tax.",
+        "country_code": "JP",
+        "industry": None,
+        "currency": "JPY",
+        "decimals": 0,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="10"),
+        "vat_rate": "10",
+    },
+    {
+        "slug": "south_korea",
+        "name": "South Korea",
+        "description": "Korean flat estimate with overhead, profit and VAT.",
+        "country_code": "KR",
+        "industry": None,
+        "currency": "KRW",
+        "decimals": 0,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="12", profit="8", vat="10"),
+        "vat_rate": "10",
+    },
+    {
+        "slug": "singapore",
+        "name": "Singapore",
+        "description": "Singapore flat estimate with preliminaries, profit and GST.",
+        "country_code": "SG",
+        "industry": None,
+        "currency": "SGD",
+        "decimals": 2,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": None,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead="10", profit="8", vat="9"),
+        "vat_rate": "9",
     },
 ]
 
@@ -645,13 +1188,246 @@ _RAILWAY_TEMPLATE: dict[str, Any] = {
 }
 
 
-# Ordered catalogue: international first, then countries, then UZ, MX, railway.
+# Industry-infrastructure templates. Each is country-neutral (currency blank,
+# VAT a placeholder step) but ships a sector-specific typed hierarchy and the
+# characteristic analytical dimension for that sector, so a specialist
+# estimator gets the right structure regardless of country. The heavy-civil
+# sectors use the SMR-and-installed-equipment cascade; buildings and services
+# use the flat direct-cost cascade.
+_ROAD_TEMPLATE: dict[str, Any] = {
+    "slug": "road_highway",
+    "name": "Roads and highways",
+    "description": (
+        "Road and highway methodology: Route section, Structure and Work "
+        "levels; pavement-layer and stage dimensions; SMR and installed-"
+        "equipment cascade for a machinery-intensive sector."
+    ),
+    "country_code": None,
+    "industry": "road",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _ROAD_HIERARCHY,
+    "dimensions": [_pavement_layer_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_BRIDGE_TEMPLATE: dict[str, Any] = {
+    "slug": "bridge_structures",
+    "name": "Bridges and structures",
+    "description": (
+        "Bridge and structures methodology: Structure, Span or element and "
+        "Work levels; structural-element and stage dimensions; SMR and "
+        "installed-equipment cascade."
+    ),
+    "country_code": None,
+    "industry": "bridge",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _BRIDGE_HIERARCHY,
+    "dimensions": [_bridge_element_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_WATER_TEMPLATE: dict[str, Any] = {
+    "slug": "water_wastewater",
+    "name": "Water and wastewater",
+    "description": (
+        "Water and wastewater networks methodology: Network, Section or asset "
+        "and Work levels; asset-type and stage dimensions; SMR and installed-"
+        "equipment cascade."
+    ),
+    "country_code": None,
+    "industry": "water",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _NETWORK_HIERARCHY,
+    "dimensions": [_asset_type_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_POWER_TEMPLATE: dict[str, Any] = {
+    "slug": "power_transmission",
+    "name": "Power transmission and distribution",
+    "description": (
+        "Power transmission and distribution methodology: Network, Section or "
+        "asset and Work levels; voltage-level and stage dimensions; SMR plus a "
+        "distinct installed-equipment base for transformers and switchgear."
+    ),
+    "country_code": None,
+    "industry": "power",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _NETWORK_HIERARCHY,
+    "dimensions": [_voltage_level_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_TUNNEL_TEMPLATE: dict[str, Any] = {
+    "slug": "tunnel_underground",
+    "name": "Tunnelling and underground",
+    "description": (
+        "Tunnelling and underground methodology: Drive or bore, Structure and "
+        "Work levels; construction-method and stage dimensions; SMR and "
+        "installed-equipment cascade."
+    ),
+    "country_code": None,
+    "industry": "tunnel",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _TUNNEL_HIERARCHY,
+    "dimensions": [_tunnel_method_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_EARTHWORKS_TEMPLATE: dict[str, Any] = {
+    "slug": "earthworks_sitework",
+    "name": "Earthworks and site development",
+    "description": (
+        "Earthworks and site development methodology: Zone, Area and Work "
+        "levels; earthworks-operation and stage dimensions; SMR and installed-"
+        "equipment cascade for a plant-intensive sector."
+    ),
+    "country_code": None,
+    "industry": "earthworks",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _EARTHWORKS_HIERARCHY,
+    "dimensions": [_earthworks_type_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_PLANT_TEMPLATE: dict[str, Any] = {
+    "slug": "industrial_plant",
+    "name": "Industrial and process plant",
+    "description": (
+        "Industrial and process plant methodology: Area, System and Work "
+        "levels; discipline and stage dimensions; SMR plus a distinct "
+        "installed-equipment base for process equipment."
+    ),
+    "country_code": None,
+    "industry": "industrial",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _PLANT_HIERARCHY,
+    "dimensions": [_discipline_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _CASCADE_BASE_MAPPING,
+    "composites": _SMR_COMPOSITE,
+    "cascade_steps": _infra_cascade_steps(),
+    "vat_rate": None,
+}
+
+_RESIDENTIAL_TEMPLATE: dict[str, Any] = {
+    "slug": "building_residential",
+    "name": "Residential buildings",
+    "description": (
+        "Residential building methodology: Building, Level and Work levels; "
+        "trade-package and stage dimensions; flat direct-cost cascade with "
+        "overhead, profit and a placeholder VAT step."
+    ),
+    "country_code": None,
+    "industry": "residential",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _BUILDING_HIERARCHY,
+    "dimensions": [_building_trade_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _FLAT_BASE_MAPPING,
+    "composites": _FLAT_COMPOSITES,
+    "cascade_steps": _flat_steps(overhead="12", profit="8", vat="0"),
+    "vat_rate": None,
+}
+
+_COMMERCIAL_TEMPLATE: dict[str, Any] = {
+    "slug": "building_commercial",
+    "name": "Commercial buildings",
+    "description": (
+        "Commercial and office building methodology: Building, Level and Work "
+        "levels; trade-package and stage dimensions; flat direct-cost cascade "
+        "with overhead, profit and a placeholder VAT step."
+    ),
+    "country_code": None,
+    "industry": "commercial",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _BUILDING_HIERARCHY,
+    "dimensions": [_building_trade_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _FLAT_BASE_MAPPING,
+    "composites": _FLAT_COMPOSITES,
+    "cascade_steps": _flat_steps(overhead="13", profit="8", vat="0"),
+    "vat_rate": None,
+}
+
+_MEP_TEMPLATE: dict[str, Any] = {
+    "slug": "mep_systems",
+    "name": "Mechanical, electrical and plumbing",
+    "description": (
+        "Building services (MEP) methodology: System, Zone and Work levels; "
+        "services-discipline and stage dimensions; flat direct-cost cascade "
+        "that keeps installed equipment as a costed resource."
+    ),
+    "country_code": None,
+    "industry": "mep",
+    "currency": "",
+    "decimals": 2,
+    "hierarchy_levels": _MEP_HIERARCHY,
+    "dimensions": [_mep_discipline_dimension(), _stage_dimension()],
+    "column_preset": None,
+    "base_mapping": _FLAT_BASE_MAPPING,
+    "composites": _FLAT_COMPOSITES,
+    "cascade_steps": _flat_steps(overhead="12", profit="10", vat="0"),
+    "vat_rate": None,
+}
+
+# Industry packs, in catalogue order (railway first as the original pack).
+_INDUSTRY_TEMPLATES: list[dict[str, Any]] = [
+    _RAILWAY_TEMPLATE,
+    _ROAD_TEMPLATE,
+    _BRIDGE_TEMPLATE,
+    _TUNNEL_TEMPLATE,
+    _EARTHWORKS_TEMPLATE,
+    _WATER_TEMPLATE,
+    _POWER_TEMPLATE,
+    _PLANT_TEMPLATE,
+    _RESIDENTIAL_TEMPLATE,
+    _COMMERCIAL_TEMPLATE,
+    _MEP_TEMPLATE,
+]
+
+
+# Ordered catalogue: international first, then countries, then UZ, MX, then the
+# industry packs (railway plus the sector methodologies).
 TEMPLATES: tuple[dict[str, Any], ...] = (
     _INTERNATIONAL_TEMPLATE,
     *_COUNTRY_TEMPLATES,
     _UZBEKISTAN_TEMPLATE,
     _MEXICO_TEMPLATE,
-    _RAILWAY_TEMPLATE,
+    *_INDUSTRY_TEMPLATES,
 )
 
 # Index by slug for O(1) lookup. Built once at import time.

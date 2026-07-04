@@ -813,116 +813,6 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   '/architecture': 'oe_architecture_map',
 };
 
-/** Maps a sidebar route (`NavItem.to`, query string stripped) to the canonical
- *  module key used by Company Profiles and the onboarding catalogue
- *  (`frontend/src/features/onboarding/modules.ts` + the backend
- *  `onboarding_presets.py`). When a profile leaves that module out, the row is
- *  hidden — this is what makes a Company Profile actually shape the sidebar
- *  rather than just toggle a counter.
- *
- *  Several routes can share one key (e.g. all model-coordination surfaces map
- *  to `bim_hub`, every property-dev tab to `property_dev`) so a profile reveals
- *  or hides a whole capability at once. Core surfaces every company needs
- *  (Dashboard, Projects, Files, Contacts, Estimation Intelligence, Architecture
- *  Map) are intentionally absent here, so a profile can never hide them. */
-const ROUTE_MODULE_KEY: Record<string, string> = {
-  // Estimating
-  '/boq': 'boq',
-  '/match-elements': 'match_elements',
-  '/ai-estimator': 'ai_estimator',
-  '/ai-estimate': 'ai',
-  // Catalogues & reference (/costs, /catalog, /assemblies) are intentionally
-  // absent: the cost database, resource catalogue and assembly library are
-  // core to a cost-estimation platform, so a company profile must never hide
-  // them. They are forced on in onboarding_presets._CORE_MODULES too.
-  // Takeoff
-  '/quantities': 'takeoff',
-  '/takeoff': 'takeoff',
-  '/dwg-takeoff': 'dwg_takeoff',
-  '/bim': 'bim_hub',
-  '/data-explorer': 'cad',
-  // Model coordination (all powered by the BIM hub capability)
-  '/coordination': 'bim_hub',
-  '/bim/federations': 'bim_hub',
-  '/clash': 'bim_hub',
-  '/bim/rules': 'bim_requirements',
-  '/requirements/matrix': 'bim_requirements',
-  '/geo': 'bim_hub',
-  // AI & tools
-  '/ai-agents': 'ai',
-  '/advisor': 'ai',
-  '/chat': 'erp_chat',
-  // (/pipelines, /benchmarks, /sustainability are gated by their inline
-  //  `moduleKey` instead — no Company-Profile mapping. /risk-analysis was
-  //  retired in the Monte Carlo IA merge and now redirects to /risks.)
-  // Commercial
-  '/crm': 'crm',
-  '/contracts': 'contracts',
-  '/subcontractors': 'subcontractors',
-  '/bid-management': 'bid_management',
-  '/tendering': 'tendering',
-  '/variations': 'variations',
-  '/moc': 'moc',
-  '/supplier-catalogs': 'supplier_catalogs',
-  // Real estate development (every tab tied to the one capability)
-  '/property-dev': 'property_dev',
-  '/accommodation': 'property_dev',
-  '/property-dev/dashboards': 'property_dev',
-  '/property-dev/settings/house-types': 'property_dev',
-  '/property-dev/settings/document-templates': 'property_dev',
-  // Planning
-  '/schedule': 'schedule',
-  '/schedule-advanced': 'schedule_advanced',
-  '/portfolio': 'schedule_advanced',
-  '/takt': 'schedule_advanced',
-  '/tasks': 'tasks',
-  '/5d': 'costmodel',
-  '/risks': 'risk',
-  // Field operations
-  '/daily-diary': 'daily_diary',
-  '/field-reports': 'fieldreports',
-  '/field-time': 'field_time',
-  '/equipment': 'equipment',
-  '/resources': 'resources',
-  '/payroll': 'payroll',
-  '/service': 'service',
-  '/portal': 'portal',
-  '/assets': 'equipment',
-  // Quality
-  '/validation': 'validation',
-  '/inspections': 'inspections',
-  '/construction-control': 'construction_control',
-  '/ncr': 'ncr',
-  '/punchlist': 'punchlist',
-  '/closeout': 'closeout',
-  '/qms': 'qms',
-  // Safety & HSE
-  '/safety': 'safety',
-  '/hse-advanced': 'hse_advanced',
-  '/carbon': 'carbon',
-  // Communication
-  '/meetings': 'meetings',
-  '/rfi': 'rfi',
-  '/submittals': 'submittals',
-  '/transmittals': 'transmittals',
-  '/correspondence': 'correspondence',
-  '/collaboration': 'collaboration',
-  // Documentation
-  '/cde': 'cde',
-  '/photos': 'documents',
-  '/markups': 'markups',
-  // Finance & procurement
-  '/finance': 'finance',
-  '/procurement': 'procurement',
-  '/changeorders': 'changeorders',
-  // Analytics & reports
-  '/reports': 'reporting',
-  '/project-controls': 'project_controls',
-  '/bi-dashboards': 'bi_dashboards',
-  '/dashboards': 'reporting',
-  '/reporting': 'reporting',
-};
-
 // localStorage key for collapsed state
 const COLLAPSED_KEY = 'oe_sidebar_collapsed_v2';
 const PINNED_KEY = 'oe_sidebar_pinned';
@@ -1614,18 +1504,19 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           // the menu tidy.
           const allItems = [...group.items, ...dynamicItems];
           const visibleItems = allItems.filter((item) => {
-            // The active Company Profile maps each route to a canonical module
-            // key; when the profile leaves that module out, the row is hidden.
-            // Inline `moduleKey` (e.g. dynamic plugin rows) is the fallback.
-            // Routes absent from ROUTE_MODULE_KEY are never profile-gated.
-            const moduleKey = ROUTE_MODULE_KEY[item.to.split('?')[0]!] ?? item.moduleKey;
+            // Company Profiles / onboarding packs PRE-SELECT modules, they do
+            // not remove them. Every module stays listed in the menu whatever
+            // profile was chosen during onboarding, so nothing a company might
+            // need is ever hidden by its profile. The per-project focus gate
+            // below only annotates rows with a sequence number; it never drops
+            // them either.
             return (
-              (!moduleKey || isModuleEnabled(moduleKey)) &&
               (!item.advancedOnly || isAdvanced) &&
               (!item.adminOnly || userRole === 'admin') &&
-              // Backend-disabled gate — a System Module switched off on the
-              // Modules page hides its sidebar route here so we never link
-              // to a broken/blank surface.
+              // Backend-disabled gate - a System Module a company admin has
+              // explicitly switched off on the System Modules admin tab hides
+              // its sidebar route here so we never link to a broken/blank
+              // surface. This is an admin control, not the onboarding profile.
               !isRouteBackendDisabled(item.to) &&
               // Menu-editor filter — in normal mode, drop user-hidden
               // rows; in edit mode `effectiveHidden` is empty so every

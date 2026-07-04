@@ -7735,7 +7735,7 @@ const resource = {
     "boq.loading_element_data": "Cargando datos del elemento...",
     "boq.loading_full_properties": "Cargando propiedades completas...",
     "boq.lock": "Bloquear presupuesto",
-    "boq.lock_confirm": "¿Bloquear este presupuesto?nnLos presupuestos bloqueados no se pueden editar. Desbloquear requiere privilegios de administrador.",
+    "boq.lock_confirm": "¿Bloquear este presupuesto?\n\nLos presupuestos bloqueados no se pueden editar. Desbloquear requiere privilegios de administrador.",
     "boq.lock_failed": "Error al bloquear",
     "boq.lock_tooltip": "El bloqueo impide ediciones. Cree una revisión para modificar un presupuesto bloqueado.",
     "boq.locked": "BLOQUEADO",

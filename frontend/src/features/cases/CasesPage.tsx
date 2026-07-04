@@ -13,25 +13,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import {
-  GraduationCap,
   Route,
   ArrowRight,
   Clock,
   ListChecks,
-  FileSpreadsheet,
-  Ruler,
-  ShieldCheck,
-  Handshake,
   Layers,
-  Sparkles,
   Search,
-  Calculator,
-  CalendarClock,
-  Box,
-  HardHat,
-  BadgeCheck,
-  FileSignature,
-  PackageCheck,
   type LucideProps,
 } from 'lucide-react';
 import { Badge, EmptyState } from '@/shared/ui';
@@ -40,29 +27,8 @@ import { PlaybookRunner } from './PlaybookRunner';
 import { useCasesStore } from './useCasesStore';
 import { completedCount } from './progress';
 import { CATEGORY_META, tintFor, NEUTRAL_TINT } from './categories';
+import { iconFor } from './icons';
 import type { Playbook, CaseCategory } from './types';
-
-const ICON_MAP: Record<string, ComponentType<LucideProps>> = {
-  FileSpreadsheet,
-  Ruler,
-  ShieldCheck,
-  Handshake,
-  Layers,
-  Sparkles,
-  GraduationCap,
-  Calculator,
-  CalendarClock,
-  Box,
-  HardHat,
-  BadgeCheck,
-  FileSignature,
-  PackageCheck,
-};
-
-function iconFor(name: string | undefined): ComponentType<LucideProps> {
-  if (name && name in ICON_MAP) return ICON_MAP[name]!;
-  return Sparkles;
-}
 
 export function CasesPage() {
   const { playbookId } = useParams<{ playbookId?: string }>();
