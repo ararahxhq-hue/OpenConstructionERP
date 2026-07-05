@@ -61,7 +61,7 @@ const playbook: Playbook = {
         'Once the bill reads green, export the executive summary alongside the detailed breakdown. The report ships the cost split and the validation outcome in one document.',
       whyKey: 'cases.validate_estimate.step.report.why',
       whyDefault:
-        'A report that sits on a passed validation is one you can stand behind under questioning. It shows the client not only the total but the fact that the total was checked against rules.',
+        'A report backed by a passed validation is one you can stand behind under questioning. It shows the client not just the total but that the total was checked against rules before it was sent.',
       moduleLabel: 'Reports',
       moduleLabelKey: 'nav.reporting',
       to: '/reports',

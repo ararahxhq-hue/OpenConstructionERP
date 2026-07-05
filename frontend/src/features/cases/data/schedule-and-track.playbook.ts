@@ -31,7 +31,7 @@ const playbook: Playbook = {
         'Build out the activities, set a duration on each and link them in the order the trades follow so the critical path falls out. Group the work the way you will report it later, by trade, by zone or by phase.',
       whyKey: 'cases.schedule_and_track.step.plan.why',
       whyDefault:
-        'The programme is the promise you make on time. A clear critical path separates the delays that genuinely push the finish date from the ones that only eat float.',
+        'The programme is your promise on when the job finishes. A clear critical path separates the delays that genuinely push the finish date from the ones that only eat float.',
       moduleLabel: 'Schedule',
       moduleLabelKey: 'schedule.title',
       to: '/schedule',

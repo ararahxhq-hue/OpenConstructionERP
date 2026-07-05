@@ -58,7 +58,7 @@ const playbook: Playbook = {
       titleDefault: 'Report the trend',
       whatKey: 'cases.change_register_and_impact.step.report.what',
       whatDefault:
-        'Produce the change report showing cumulative value, the open versus agreed split, and the effect each item carries on the forecast final account.',
+        'Produce the change report showing the cumulative value to date, the split of open against agreed, and how much each item moves the forecast final account.',
       whyKey: 'cases.change_register_and_impact.step.report.why',
       whyDefault:
         'A client will accept a change trend they watched build; they fight the one dropped on them at the final account. Reporting early and plainly is what keeps that last conversation calm.',

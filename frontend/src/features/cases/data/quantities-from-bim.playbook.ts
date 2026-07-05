@@ -61,7 +61,7 @@ const playbook: Playbook = {
         'Run the validation rules to confirm the mapped quantities are complete and consistent, and that a classification is present wherever the rule set demands one.',
       whyKey: 'cases.quantities_from_bim.step.validate.why',
       whyDefault:
-        'A model can be perfectly modelled and still miss the one property you need to price. Validation catches the unmapped element and the blank classification before the bill reaches the client.',
+        'A model can look complete and still miss the one property you need to price. Validation catches the unmapped element and the blank classification before the bill reaches the client.',
       moduleLabel: 'Validation',
       moduleLabelKey: 'validation.title',
       to: '/validation',
