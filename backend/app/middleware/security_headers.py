@@ -1,4 +1,4 @@
-"""‌⁠‍Security response headers middleware.
+"""Security response headers middleware.
 
 Adds the standard set of defensive HTTP response headers:
   - X-Frame-Options: SAMEORIGIN      (clickjacking; allows same-origin PDF preview)
@@ -18,7 +18,7 @@ from starlette.responses import Response
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """‌⁠‍Adds defensive HTTP headers to every response.
+    """Adds defensive HTTP headers to every response.
 
     Most headers are set unconditionally; HSTS is only emitted when the
     request comes in over HTTPS to avoid breaking local dev.

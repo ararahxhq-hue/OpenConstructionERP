@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""‌⁠‍Pure-Python Critical Path Method (CPM) engine - Slice 1.
+"""Pure-Python Critical Path Method (CPM) engine - Slice 1.
 
 This module is intentionally self-contained: no SQLAlchemy, no FastAPI,
 no third-party deps (no scipy / networkx). Everything is plain ``dataclass``

@@ -1,4 +1,4 @@
-"""‌⁠‍BOQ API routes.
+"""BOQ API routes.
 
 Endpoints:
     POST   /boqs/                              - Create a new BOQ
@@ -205,7 +205,7 @@ async def _verify_boq_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """‌⁠‍Load a BOQ, then its project, and verify the user has access.
+    """Load a BOQ, then its project, and verify the user has access.
 
     Admins bypass the check. Grants access to the project owner and to
     any user who is a team member of the project (added via add_project_member).
@@ -248,7 +248,7 @@ async def _verify_project_owner_for_boq(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """‌⁠‍Verify the current user has access to the given project.
+    """Verify the current user has access to the given project.
 
     Grants access to: admins, the project owner, and team members.
     Treats archived (soft-deleted) projects as 404 - no operations on
@@ -2803,7 +2803,7 @@ async def _run_import_validation(
     service: BOQService,
     session: Any,
 ) -> dict[str, Any] | None:
-    """‌⁠‍Run the configured validation rule packs against a freshly-imported BOQ.
+    """Run the configured validation rule packs against a freshly-imported BOQ.
 
     Wired into every import path (Excel / CSV / GAEB X83/X84) so DIN276 +
     NRM + GAEB + MasterFormat + DPGF + boq_quality rules fire AT import

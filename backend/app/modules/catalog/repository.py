@@ -1,4 +1,4 @@
-"""‌⁠‍Catalog resource data access layer.
+"""Catalog resource data access layer.
 
 All database queries for catalog resources live here.
 No business logic - pure data access.
@@ -30,13 +30,13 @@ def _escape_like(term: str) -> str:
 
 
 class CatalogResourceRepository:
-    """‌⁠‍Data access for CatalogResource model."""
+    """Data access for CatalogResource model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, resource_id: uuid.UUID) -> CatalogResource | None:
-        """‌⁠‍Get catalog resource by ID."""
+        """Get catalog resource by ID."""
         return await self.session.get(CatalogResource, resource_id)
 
     async def get_by_code(self, resource_code: str) -> CatalogResource | None:

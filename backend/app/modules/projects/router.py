@@ -1,4 +1,4 @@
-"""‌⁠‍Projects API routes.
+"""Projects API routes.
 
 Endpoints:
     POST /                   - Create project (auth required)
@@ -107,7 +107,7 @@ async def _verify_project_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> object:
-    """‌⁠‍Load a project and verify the current user is the owner.
+    """Load a project and verify the current user is the owner.
 
     Admins (role=admin in JWT payload) bypass the ownership check.
     Returns the project object on success, raises 403 if not owner.
@@ -132,7 +132,7 @@ async def _verify_project_access(
     session: AsyncSession,
     payload: dict | None = None,
 ) -> object:
-    """‌⁠‍Load a project and verify the current user has read access.
+    """Load a project and verify the current user has read access.
 
     Grants access to: admins, the project owner, and any team member
     added via add_project_member (i.e. a TeamMembership row exists).
@@ -185,7 +185,7 @@ async def create_project(
     user_id: CurrentUserId,
     service: ProjectService = Depends(_get_service),
 ) -> ProjectResponse:
-    """‌⁠‍Create a new project."""
+    """Create a new project."""
     try:
         project = await service.create_project(data, uuid.UUID(user_id))
         return ProjectResponse.model_validate(project)

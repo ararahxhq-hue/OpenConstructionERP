@@ -1,4 +1,4 @@
-"""‌⁠‍OpenConstructionERP CLI - run the platform from the command line.
+"""OpenConstructionERP CLI - run the platform from the command line.
 
 The happy path for a new user is two commands:
 
@@ -87,7 +87,7 @@ _UNICODE = _stdout_supports_unicode()
 
 
 def _u(unicode_str: str, ascii_fallback: str) -> str:
-    """‌⁠‍Pick the unicode form when the console can render it, else ASCII."""
+    """Pick the unicode form when the console can render it, else ASCII."""
     return unicode_str if _UNICODE else ascii_fallback
 
 

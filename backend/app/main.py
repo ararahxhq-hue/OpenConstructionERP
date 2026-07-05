@@ -2,7 +2,7 @@
 # CWICR Cost Database Engine · CAD2DATA Pipeline
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 # AGPL-3.0 License · DDC-CWICR-OE-2026
-"""‌⁠‍OpenEstimate​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - FastAPI application factory.
+"""OpenEstimate​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - FastAPI application factory.
 
 Usage:
     uvicorn app.main:create_app --factory --reload --port 8000
@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 
 def configure_logging(settings: Settings) -> None:
-    """‌⁠‍Configure structured logging."""
+    """Configure structured logging."""
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -102,7 +102,7 @@ def configure_logging(settings: Settings) -> None:
 
 
 def _init_vector_db() -> None:
-    """‌⁠‍Initialize vector database on startup (non-blocking, never fatal).
+    """Initialize vector database on startup (non-blocking, never fatal).
 
     Vector search is an important feature of OpenConstructionERP -
     it powers semantic cost-item matching, BOQ auto-classification,

@@ -1,4 +1,4 @@
-"""‌⁠‍Carbon & Sustainability API routes.
+"""Carbon & Sustainability API routes.
 
 Mounted at ``/api/v1/carbon/``.
 
@@ -837,7 +837,7 @@ async def ingest_epd_by_identifier(
     _perm: None = Depends(RequirePermission("carbon.import_epd")),
     service: CarbonService = Depends(_get_service),
 ) -> dict:
-    """‌⁠‍Ingest an EPD record by parsing a public-database identifier or URL.
+    """Ingest an EPD record by parsing a public-database identifier or URL.
 
     Body:
         identifier: str - e.g. "oekobaudat:1.4.01.04" or a URL.
@@ -900,7 +900,7 @@ async def lookup_grid_factor(
     _perm: None = Depends(RequirePermission("carbon.read")),
     service: CarbonService = Depends(_get_service),
 ) -> dict:
-    """‌⁠‍Look up the grid emission factor (kg CO2e / kWh) for (country, year).
+    """Look up the grid emission factor (kg CO2e / kWh) for (country, year).
 
     Falls back to the nearest year ≤ requested for the same country.
     """

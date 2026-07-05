@@ -1,4 +1,4 @@
-"""‌⁠‍BIM Hub API routes.
+"""BIM Hub API routes.
 
 Endpoint convention
 -------------------
@@ -268,7 +268,7 @@ async def _verify_project_access(
     project_id: uuid.UUID,
     user_id: str,
 ) -> None:
-    """‌⁠‍Raise 404 unless the user owns, administers, or is a member of the project.
+    """Raise 404 unless the user owns, administers, or is a member of the project.
 
     Applies the same rule as the central ``app.dependencies.verify_project_access``
     helper - owner OR admin OR a ``TeamMembership`` on the project (shared
@@ -325,7 +325,7 @@ async def _verify_model_access(
     model_id: uuid.UUID,
     user_id: str,
 ) -> Any:
-    """‌⁠‍Load a BIM model and verify the caller may access its project.
+    """Load a BIM model and verify the caller may access its project.
 
     Access is owner, admin, or team-member of the model's project (see
     :func:`_verify_project_access`). Returns the model object so callers can

@@ -1,4 +1,4 @@
-"""‌⁠‍Field Reports API routes.
+"""Field Reports API routes.
 
 Endpoints:
     POST   /reports                        - Create field report
@@ -63,7 +63,7 @@ def _get_template_service(session: SessionDep) -> FieldReportTemplateService:
 
 
 def _report_to_response(report: object) -> FieldReportResponse:
-    """‌⁠‍Build a FieldReportResponse from a FieldReport ORM object."""
+    """Build a FieldReportResponse from a FieldReport ORM object."""
     return FieldReportResponse(
         id=report.id,  # type: ignore[attr-defined]
         project_id=report.project_id,  # type: ignore[attr-defined]
@@ -113,7 +113,7 @@ async def get_summary(
     _perm: None = Depends(RequirePermission("fieldreports.read")),
     service: FieldReportService = Depends(_get_service),
 ) -> FieldReportSummary:
-    """‌⁠‍Aggregated field report stats for a project."""
+    """Aggregated field report stats for a project."""
     await verify_project_access(project_id, user_id, session)
     data = await service.get_summary(project_id)
     return FieldReportSummary(**data)

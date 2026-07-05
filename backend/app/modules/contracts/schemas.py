@@ -1,4 +1,4 @@
-"""‌⁠‍Contracts Pydantic schemas - request / response models."""
+"""Contracts Pydantic schemas - request / response models."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ RETENTION_RELEASE_EVENTS = "practical_completion|final_account|handover"
 
 
 class ContractCreate(BaseModel):
-    """‌⁠‍Create a new contract."""
+    """Create a new contract."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -45,7 +45,7 @@ class ContractCreate(BaseModel):
 
 
 class ContractUpdate(BaseModel):
-    """‌⁠‍Partial update for a contract."""
+    """Partial update for a contract."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

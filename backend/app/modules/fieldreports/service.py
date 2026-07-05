@@ -1,4 +1,4 @@
-"""‌⁠‍Field Reports service - business logic for field report management.
+"""Field Reports service - business logic for field report management.
 
 Stateless service layer. Handles:
 - Field report CRUD
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class FieldReportService:
-    """‌⁠‍Business logic for field report operations."""
+    """Business logic for field report operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -54,7 +54,7 @@ class FieldReportService:
         data: FieldReportCreate,
         user_id: str | None = None,
     ) -> FieldReport:
-        """‌⁠‍Create a new field report.
+        """Create a new field report.
 
         If ``lat`` and ``lon`` are provided and OPENWEATHERMAP_API_KEY is
         configured, weather_data is auto-populated from OpenWeatherMap.
@@ -729,7 +729,7 @@ class FieldReportService:
 
 
 class FieldReportTemplateService:
-    """‌⁠‍Business logic for report templates.
+    """Business logic for report templates.
 
     Merges code-defined built-in templates with the project's own
     custom templates. Built-ins are read-only; mutation endpoints reject

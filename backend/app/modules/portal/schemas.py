@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""‌⁠‍Customer & Partner Portal Pydantic schemas - request / response models."""
+"""Customer & Partner Portal Pydantic schemas - request / response models."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ class PortalSharedDocumentList(BaseModel):
 
 
 class PortalUserInvite(BaseModel):
-    """‌⁠‍Body for POST /admin/users/invite."""
+    """Body for POST /admin/users/invite."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -65,7 +65,7 @@ class PortalUserInvite(BaseModel):
 
 
 class PortalUserResponse(BaseModel):
-    """‌⁠‍Portal user as returned to internal admins."""
+    """Portal user as returned to internal admins."""
 
     model_config = ConfigDict(from_attributes=True)
 

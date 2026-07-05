@@ -1,4 +1,4 @@
-"""‌⁠‍DWG Takeoff API routes.
+"""DWG Takeoff API routes.
 
 Endpoints:
     Drawings:
@@ -125,7 +125,7 @@ def _drawing_to_response(
     *,
     view_status: str | None = None,
 ) -> DwgDrawingResponse:
-    """‌⁠‍Build a DwgDrawingResponse from a DwgDrawing ORM object.
+    """Build a DwgDrawingResponse from a DwgDrawing ORM object.
 
     ``view_status`` overrides the stored lifecycle status with a definitive
     viewer state (see ``DwgTakeoffService.resolve_view_status``) so the page
@@ -159,7 +159,7 @@ def _drawing_to_response(
 
 
 def _version_to_response(item: object) -> DwgDrawingVersionResponse:
-    """‌⁠‍Build a DwgDrawingVersionResponse from a DwgDrawingVersion ORM object."""
+    """Build a DwgDrawingVersionResponse from a DwgDrawingVersion ORM object."""
     return DwgDrawingVersionResponse(
         id=item.id,  # type: ignore[attr-defined]
         drawing_id=item.drawing_id,  # type: ignore[attr-defined]

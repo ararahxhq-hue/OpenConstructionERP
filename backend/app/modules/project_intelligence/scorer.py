@@ -1,4 +1,4 @@
-"""‌⁠‍Project scoring engine - computes weighted scores and detects gaps.
+"""Project scoring engine - computes weighted scores and detects gaps.
 
 Takes a ProjectState and produces a ProjectScore with:
 - Overall weighted score (0-100)
@@ -39,7 +39,7 @@ DOMAIN_WEIGHTS: dict[str, float] = {
 
 @dataclass
 class CriticalGap:
-    """‌⁠‍A detected gap in the project that needs attention."""
+    """A detected gap in the project that needs attention."""
 
     id: str
     domain: str
@@ -53,7 +53,7 @@ class CriticalGap:
 
 @dataclass
 class Achievement:
-    """‌⁠‍A positive accomplishment to celebrate."""
+    """A positive accomplishment to celebrate."""
 
     domain: str
     title: str

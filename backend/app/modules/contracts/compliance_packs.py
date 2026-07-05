@@ -1,4 +1,4 @@
-"""‌⁠‍Compliance rule packs for contract gates.
+"""Compliance rule packs for contract gates.
 
 A *rule pack* is a jurisdiction-scoped bundle of validation rule-SET ids
 (the same set names the core :class:`ValidationEngine` already knows -

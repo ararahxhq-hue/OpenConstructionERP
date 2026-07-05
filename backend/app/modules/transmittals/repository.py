@@ -1,4 +1,4 @@
-"""‌⁠‍Transmittals data access layer.
+"""Transmittals data access layer.
 
 All database queries for transmittals live here.
 No business logic - pure data access.
@@ -23,7 +23,7 @@ from app.modules.transmittals.models import (
 
 
 class TransmittalRepository:
-    """‌⁠‍Data access for Transmittal, TransmittalRecipient, TransmittalItem models."""
+    """Data access for Transmittal, TransmittalRecipient, TransmittalItem models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -31,7 +31,7 @@ class TransmittalRepository:
     # ── Transmittal CRUD ─────────────────────────────────────────────────
 
     async def get(self, transmittal_id: uuid.UUID) -> Transmittal | None:
-        """‌⁠‍Get transmittal by ID (with recipients and items eager-loaded)."""
+        """Get transmittal by ID (with recipients and items eager-loaded)."""
         stmt = (
             select(Transmittal)
             .where(Transmittal.id == transmittal_id)

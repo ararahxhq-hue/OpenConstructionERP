@@ -1,4 +1,4 @@
-"""‌⁠‍DWG Takeoff service - business logic.
+"""DWG Takeoff service - business logic.
 
 Stateless service layer. Handles:
 - Drawing upload, processing, and retrieval
@@ -273,7 +273,7 @@ def _dwg_version_too_old(code: str | None) -> bool:
 
 
 def _normalize_entity(raw: dict[str, Any], index: int) -> dict[str, Any]:
-    """‌⁠‍Flatten stored entity format to the shape the frontend DxfViewer expects.
+    """Flatten stored entity format to the shape the frontend DxfViewer expects.
 
     Stored format: {entity_type, layer, color, geometry_data: {…}}
     Frontend format: {id, type, layer, color, start?, end?, vertices?, …}

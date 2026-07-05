@@ -1,4 +1,4 @@
-"""‌⁠‍Telegram Bot API connector.
+"""Telegram Bot API connector.
 
 Setup: User creates a bot via @BotFather, gets bot token,
 adds bot to a group/channel, provides chat_id.
@@ -23,7 +23,7 @@ async def send_telegram_notification(
     message: str,
     action_url: str | None = None,
 ) -> bool:
-    """‌⁠‍Send an HTML-formatted notification via Telegram Bot API.
+    """Send an HTML-formatted notification via Telegram Bot API.
 
     Args:
         bot_token: The bot token obtained from @BotFather.

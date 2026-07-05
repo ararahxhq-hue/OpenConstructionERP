@@ -1,4 +1,4 @@
-"""‌⁠‍Transmittals service - business logic for transmittal management.
+"""Transmittals service - business logic for transmittal management.
 
 Stateless service layer. Handles:
 - Transmittal CRUD with auto-numbering
@@ -106,7 +106,7 @@ async def _safe_publish(name: str, data: dict, source_module: str = "oe_transmit
 
 
 class TransmittalService:
-    """‌⁠‍Business logic for transmittal operations."""
+    """Business logic for transmittal operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -119,7 +119,7 @@ class TransmittalService:
         data: TransmittalCreate,
         user_id: str | None = None,
     ) -> Transmittal:
-        """‌⁠‍Create a new transmittal with auto-generated number.
+        """Create a new transmittal with auto-generated number.
 
         ``next_number`` reads ``MAX(transmittal_number)+1`` outside a
         SERIALIZABLE transaction, so two concurrent calls can pick the same

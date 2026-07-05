@@ -1,4 +1,4 @@
-"""‌⁠‍Carbon & Sustainability ORM models.
+"""Carbon & Sustainability ORM models.
 
 Tables:
     oe_carbon_epd_record               - Environmental Product Declaration record
@@ -28,7 +28,7 @@ from app.database import GUID, Base
 
 
 class EPDRecord(Base):
-    """‌⁠‍A single Environmental Product Declaration (EPD) record.
+    """A single Environmental Product Declaration (EPD) record.
 
     Sourced from public databases (Ökobaudat, ICE, EC3) or imported manually.
     Stores GWP indicators per LCA module (A1-A3, A4, A5, B, C, D).
@@ -67,7 +67,7 @@ class EPDRecord(Base):
 
 
 class MaterialCarbonFactor(Base):
-    """‌⁠‍Internal-facing material carbon factor.
+    """Internal-facing material carbon factor.
 
     Links a cost item (plain UUID - no FK across modules) to an EPD record
     or a manual override. Used when computing embodied carbon for BOQ

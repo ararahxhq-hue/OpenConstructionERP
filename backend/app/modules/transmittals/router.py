@@ -1,4 +1,4 @@
-"""‌⁠‍Transmittals API routes.
+"""Transmittals API routes.
 
 A transmittal is a formal record of documents or drawings handed to named
 parties: what was sent, when, to whom, and any response that was asked for.
@@ -54,7 +54,7 @@ async def list_transmittals(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: TransmittalService = Depends(_get_service),
 ) -> TransmittalListResponse:
-    """‌⁠‍List transmittals for a project."""
+    """List transmittals for a project."""
     await verify_project_access(project_id, user_id, session)
     items, total = await service.list_transmittals(
         project_id,
@@ -85,7 +85,7 @@ async def create_transmittal(
     session: SessionDep,
     service: TransmittalService = Depends(_get_service),
 ) -> TransmittalResponse:
-    """‌⁠‍Create a new transmittal with auto-generated number."""
+    """Create a new transmittal with auto-generated number."""
     await verify_project_access(data.project_id, user_id, session)
     transmittal = await service.create_transmittal(data, user_id=user_id)
     return TransmittalResponse.model_validate(transmittal)

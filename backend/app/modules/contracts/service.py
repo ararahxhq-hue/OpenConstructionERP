@@ -1,4 +1,4 @@
-"""‌⁠‍Contracts service - business logic for the Contract Types Engine.
+"""Contracts service - business logic for the Contract Types Engine.
 
 The service centralises:
     * Type-specific term validation (validate_contract_terms)
@@ -102,11 +102,11 @@ _REQUIRED_TERM_FIELDS: dict[str, tuple[str, ...]] = {
 
 
 class NTECapExceededError(Exception):
-    """‌⁠‍Raised when a T&M claim would exceed the not-to-exceed (NTE) cap."""
+    """Raised when a T&M claim would exceed the not-to-exceed (NTE) cap."""
 
 
 class InvalidTransitionError(Exception):
-    """‌⁠‍Raised when an attempted state transition is not allowed."""
+    """Raised when an attempted state transition is not allowed."""
 
 
 # ── State machines ────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-"""‌⁠‍Contracts module - Contract Types Engine.
+"""Contracts module - Contract Types Engine.
 
 Multi-type contract engine supporting lump-sum, GMP, cost-plus, T&M,
 unit-price, design-build, and combinations. Manages contract values,

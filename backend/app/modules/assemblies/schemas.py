@@ -1,4 +1,4 @@
-"""‌⁠‍Assembly Pydantic schemas - request/response models.
+"""Assembly Pydantic schemas - request/response models.
 
 Defines create, update, and response schemas for assemblies and components.
 Numeric values are stored as strings in the database for SQLite
@@ -93,7 +93,7 @@ RESOURCE_TYPES: tuple[str, ...] = (
 
 
 class ComponentCreate(BaseModel):
-    """‌⁠‍Create a new assembly component.
+    """Create a new assembly component.
 
     Accepts ``name`` as an alias for ``description`` and ``unit_rate`` as an
     alias for ``unit_cost`` so that the AI-generate preview payload can be
@@ -141,7 +141,7 @@ class ComponentCreate(BaseModel):
         return v
 
     def get_description(self) -> str:
-        """‌⁠‍Return description, falling back to name if description is empty."""
+        """Return description, falling back to name if description is empty."""
         return self.description or self.name or ""
 
     def get_unit_cost(self) -> Decimal:

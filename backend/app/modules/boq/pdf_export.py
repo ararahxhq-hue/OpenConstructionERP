@@ -1,4 +1,4 @@
-"""‌⁠‍PDF report generation for BOQ cost estimates.
+"""PDF report generation for BOQ cost estimates.
 
 Produces a professional multi-page PDF document with:
 - Cover page: project name, BOQ title, cost summary, date, status
@@ -74,7 +74,7 @@ TABLE_COL_WIDTHS = [COL_POS, COL_DESC, COL_UNIT, COL_QTY, COL_RATE, COL_TOTAL]
 
 
 def _fmt(value: float, decimals: int = 2, currency: str = "") -> str:
-    """‌⁠‍Format a number with thousands separator and fixed decimals.
+    """Format a number with thousands separator and fixed decimals.
 
     When *currency* is provided, uses locale-aware formatting:
     - EUR (German/DACH): 1.234,56  (dot=thousands, comma=decimal)
@@ -94,7 +94,7 @@ def _fmt(value: float, decimals: int = 2, currency: str = "") -> str:
 
 
 def _safe_para(text: Any, style: ParagraphStyle) -> "Paragraph":
-    """‌⁠‍Construct a ``Paragraph`` from possibly-untrusted user input.
+    """Construct a ``Paragraph`` from possibly-untrusted user input.
 
     HTML metacharacters in ``text`` are escaped via ``html.escape`` so
     ReportLab's paraparser sees inert characters, not markup. ``None``

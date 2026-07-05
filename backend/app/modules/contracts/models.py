@@ -1,4 +1,4 @@
-"""‌⁠‍Contracts ORM models.
+"""Contracts ORM models.
 
 Tables:
     oe_contracts_contract                  - contract header with type-specific terms
@@ -42,7 +42,7 @@ from app.database import GUID, Base
 
 
 class Contract(Base):
-    """‌⁠‍A construction contract of any type (lump-sum / GMP / cost-plus / T&M / etc.)."""
+    """A construction contract of any type (lump-sum / GMP / cost-plus / T&M / etc.)."""
 
     __tablename__ = "oe_contracts_contract"
     __table_args__ = (UniqueConstraint("code", name="uq_oe_contracts_contract_code"),)
@@ -125,7 +125,7 @@ class Contract(Base):
 
 
 class ContractLine(Base):
-    """‌⁠‍Schedule of values (SoV) line item belonging to a Contract."""
+    """Schedule of values (SoV) line item belonging to a Contract."""
 
     __tablename__ = "oe_contracts_contract_line"
 

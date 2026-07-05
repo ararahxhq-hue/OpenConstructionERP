@@ -1,4 +1,4 @@
-"""‌⁠‍Notification templates - English fallback strings for every notification.
+"""Notification templates - English fallback strings for every notification.
 
 Notifications are stored with i18n keys (``title_key`` + ``body_key``) so
 the frontend can translate them. But translation can fail silently for
@@ -182,7 +182,7 @@ _TYPE_TO_ICON: dict[str, str] = {
 
 
 def render(key: str | None, context: dict[str, Any] | None = None) -> str:
-    """‌⁠‍Return the English string for an i18n key with placeholders filled.
+    """Return the English string for an i18n key with placeholders filled.
 
     Resolution order:
         1. Template from :data:`_TEMPLATES` interpolated with ``context``.
@@ -237,7 +237,7 @@ def combine_title_body(title: str | None, body: str | None) -> str:
 
 
 def icon_category_for(notification_type: str | None) -> str:
-    """‌⁠‍Map a backend ``notification_type`` to a frontend icon category.
+    """Map a backend ``notification_type`` to a frontend icon category.
 
     Returns ``"info"`` for unknown types so the bell never crashes on a
     third-party module that invented its own type.

@@ -1,4 +1,4 @@
-"""‌⁠‍Carbon & Sustainability data-access layer.
+"""Carbon & Sustainability data-access layer.
 
 One repository per entity. Methods follow the convention used elsewhere
 in the codebase: ``get_by_id``, ``list_for_*``, ``create``,
@@ -28,7 +28,7 @@ from app.modules.carbon.models import (
 
 
 class _BaseRepo:
-    """‌⁠‍Shared CRUD primitives."""
+    """Shared CRUD primitives."""
 
     model: type
 
@@ -60,7 +60,7 @@ class _BaseRepo:
 
 
 class EPDRecordRepository(_BaseRepo):
-    """‌⁠‍Data access for EPDRecord."""
+    """Data access for EPDRecord."""
 
     model = EPDRecord
 

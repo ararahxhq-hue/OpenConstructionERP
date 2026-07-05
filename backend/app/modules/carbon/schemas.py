@@ -1,4 +1,4 @@
-"""‌⁠‍Carbon & Sustainability Pydantic schemas - request/response models."""
+"""Carbon & Sustainability Pydantic schemas - request/response models."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EPDRecordCreate(BaseModel):
-    """‌⁠‍Create an EPD record."""
+    """Create an EPD record."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -39,7 +39,7 @@ class EPDRecordCreate(BaseModel):
 
 
 class EPDRecordUpdate(BaseModel):
-    """‌⁠‍Partial update of an EPD record."""
+    """Partial update of an EPD record."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

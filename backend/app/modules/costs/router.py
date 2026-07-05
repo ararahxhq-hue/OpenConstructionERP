@@ -1,4 +1,4 @@
-"""‌⁠‍Cost database API routes.
+"""Cost database API routes.
 
 Endpoints:
     GET  /autocomplete    -- Fast text autocomplete for cost items (public)
@@ -214,7 +214,7 @@ def _resolve_currency(
     *,
     warnings: list[str] | None = None,
 ) -> str:
-    """‌⁠‍Return the catalogue currency, deriving it from region when empty.
+    """Return the catalogue currency, deriving it from region when empty.
 
     The CWICR import historically stored ``currency = ''`` because the source
     parquet doesn't carry the field - every rate is in the region's local
@@ -290,7 +290,7 @@ _BREAKDOWN_KEYS: tuple[str, ...] = ("labor_cost", "material_cost", "equipment_co
 
 
 def _extract_cost_breakdown(metadata: dict[str, Any] | None) -> dict[str, float] | None:
-    """‌⁠‍Pull labor / material / equipment numbers out of CWICR metadata.
+    """Pull labor / material / equipment numbers out of CWICR metadata.
 
     The CWICR ingest stamps these as ``round(value, 2)`` only when the
     source row carries a non-zero figure - so an absent key really means
@@ -5342,7 +5342,7 @@ async def regional_adjust(
         description="Optional finer slice - falls back to the whole-category row when absent.",
     ),
 ) -> RegionalAdjustResponse:
-    """‌⁠‍Preview the same rate in a different region.
+    """Preview the same rate in a different region.
 
     RSMeans-style city cost index lookup - multiplies ``base_rate`` by
     the most recent ``factor`` on file for ``(region, category)``.
@@ -5376,7 +5376,7 @@ async def list_regional_indices(
     user: OptionalUserPayload,
     region: str = Query(..., min_length=2, max_length=64),
 ) -> list[RegionalIndexResponse]:
-    """‌⁠‍List every cost-index row for ``region``.
+    """List every cost-index row for ``region``.
 
     Used by the Regional Adjust panel to populate the category picker
     and show historical effective dates. Ordered by category then
@@ -5394,7 +5394,7 @@ async def get_cost_item_certainty_batch(
     session: SessionDep,
     user: OptionalUserPayload,
 ) -> list[CertaintyBadge]:
-    """‌⁠‍Return certainty badges for many cost items in a single round-trip.
+    """Return certainty badges for many cost items in a single round-trip.
 
     The list view renders one badge per visible row; fetching them
     individually fires N HTTP requests per page (one per row), which is
@@ -5537,7 +5537,7 @@ async def get_cost_item_certainty(
     session: SessionDep,
     user: OptionalUserPayload,
 ) -> CertaintyBadge:
-    """‌⁠‍Return the green / yellow / red certainty badge for one cost item.
+    """Return the green / yellow / red certainty badge for one cost item.
 
     Aggregates the usage ledger into:
 
@@ -5569,7 +5569,7 @@ async def record_cost_item_usage(
     session: SessionDep,
     user: CurrentUserPayload,
 ) -> dict[str, object]:
-    """‌⁠‍Append one row to the usage ledger.
+    """Append one row to the usage ledger.
 
     Called from the BOQ apply-rate path so the next user of the same
     rate sees an up-to-date certainty badge. Body intentionally small:
