@@ -5,6 +5,8 @@ from decimal import Decimal
 import pytest
 
 from app.modules.price_breakdown import (
+    LINE_I18N_KEYS,
+    MAX_MARKUP_PCT,
     PriceBreakdownError,
     ResourceKind,
     build_breakdown,
@@ -12,6 +14,8 @@ from app.modules.price_breakdown import (
     efb_221_view,
     from_position,
     get_preset,
+    kind_i18n_key,
+    render_csv,
     render_markdown,
 )
 
@@ -168,3 +172,190 @@ def test_efb_view_and_markdown_render():
     # International preset labels differ.
     assert get_preset("international").label == "Unit price analysis"
     assert "Labour" in render_markdown(bd, preset="international")
+
+
+# ---- new presets ---------------------------------------------------------
+
+
+def test_new_presets_registered_with_labels_and_region():
+    nrm = get_preset("nrm")
+    assert nrm.region == "UK"
+    assert "NRM" in nrm.label
+    us = get_preset("us_bid")
+    assert us.region == "US"
+    cp = get_preset("cost_plus")
+    assert cp.name == "cost_plus"
+    # All presets cover every ResourceKind exactly once.
+    for name in ("international", "efb", "nrm", "us_bid", "cost_plus"):
+        p = get_preset(name)
+        kinds = [k for k, _ in p.kind_labels]
+        assert set(kinds) == set(ResourceKind)
+        assert len(kinds) == len(set(ResourceKind))
+    # Unknown name falls back to the international default.
+    assert get_preset("does-not-exist").name == "international"
+
+
+def test_nrm_and_us_presets_use_local_wording():
+    assert dict(get_preset("nrm").kind_labels)[ResourceKind.MACHINERY] == "Plant"
+    assert dict(get_preset("us_bid").kind_labels)[ResourceKind.LABOUR] == "Labor"
+    assert "Plant" in render_markdown(_sample(), preset="nrm")
+
+
+# ---- i18n keys -----------------------------------------------------------
+
+
+def test_kind_i18n_keys_are_stable():
+    assert kind_i18n_key(ResourceKind.LABOUR) == "price_breakdown.kind.labor"
+    assert kind_i18n_key("plant") == "price_breakdown.kind.machinery"
+    assert kind_i18n_key(ResourceKind.SUBCONTRACT) == "price_breakdown.kind.subcontractor"
+
+
+def test_to_dict_exposes_i18n_keys():
+    d = _sample().to_dict()
+    assert d["i18n_keys"] == LINE_I18N_KEYS
+    assert d["kind_i18n_keys"]["labor"] == "price_breakdown.kind.labor"
+    assert d["components"][0]["kind_i18n_key"] == "price_breakdown.kind.material"
+
+
+def test_preset_to_dict_carries_labels_and_keys():
+    pd = get_preset("nrm").to_dict()
+    assert pd["name"] == "nrm"
+    assert pd["label_i18n_key"] == "price_breakdown.preset.nrm"
+    plant = next(row for row in pd["kinds"] if row["kind"] == "machinery")
+    assert plant["label"] == "Plant"
+    assert plant["i18n_key"] == "price_breakdown.kind.machinery"
+    assert pd["line_i18n_keys"]["unit_rate"] == "price_breakdown.line.unit_rate"
+
+
+# ---- CSV renderer --------------------------------------------------------
+
+
+def test_render_csv_structure_and_totals():
+    import csv
+    import io
+
+    text = render_csv(_sample(), preset="international")
+    rows = list(csv.reader(io.StringIO(text)))
+    # Header block then column header then components.
+    assert rows[0][0] == "Price analysis"
+    header_idx = next(i for i, r in enumerate(rows) if r[:1] == ["Kind"])
+    assert rows[header_idx] == ["Kind", "Description", "Unit", "Quantity", "Unit cost", "Amount"]
+    # One row per component (four in the sample) directly after the header.
+    comp_rows = rows[header_idx + 1 : header_idx + 5]
+    assert len(comp_rows) == 4
+    assert comp_rows[0][0] == "Material"
+    assert comp_rows[0][5] == "96.90"  # 1.02 x 95
+    # Summary lines present and carrying the computed amounts.
+    flat = {r[0]: r for r in rows if r}
+    assert flat["Direct cost per unit"][5] == "375.90"
+    assert flat["Unit rate"][5] == "426.27"
+    assert flat["Position total"][5] == "21313.53"  # 426.2706 x 50, rounded
+
+
+def test_render_csv_quotes_awkward_descriptions_safely():
+    import csv
+    import io
+
+    bd = build_breakdown(
+        position_ref="7",
+        description='Wall, "special", 24cm',
+        unit="m2",
+        position_quantity="1",
+        components=[
+            {"kind": "material", "description": 'Block, grade "A"', "quantity": "1", "unit_cost": "10"}
+        ],
+    )
+    text = render_csv(bd)
+    rows = list(csv.reader(io.StringIO(text)))
+    # Round-trips through the csv reader without breaking the columns.
+    comp = next(r for r in rows if r and r[0] == "Material")
+    assert comp[1] == 'Block, grade "A"'
+
+
+# ---- robustness and edge cases -------------------------------------------
+
+
+def test_negative_markup_is_clamped_to_zero():
+    bd = build_breakdown(
+        position_ref="1",
+        description="x",
+        unit="m",
+        position_quantity="1",
+        components=[{"kind": "material", "description": "m", "quantity": "1", "unit_cost": "100"}],
+        overhead_pct="-25",
+        profit_pct="-5",
+    )
+    assert bd.overhead_pct == Decimal("0")
+    assert bd.profit_pct == Decimal("0")
+    # Never falls below direct cost.
+    assert bd.unit_rate == bd.direct_unit_cost == Decimal("100")
+
+
+def test_absurd_markup_is_capped():
+    bd = build_breakdown(
+        position_ref="1",
+        description="x",
+        unit="m",
+        position_quantity="1",
+        components=[{"kind": "material", "description": "m", "quantity": "1", "unit_cost": "100"}],
+        overhead_pct="99999",
+    )
+    assert bd.overhead_pct == MAX_MARKUP_PCT
+
+
+def test_kind_totals_reconcile_exactly_to_direct_cost():
+    bd = _sample()
+    assert sum(bd.kind_totals.values(), Decimal("0")) == bd.direct_unit_cost
+
+
+def test_zero_position_quantity_does_not_divide_by_zero():
+    position = {
+        "ordinal": "1",
+        "unit": "m2",
+        "quantity": "0",
+        "unit_rate": "50",
+        "metadata_": {
+            "resources": [
+                {"type": "material", "name": "block", "quantity": "1", "unit_rate": "30", "total": "600"}
+            ]
+        },
+    }
+    bd = from_position(position)
+    # basis divisor falls back to 1, so amounts are taken as-is, no ZeroDivision.
+    assert bd.position_quantity == Decimal("0")
+    assert bd.direct_unit_cost == Decimal("600")
+    assert bd.position_total == Decimal("0")
+
+
+def test_explicit_amount_overrides_quantity_times_unit_cost():
+    bd = build_breakdown(
+        position_ref="1",
+        description="x",
+        unit="m",
+        position_quantity="1",
+        components=[
+            # quantity x unit_cost would be 50, but an explicit amount wins.
+            {"kind": "labor", "description": "gang", "quantity": "2", "unit_cost": "25", "amount": "111"}
+        ],
+    )
+    assert bd.components[0].amount == Decimal("111")
+    assert bd.direct_unit_cost == Decimal("111")
+
+
+def test_international_language_aliases():
+    # German
+    assert coerce_kind("Lohnkosten") is ResourceKind.LABOUR
+    assert coerce_kind("Baustoffe") is ResourceKind.MATERIAL
+    # French
+    assert coerce_kind("main d'oeuvre") is ResourceKind.LABOUR
+    assert coerce_kind("materiel") is ResourceKind.EQUIPMENT
+    assert coerce_kind("sous-traitant") is ResourceKind.SUBCONTRACT
+    # Spanish
+    assert coerce_kind("Mano de obra") is ResourceKind.LABOUR
+    assert coerce_kind("maquinaria") is ResourceKind.MACHINERY
+    # Italian
+    assert coerce_kind("manodopera") is ResourceKind.LABOUR
+    assert coerce_kind("noli") is ResourceKind.MACHINERY
+    # Russian
+    assert coerce_kind("материалы") is ResourceKind.MATERIAL
+    assert coerce_kind("оборудование") is ResourceKind.EQUIPMENT

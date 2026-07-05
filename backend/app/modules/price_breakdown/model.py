@@ -16,6 +16,14 @@ Overhead, risk and profit are applied in that order and each on the running
 subtotal, which matches how site overhead, contingency and profit stack in a
 detailed rate build-up. All percentages are optional and default to zero, so a
 plain material-plus-labour rate works with no markup configured.
+
+Markup percentages are clamped when a breakdown is assembled via
+:func:`build_breakdown`: a negative percentage (which would reduce the rate
+below direct cost, a nonsense in a build-up) is treated as zero, and a value
+above :data:`MAX_MARKUP_PCT` is capped there so a stray "800" typed as a
+fraction or a runaway import cannot silently produce an absurd unit rate. The
+clamp is deliberate and documented rather than raising, so a bulk import of
+many positions never fails on one bad markup cell.
 """
 
 from __future__ import annotations
@@ -26,6 +34,11 @@ from enum import StrEnum
 
 _2P = Decimal("0.01")
 _4P = Decimal("0.0001")
+
+# A markup above this many percent is treated as a data error and capped. Real
+# site overhead + risk + profit almost never exceeds a few tens of percent;
+# 1000% is a generous ceiling that still blocks obviously broken values.
+MAX_MARKUP_PCT = Decimal("1000")
 
 
 class PriceBreakdownError(ValueError):
@@ -52,30 +65,132 @@ class ResourceKind(StrEnum):
 
 
 # Accept common synonyms so callers/imports do not have to pre-normalise.
+# Keys are lower-cased. International terms (German, French, Spanish, Italian,
+# Russian) are included so cost data exported from local estimating software in
+# those languages maps onto the shared vocabulary without a manual pass.
 _KIND_ALIASES = {
+    # English
     "labor": ResourceKind.LABOUR,
     "labour": ResourceKind.LABOUR,
     "wage": ResourceKind.LABOUR,
     "wages": ResourceKind.LABOUR,
     "operator": ResourceKind.LABOUR,
-    "lohn": ResourceKind.LABOUR,
+    "crew": ResourceKind.LABOUR,
     "material": ResourceKind.MATERIAL,
     "materials": ResourceKind.MATERIAL,
-    "stoffkosten": ResourceKind.MATERIAL,
     "machinery": ResourceKind.MACHINERY,
     "machine": ResourceKind.MACHINERY,
     "plant": ResourceKind.MACHINERY,
     "equipment": ResourceKind.EQUIPMENT,
-    "geraet": ResourceKind.EQUIPMENT,
     "subcontractor": ResourceKind.SUBCONTRACT,
     "subcontract": ResourceKind.SUBCONTRACT,
     "sub": ResourceKind.SUBCONTRACT,
-    "nachunternehmer": ResourceKind.SUBCONTRACT,
     "overhead": ResourceKind.OTHER,
     "other": ResourceKind.OTHER,
     "misc": ResourceKind.OTHER,
+    # German
+    "lohn": ResourceKind.LABOUR,
+    "lohnkosten": ResourceKind.LABOUR,
+    "arbeit": ResourceKind.LABOUR,
+    "arbeitskosten": ResourceKind.LABOUR,
+    "stoffkosten": ResourceKind.MATERIAL,
+    "baustoff": ResourceKind.MATERIAL,
+    "baustoffe": ResourceKind.MATERIAL,
+    "maschine": ResourceKind.MACHINERY,
+    "maschinen": ResourceKind.MACHINERY,
+    "geraet": ResourceKind.EQUIPMENT,
+    "geraete": ResourceKind.EQUIPMENT,
+    "vorhaltekosten": ResourceKind.EQUIPMENT,
+    "nachunternehmer": ResourceKind.SUBCONTRACT,
+    "nachunternehmerleistung": ResourceKind.SUBCONTRACT,
     "sonstiges": ResourceKind.OTHER,
+    "sonstige": ResourceKind.OTHER,
+    # French
+    "main d'oeuvre": ResourceKind.LABOUR,
+    "main-d'oeuvre": ResourceKind.LABOUR,
+    "mo": ResourceKind.LABOUR,
+    "materiau": ResourceKind.MATERIAL,
+    "materiaux": ResourceKind.MATERIAL,
+    "fourniture": ResourceKind.MATERIAL,
+    "fournitures": ResourceKind.MATERIAL,
+    "engin": ResourceKind.MACHINERY,
+    "engins": ResourceKind.MACHINERY,
+    "materiel": ResourceKind.EQUIPMENT,
+    "sous-traitant": ResourceKind.SUBCONTRACT,
+    "sous-traitance": ResourceKind.SUBCONTRACT,
+    "divers": ResourceKind.OTHER,
+    # Spanish
+    "mano de obra": ResourceKind.LABOUR,
+    "materiales": ResourceKind.MATERIAL,
+    "maquinaria": ResourceKind.MACHINERY,
+    "equipo": ResourceKind.EQUIPMENT,
+    "equipos": ResourceKind.EQUIPMENT,
+    "subcontrata": ResourceKind.SUBCONTRACT,
+    "subcontratista": ResourceKind.SUBCONTRACT,
+    "otros": ResourceKind.OTHER,
+    # Italian
+    "manodopera": ResourceKind.LABOUR,
+    "mano d'opera": ResourceKind.LABOUR,
+    "materiale": ResourceKind.MATERIAL,
+    "materiali": ResourceKind.MATERIAL,
+    "macchina": ResourceKind.MACHINERY,
+    "macchinari": ResourceKind.MACHINERY,
+    "noli": ResourceKind.MACHINERY,
+    "attrezzatura": ResourceKind.EQUIPMENT,
+    "attrezzature": ResourceKind.EQUIPMENT,
+    "subappalto": ResourceKind.SUBCONTRACT,
+    "subappaltatore": ResourceKind.SUBCONTRACT,
+    "altro": ResourceKind.OTHER,
+    # Russian
+    "труд": ResourceKind.LABOUR,
+    "рабочие": ResourceKind.LABOUR,
+    "зарплата": ResourceKind.LABOUR,
+    "оплата труда": ResourceKind.LABOUR,
+    "трудозатраты": ResourceKind.LABOUR,
+    "материал": ResourceKind.MATERIAL,
+    "материалы": ResourceKind.MATERIAL,
+    "машины": ResourceKind.MACHINERY,
+    "механизмы": ResourceKind.MACHINERY,
+    "оборудование": ResourceKind.EQUIPMENT,
+    "субподряд": ResourceKind.SUBCONTRACT,
+    "субподрядчик": ResourceKind.SUBCONTRACT,
+    "прочее": ResourceKind.OTHER,
+    "прочие": ResourceKind.OTHER,
 }
+
+
+def kind_i18n_key(kind: str | ResourceKind) -> str:
+    """Return the stable i18n key for a resource kind.
+
+    The key form is ``price_breakdown.kind.<value>`` where ``<value>`` is the
+    canonical ResourceKind string (labor, material, machinery, equipment,
+    subcontractor, other). These keys are data only: they let a frontend
+    translate the labels later without any shared locale file being edited
+    here, and they never change even as English defaults are re-worded.
+    """
+    return f"price_breakdown.kind.{coerce_kind(kind).value}"
+
+
+# Stable i18n keys for the summary (markup) lines of a price analysis. Data
+# only, same contract as kind_i18n_key: a UI may translate them, nothing here
+# depends on a locale file existing.
+LINE_I18N_KEYS: dict[str, str] = {
+    "direct": "price_breakdown.line.direct",
+    "overhead": "price_breakdown.line.overhead",
+    "risk": "price_breakdown.line.risk",
+    "profit": "price_breakdown.line.profit",
+    "unit_rate": "price_breakdown.line.unit_rate",
+    "position_total": "price_breakdown.line.position_total",
+}
+
+
+def _clamp_pct(value: Decimal) -> Decimal:
+    """Clamp a markup percentage into a sensible range (see module docstring)."""
+    if value < 0:
+        return Decimal("0")
+    if value > MAX_MARKUP_PCT:
+        return MAX_MARKUP_PCT
+    return value
 
 
 def coerce_kind(value: str | ResourceKind | None) -> ResourceKind:
@@ -185,6 +300,7 @@ class PriceBreakdown:
             "components": [
                 {
                     "kind": c.kind.value,
+                    "kind_i18n_key": kind_i18n_key(c.kind),
                     "description": c.description,
                     "unit": c.unit,
                     "quantity": _q(c.quantity, _4P),
@@ -194,6 +310,8 @@ class PriceBreakdown:
                 for c in self.components
             ],
             "kind_totals": {k.value: _q(v, _2P) for k, v in kt.items()},
+            "kind_i18n_keys": {k.value: kind_i18n_key(k) for k in ResourceKind},
+            "i18n_keys": dict(LINE_I18N_KEYS),
             "direct_unit_cost": _q(self.direct_unit_cost, _2P),
             "overhead_pct": _q(self.overhead_pct, _2P),
             "overhead_amount": _q(self.overhead_amount, _2P),
@@ -222,7 +340,12 @@ def build_breakdown(
     profit_pct: object = 0,
     currency: str = "EUR",
 ) -> PriceBreakdown:
-    """Assemble a :class:`PriceBreakdown` from plain dicts or components."""
+    """Assemble a :class:`PriceBreakdown` from plain dicts or components.
+
+    Markup percentages are clamped via :func:`_clamp_pct` (negatives become 0,
+    values above :data:`MAX_MARKUP_PCT` are capped) so one bad cell in an import
+    cannot produce an absurd unit rate or a rate below direct cost.
+    """
     comps: list[CostComponent] = []
     for raw in components or []:
         if isinstance(raw, CostComponent):
@@ -246,8 +369,8 @@ def build_breakdown(
         unit=str(unit or ""),
         position_quantity=_dec(position_quantity, "1"),
         components=comps,
-        overhead_pct=_dec(overhead_pct),
-        risk_pct=_dec(risk_pct),
-        profit_pct=_dec(profit_pct),
+        overhead_pct=_clamp_pct(_dec(overhead_pct)),
+        risk_pct=_clamp_pct(_dec(risk_pct)),
+        profit_pct=_clamp_pct(_dec(profit_pct)),
         currency=str(currency or "EUR").strip() or "EUR",
     )
