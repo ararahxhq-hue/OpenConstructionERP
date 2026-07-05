@@ -2165,6 +2165,33 @@ class TakeoffService:
             )
             return
 
+        # Restate the measured value in the position's own unit before storing
+        # it (GitHub #319). The measurement is metric-canonical (m / m2 / m3);
+        # a position priced per cubic yard or roofing square must receive the
+        # quantity converted into that unit or its unit_rate silently mis-prices
+        # the line. convert_between returns None when the two units cannot be
+        # reconciled (a magnitude mismatch the coarse dimension guard above did
+        # not catch, e.g. m3 vs an unknown volume unit), in which case we refuse
+        # rather than write a wrong number. A same-unit or unknown-unit link
+        # passes the value through untouched.
+        from app.core.unit_conversion import convert_between  # noqa: PLC0415
+
+        measurement_unit = getattr(measurement, "measurement_unit", None)
+        position_unit = getattr(position, "unit", None)
+        converted = convert_between(value, measurement_unit, position_unit)
+        if converted is None:
+            logger.warning(
+                "push_quantity: cannot convert measurement %s (%s) into BOQ position %s unit %r "
+                "- refusing to overwrite the quantity",
+                getattr(measurement, "id", "?"),
+                measurement_unit,
+                boq_position_id,
+                position_unit,
+            )
+            return
+        if converted != Decimal(str(value)):
+            value = converted.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
         await boq_service.position_repo.update_fields(position.id, quantity=str(value))
         await self.session.refresh(position)
         await boq_service._recompute_position_total(position)  # noqa: SLF001 - reuse the canonical recompute path

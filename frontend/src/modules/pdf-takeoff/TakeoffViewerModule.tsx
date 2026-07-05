@@ -75,6 +75,7 @@ import {
 } from '../../features/takeoff/lib/units';
 import { apiGet, apiPost } from '../../shared/lib/api';
 import { formatFileSize } from '../../shared/lib/formatters';
+import { convertBetween } from '../../shared/lib/unitConversion';
 import { useMeasurementPersistence } from './useMeasurementPersistence';
 import {
   type ScaleConfig,
@@ -4354,13 +4355,46 @@ export default function TakeoffViewerModule({
     setLinkingInProgress(true);
     try {
       const sourceLabel = `Takeoff: ${measurement.annotation || measurement.type} (page ${measurement.page})`;
-      const newQty = boqQuantity(measurement.value);
       const canonicalUnit = normalizeUnit(measurement.unit);
+      const positionUnit = (position.unit ?? '').trim();
+
+      // Convert the measured value into the position's own unit before it is
+      // written (GitHub #319). A position already priced per its unit (say cubic
+      // yards) must receive the quantity restated in that unit or its unit_rate
+      // silently mis-prices the line. Only when the position has no unit yet do
+      // we adopt the measurement's unit, matching the create-and-link path.
+      let newQtyValue = measurement.value;
+      let unitToWrite: string | undefined;
+      if (!positionUnit) {
+        unitToWrite = canonicalUnit;
+      } else {
+        const converted = convertBetween(measurement.value, canonicalUnit, positionUnit);
+        if (converted === null) {
+          addToast({
+            type: 'error',
+            title: t('takeoff.unit_not_convertible_title', { defaultValue: 'Units do not match' }),
+            message: t('takeoff.unit_not_convertible_msg', {
+              defaultValue:
+                'This {{from}} measurement cannot be converted into position {{posOrdinal}} priced in {{to}}. Pick a matching position or create a new one.',
+              from: canonicalUnit,
+              to: positionUnit,
+              posOrdinal: position.ordinal,
+            }),
+          });
+          setLinkingInProgress(false);
+          return;
+        }
+        newQtyValue = converted;
+      }
+      const newQty = boqQuantity(newQtyValue);
+      const displayUnit = unitToWrite ?? positionUnit;
       const existingMeta = (position.metadata ?? {}) as Record<string, unknown>;
 
       await boqApi.updatePosition(position.id, {
         quantity: newQty,
-        unit: canonicalUnit,
+        // Keep the position's own unit when it already has one, so its
+        // unit_rate stays valid; only set the unit when the position had none.
+        ...(unitToWrite !== undefined ? { unit: unitToWrite } : {}),
         metadata: {
           ...existingMeta,
           pdf_measurement_source: sourceLabel,
@@ -4399,7 +4433,7 @@ export default function TakeoffViewerModule({
       addToast({
         type: 'success',
         title: t('takeoff.linked_to_boq', { defaultValue: 'Linked to BOQ' }),
-        message: `${newQty} ${canonicalUnit} → ${position.ordinal} ${position.description?.slice(0, 40) || ''}`.trim(),
+        message: `${newQty} ${displayUnit} → ${position.ordinal} ${position.description?.slice(0, 40) || ''}`.trim(),
       });
       setLinkingMeasurementId(null);
     } catch (err) {
