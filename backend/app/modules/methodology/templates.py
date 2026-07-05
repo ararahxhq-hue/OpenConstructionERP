@@ -557,6 +557,63 @@ _INTERNATIONAL_TEMPLATE: dict[str, Any] = {
     "vat_rate": "0",
 }
 
+
+def _flat_country_template(
+    *,
+    slug: str,
+    name: str,
+    country_code: str,
+    currency: str,
+    vat: str,
+    overhead: str,
+    profit: str,
+    tax_label: str,
+    decimals: int = 2,
+    column_preset: str | None = None,
+) -> dict[str, Any]:
+    """Build a flat-method country template with country-typical defaults.
+
+    Every country in the flat tradition differs only by its currency, its local
+    consumption-tax name and rate, and its typical overhead / profit starting
+    points. This builder captures that so each additional market is one readable
+    line of data rather than a repeated fifteen-line dict, while producing the
+    exact same schema the hand-written templates use.
+
+    Args:
+        slug: Unique catalogue slug (snake_case).
+        name: Display name (a country name, plain ASCII).
+        country_code: ISO 3166-1 alpha-2 code, upper case.
+        currency: ISO 4217 currency code, upper case.
+        vat: Standard consumption-tax rate, percent, as a string.
+        overhead: Overhead-and-general-conditions rate, percent, as a string.
+        profit: Profit / margin rate, percent, as a string.
+        tax_label: Local name of the consumption tax (e.g. ``"IVA"``, ``"GST"``),
+            used only in the human description.
+        decimals: Monetary display precision (0 for whole-unit currencies, 3 for
+            the Kuwaiti dinar, 2 otherwise).
+        column_preset: Named BOQ column preset, or ``None``.
+
+    Returns:
+        A template dict matching the catalogue schema.
+    """
+    return {
+        "slug": slug,
+        "name": name,
+        "description": f"{name} flat estimate with overhead, profit and {tax_label}.",
+        "country_code": country_code,
+        "industry": None,
+        "currency": currency,
+        "decimals": decimals,
+        "hierarchy_levels": _FLAT_HIERARCHY,
+        "dimensions": [_stage_dimension()],
+        "column_preset": column_preset,
+        "base_mapping": _FLAT_BASE_MAPPING,
+        "composites": _FLAT_COMPOSITES,
+        "cascade_steps": _flat_steps(overhead=overhead, profit=profit, vat=vat),
+        "vat_rate": vat,
+    }
+
+
 # Seven popular countries, migrated from the hardcoded DEFAULT_MARKUP_TEMPLATES
 # tradition into data. Each is the flat method with country-typical defaults.
 _COUNTRY_TEMPLATES: list[dict[str, Any]] = [
@@ -938,6 +995,295 @@ _COUNTRY_TEMPLATES: list[dict[str, Any]] = [
         "cascade_steps": _flat_steps(overhead="10", profit="8", vat="9"),
         "vat_rate": "9",
     },
+]
+
+# Broader international coverage: additional major construction markets across
+# Europe, the Middle East, Africa, Asia-Pacific and Latin America. Each follows
+# the same flat method with country-typical, editable starting points. Decimals
+# reflect the currency's real minor unit (0 for whole-unit currencies such as
+# the Indonesian rupiah and Chilean peso, 3 for the Kuwaiti dinar).
+_MORE_COUNTRY_TEMPLATES: list[dict[str, Any]] = [
+    # Europe (and the European-facing part of the Turkish market).
+    _flat_country_template(
+        slug="turkey",
+        name="Turkey",
+        country_code="TR",
+        currency="TRY",
+        vat="20",
+        overhead="12",
+        profit="8",
+        tax_label="KDV",
+    ),
+    _flat_country_template(
+        slug="portugal",
+        name="Portugal",
+        country_code="PT",
+        currency="EUR",
+        vat="23",
+        overhead="13",
+        profit="6",
+        tax_label="IVA",
+    ),
+    _flat_country_template(
+        slug="belgium",
+        name="Belgium",
+        country_code="BE",
+        currency="EUR",
+        vat="21",
+        overhead="12",
+        profit="7",
+        tax_label="BTW",
+    ),
+    _flat_country_template(
+        slug="ireland",
+        name="Ireland",
+        country_code="IE",
+        currency="EUR",
+        vat="23",
+        overhead="12",
+        profit="7",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="denmark",
+        name="Denmark",
+        country_code="DK",
+        currency="DKK",
+        vat="25",
+        overhead="10",
+        profit="7",
+        tax_label="moms",
+    ),
+    _flat_country_template(
+        slug="finland",
+        name="Finland",
+        country_code="FI",
+        currency="EUR",
+        vat="25.5",
+        overhead="11",
+        profit="7",
+        tax_label="ALV",
+    ),
+    _flat_country_template(
+        slug="greece",
+        name="Greece",
+        country_code="GR",
+        currency="EUR",
+        vat="24",
+        overhead="13",
+        profit="8",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="czechia",
+        name="Czechia",
+        country_code="CZ",
+        currency="CZK",
+        vat="21",
+        overhead="12",
+        profit="8",
+        tax_label="DPH",
+    ),
+    _flat_country_template(
+        slug="romania",
+        name="Romania",
+        country_code="RO",
+        currency="RON",
+        vat="19",
+        overhead="12",
+        profit="8",
+        tax_label="TVA",
+    ),
+    _flat_country_template(
+        slug="hungary",
+        name="Hungary",
+        country_code="HU",
+        currency="HUF",
+        vat="27",
+        overhead="12",
+        profit="8",
+        tax_label="AFA",
+        decimals=0,
+    ),
+    # Middle East.
+    _flat_country_template(
+        slug="qatar",
+        name="Qatar",
+        country_code="QA",
+        currency="QAR",
+        vat="0",
+        overhead="12",
+        profit="8",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="kuwait",
+        name="Kuwait",
+        country_code="KW",
+        currency="KWD",
+        vat="0",
+        overhead="12",
+        profit="8",
+        tax_label="VAT",
+        decimals=3,
+    ),
+    _flat_country_template(
+        slug="egypt",
+        name="Egypt",
+        country_code="EG",
+        currency="EGP",
+        vat="14",
+        overhead="13",
+        profit="10",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="israel",
+        name="Israel",
+        country_code="IL",
+        currency="ILS",
+        vat="18",
+        overhead="12",
+        profit="8",
+        tax_label="VAT",
+    ),
+    # Africa.
+    _flat_country_template(
+        slug="nigeria",
+        name="Nigeria",
+        country_code="NG",
+        currency="NGN",
+        vat="7.5",
+        overhead="12",
+        profit="10",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="kenya",
+        name="Kenya",
+        country_code="KE",
+        currency="KES",
+        vat="16",
+        overhead="12",
+        profit="10",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="morocco",
+        name="Morocco",
+        country_code="MA",
+        currency="MAD",
+        vat="20",
+        overhead="12",
+        profit="8",
+        tax_label="TVA",
+    ),
+    # Asia-Pacific.
+    _flat_country_template(
+        slug="indonesia",
+        name="Indonesia",
+        country_code="ID",
+        currency="IDR",
+        vat="11",
+        overhead="12",
+        profit="10",
+        tax_label="PPN",
+        decimals=0,
+    ),
+    _flat_country_template(
+        slug="vietnam",
+        name="Vietnam",
+        country_code="VN",
+        currency="VND",
+        vat="10",
+        overhead="10",
+        profit="8",
+        tax_label="VAT",
+        decimals=0,
+    ),
+    _flat_country_template(
+        slug="malaysia",
+        name="Malaysia",
+        country_code="MY",
+        currency="MYR",
+        vat="6",
+        overhead="12",
+        profit="8",
+        tax_label="SST",
+    ),
+    _flat_country_template(
+        slug="thailand",
+        name="Thailand",
+        country_code="TH",
+        currency="THB",
+        vat="7",
+        overhead="12",
+        profit="8",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="philippines",
+        name="Philippines",
+        country_code="PH",
+        currency="PHP",
+        vat="12",
+        overhead="12",
+        profit="10",
+        tax_label="VAT",
+    ),
+    _flat_country_template(
+        slug="new_zealand",
+        name="New Zealand",
+        country_code="NZ",
+        currency="NZD",
+        vat="15",
+        overhead="12",
+        profit="8",
+        tax_label="GST",
+    ),
+    # Latin America.
+    _flat_country_template(
+        slug="argentina",
+        name="Argentina",
+        country_code="AR",
+        currency="ARS",
+        vat="21",
+        overhead="15",
+        profit="8",
+        tax_label="IVA",
+    ),
+    _flat_country_template(
+        slug="chile",
+        name="Chile",
+        country_code="CL",
+        currency="CLP",
+        vat="19",
+        overhead="13",
+        profit="8",
+        tax_label="IVA",
+        decimals=0,
+    ),
+    _flat_country_template(
+        slug="colombia",
+        name="Colombia",
+        country_code="CO",
+        currency="COP",
+        vat="19",
+        overhead="15",
+        profit="8",
+        tax_label="IVA",
+        decimals=0,
+    ),
+    _flat_country_template(
+        slug="peru",
+        name="Peru",
+        country_code="PE",
+        currency="PEN",
+        vat="18",
+        overhead="14",
+        profit="8",
+        tax_label="IGV",
+    ),
 ]
 
 # The Uzbekistan cascading methodology - the canonical reference cascade from
@@ -1425,6 +1771,7 @@ _INDUSTRY_TEMPLATES: list[dict[str, Any]] = [
 TEMPLATES: tuple[dict[str, Any], ...] = (
     _INTERNATIONAL_TEMPLATE,
     *_COUNTRY_TEMPLATES,
+    *_MORE_COUNTRY_TEMPLATES,
     _UZBEKISTAN_TEMPLATE,
     _MEXICO_TEMPLATE,
     *_INDUSTRY_TEMPLATES,
