@@ -24,8 +24,7 @@ import re
 import uuid
 from decimal import Decimal
 
-from app.modules.catalog.synonyms import expand_query
-from app.modules.cost_explorer import pricing, ranking
+from app.modules.cost_explorer import pricing, ranking, search
 from app.modules.cost_explorer.repository import CostExplorerRepository
 from app.modules.cost_explorer.schemas import (
     ByResourcesMatch,
@@ -157,12 +156,33 @@ class CostExplorerService:
         """Rank priced works by how well they match a weighted resource set."""
         weights = {r.code.strip(): float(r.weight) for r in req.resources if r.code and r.code.strip()}
         codes = list(weights)
+        has_region = req.region is not None
+        has_sources = bool(req.sources)
         if not codes:
-            return ByResourcesResponse(requested_count=0, result_count=0, results=[])
+            hint = search.by_resources_hint(requested_count=0, result_count=0)
+            return ByResourcesResponse(
+                requested_count=0,
+                result_count=0,
+                results=[],
+                hint=hint.message if hint else None,
+                hint_code=hint.code if hint else None,
+            )
 
         ids = await self.repo.candidate_item_ids(req.region, codes, req.sources, _SCAN_CAP)
         if not ids:
-            return ByResourcesResponse(requested_count=len(codes), result_count=0, results=[])
+            hint = search.by_resources_hint(
+                requested_count=len(codes),
+                result_count=0,
+                has_region=has_region,
+                has_sources=has_sources,
+            )
+            return ByResourcesResponse(
+                requested_count=len(codes),
+                result_count=0,
+                results=[],
+                hint=hint.message if hint else None,
+                hint_code=hint.code if hint else None,
+            )
 
         edges_by_item = await self.repo.edges_for_items(ids)
         items_by_id = await self.repo.cost_items_by_ids(ids)
@@ -226,31 +246,58 @@ class CostExplorerService:
                     missing_codes=match.missing_codes,
                 )
             )
-        return ByResourcesResponse(requested_count=len(codes), result_count=len(results), results=results)
+        hint = search.by_resources_hint(
+            requested_count=len(codes),
+            result_count=len(results),
+            has_region=has_region,
+            has_sources=has_sources,
+        )
+        return ByResourcesResponse(
+            requested_count=len(codes),
+            result_count=len(results),
+            results=results,
+            hint=hint.message if hint else None,
+            hint_code=hint.code if hint else None,
+        )
 
     # ── 2. Find work (lexical text search) ───────────────────────────────────
 
     async def find_work(self, req: FindWorkRequest) -> FindWorkResponse:
         """Rank priced works by a free-text query over code and description."""
+        has_region = req.region is not None
+        has_sources = bool(req.sources)
         tokens = [t for t in re.split(r"\s+", req.q.strip()) if t][:8]
         if not tokens:
-            return FindWorkResponse(query=req.q, result_count=0, results=[])
+            hint = search.text_search_hint(query=req.q, result_count=0)
+            return FindWorkResponse(
+                query=req.q,
+                result_count=0,
+                results=[],
+                hint=hint.message if hint else None,
+                hint_code=hint.code if hint else None,
+            )
 
         # Over-fetch so the lexical re-rank has room to promote the best hits.
         pool = await self.repo.search_work(tokens, req.region, req.sources, min(req.limit * 4, 400))
-        query_l = req.q.strip().lower()
-        # Expand each token to its construction-synonym group so a hit on a
-        # synonym ("reinforcement" for a typed "rebar") counts as a real token
-        # hit and ranks with the word the user meant, matching the synonym-
-        # expanded pool the repository returns.
-        token_variants = [[v.lower() for v in expand_query(tok)] for tok in tokens]
+        # Fold the query for accent- and case-insensitive phrase matching, so a
+        # search typed without accents still lands on an accented row (and back).
+        query_folded = search.fold(req.q)
+        # Expand each token to its multilingual construction-synonym group so a
+        # hit on a synonym ("reinforcement" for a typed "rebar", "concrete" for a
+        # typed "beton") counts as a real token hit and ranks with the word the
+        # user meant, matching the synonym-expanded pool the repository returns.
+        token_variants = [search.match_terms(tok) for tok in tokens]
 
         scored: list[tuple[float, object]] = []
         for item in pool:
-            hay = f"{item.code} {_description(item)}".lower()
-            hits = sum(1 for variants in token_variants if any(v in hay for v in variants))
+            hay = search.fold(f"{item.code} {_description(item)}")
+            hits = sum(
+                1
+                for variants in token_variants
+                if any(search.variant_matches(v, hay, whole_word=whole) for v, whole in variants)
+            )
             token_share = hits / len(token_variants) if token_variants else 0.0
-            phrase = 1.0 if query_l and query_l in hay else 0.0
+            phrase = 1.0 if query_folded and query_folded in hay else 0.0
             score = min(1.0, 0.5 * phrase + 0.5 * token_share)
             scored.append((score, item))
 
@@ -272,7 +319,22 @@ class CostExplorerService:
             )
             for score, item in top
         ]
-        return FindWorkResponse(query=req.q, result_count=len(results), mode="lexical", results=results)
+        top_score = results[0].score if results else 0.0
+        hint = search.text_search_hint(
+            query=req.q,
+            result_count=len(results),
+            top_score=top_score,
+            has_region=has_region,
+            has_sources=has_sources,
+        )
+        return FindWorkResponse(
+            query=req.q,
+            result_count=len(results),
+            mode="lexical",
+            results=results,
+            hint=hint.message if hint else None,
+            hint_code=hint.code if hint else None,
+        )
 
     # ── 3. Compare across price bases ────────────────────────────────────────
 

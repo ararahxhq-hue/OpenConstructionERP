@@ -92,6 +92,12 @@ class ByResourcesResponse(BaseModel):
     requested_count: int
     result_count: int
     results: list[ByResourcesMatch] = Field(default_factory=list)
+    # Plain-language guidance when the search returns nothing to act on.
+    # ``hint`` is a ready English message; ``hint_code`` is a stable key a
+    # localized UI can map to a translated string. Both are null when the
+    # result needs no explanation.
+    hint: str | None = None
+    hint_code: str | None = None
 
 
 # ── Find work: text / semantic work search ──────────────────────────────────
@@ -128,6 +134,12 @@ class FindWorkResponse(BaseModel):
     result_count: int
     mode: str = Field("lexical", description="Ranking mode actually used (lexical when no vector backend).")
     results: list[FindWorkItem] = Field(default_factory=list)
+    # Plain-language guidance shown when a search returns nothing or only weak
+    # matches. ``hint`` is a ready English message; ``hint_code`` is a stable key
+    # a localized UI can map to a translated string. Both are null when the top
+    # results are strong and need no explanation.
+    hint: str | None = None
+    hint_code: str | None = None
 
 
 # ── Compare across price bases ───────────────────────────────────────────────

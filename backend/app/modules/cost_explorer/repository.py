@@ -20,7 +20,7 @@ from sqlalchemy import case, delete, distinct, func, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalog.models import CatalogResource
-from app.modules.catalog.synonyms import expand_query
+from app.modules.cost_explorer import search
 from app.modules.cost_explorer.models import CostItemResource
 from app.modules.costs.models import CostItem
 
@@ -184,20 +184,30 @@ class CostExplorerRepository:
     ) -> list[CostItem]:
         """Cost items ranked by how many of the query concepts they match.
 
-        Each token is expanded with construction synonyms (so "rebar" also finds
-        "reinforcement") and matched against the code or description. An item
-        needs at least ONE concept to appear, and items that match more concepts
-        come first, so a descriptive multi-word query returns the best partial
-        matches instead of dead-ending on zero results when no single row carries
-        every word. The caller re-ranks this pool lexically for the final order.
+        Each token is expanded with multilingual construction synonyms (so
+        "rebar" also finds "reinforcement", and "beton" or the folded "béton"
+        finds "concrete") and matched against the code or description. The word
+        the user typed is matched as a substring so partial typing still lands;
+        machine-injected cross-language synonyms are matched on word boundaries
+        (PostgreSQL ``~*``) so a short foreign word cannot hide inside an
+        unrelated English word. An item needs at least ONE concept to appear, and
+        items that match more concepts come first, so a descriptive multi-word
+        query returns the best partial matches instead of dead-ending on zero
+        results when no single row carries every word. The caller re-ranks this
+        pool lexically for the final order.
         """
         concept_preds = []
         for tok in tokens:
             like_clauses = []
-            for variant in expand_query(tok):
-                pattern = f"%{_escape_like(variant)}%"
-                like_clauses.append(CostItem.code.ilike(pattern, escape="\\"))
-                like_clauses.append(CostItem.description.ilike(pattern, escape="\\"))
+            for variant, whole_word in search.match_terms(tok):
+                if whole_word:
+                    rx = rf"\y{search.boundary_pattern(variant)}\y"
+                    like_clauses.append(CostItem.code.op("~*")(rx))
+                    like_clauses.append(CostItem.description.op("~*")(rx))
+                else:
+                    pattern = f"%{_escape_like(variant)}%"
+                    like_clauses.append(CostItem.code.ilike(pattern, escape="\\"))
+                    like_clauses.append(CostItem.description.ilike(pattern, escape="\\"))
             if like_clauses:
                 concept_preds.append(or_(*like_clauses))
 

@@ -222,6 +222,101 @@ async def test_find_work_matches_construction_synonym(factory) -> None:
 
 
 @pytest.mark.asyncio
+async def test_find_work_matches_across_languages_and_accents(factory) -> None:
+    """An English query finds a German-described work, and an accent-free query a
+    French one; a foreign short synonym does not poison an unrelated row."""
+    from app.modules.cost_explorer.schemas import FindWorkRequest
+
+    await _add_work(
+        factory,
+        code="W-DE",
+        description="Beton C30/37 fuer Wand",  # German for concrete, as a standalone word
+        region="DE_BERLIN",
+        currency="EUR",
+        components=[_line("CEM-A", name="Zement")],
+    )
+    await _add_work(
+        factory,
+        code="W-FR",
+        description="Béton armé pour dalle",  # accented French
+        region="FR_PARIS",
+        currency="EUR",
+        components=[_line("CEM-B", name="Ciment")],
+    )
+    await _add_work(
+        factory,
+        code="W-SUPPORT",
+        description="Supported precast beam",  # contains "porte" as a substring
+        region="DE_BERLIN",
+        currency="EUR",
+        components=[_line("STL-1", name="Steel")],
+    )
+
+    async with factory() as s:
+        svc = _svc(s)
+        # English "concrete" reaches the German "Beton" and French "Béton".
+        resp = await svc.find_work(FindWorkRequest(q="concrete", limit=20))
+        codes = {r.code for r in resp.results}
+        assert "W-DE" in codes
+        assert "W-FR" in codes
+
+        # An accent-free query still lands on the accented French row.
+        resp2 = await svc.find_work(FindWorkRequest(q="beton", limit=20))
+        assert "W-FR" in {r.code for r in resp2.results}
+
+        # "door" expands to French "porte", but the word-boundary rule keeps it
+        # from matching inside "Supported".
+        resp3 = await svc.find_work(FindWorkRequest(q="door", limit=20))
+        assert "W-SUPPORT" not in {r.code for r in resp3.results}
+
+
+@pytest.mark.asyncio
+async def test_find_work_no_results_returns_guidance_hint(factory) -> None:
+    """A search that finds nothing carries a plain-language, filter-aware hint."""
+    from app.modules.cost_explorer.schemas import FindWorkRequest
+
+    await _add_work(
+        factory,
+        code="W-ONLY",
+        description="Emulsion paint two coats",
+        region="TR_ANKARA",
+        currency="TRY",
+        components=[_line("PNT-1", name="Paint")],
+    )
+
+    async with factory() as s:
+        svc = _svc(s)
+        resp = await svc.find_work(FindWorkRequest(q="zzzzznotathing", region="TR_ANKARA", limit=20))
+        assert resp.result_count == 0
+        assert resp.hint_code == "cost_explorer.hint.no_results"
+        assert resp.hint and "region" in resp.hint.lower()
+
+
+@pytest.mark.asyncio
+async def test_find_work_whitespace_query_returns_empty_query_hint(factory) -> None:
+    """A whitespace-only query is guarded and guides the user, without a DB scan."""
+    from app.modules.cost_explorer.schemas import FindWorkRequest
+
+    async with factory() as s:
+        resp = await _svc(s).find_work(FindWorkRequest(q="   ", limit=20))
+        assert resp.result_count == 0
+        assert resp.hint_code == "cost_explorer.hint.empty_query"
+
+
+@pytest.mark.asyncio
+async def test_by_resources_no_match_returns_hint(factory) -> None:
+    """A by-resources search for an unknown code returns a guidance hint."""
+    from app.modules.cost_explorer.schemas import ByResourcesRequest, ResourceQuery
+
+    async with factory() as s:
+        svc = _svc(s)
+        await svc.reindex()
+        resp = await svc.find_by_resources(ByResourcesRequest(resources=[ResourceQuery(code="NOPE-404")], limit=20))
+        assert resp.result_count == 0
+        assert resp.hint_code == "cost_explorer.hint.no_results"
+
+
+@pytest.mark.asyncio
 async def test_compare_lists_code_across_regions_and_flags_mixed_currency(factory) -> None:
     """The same rate code priced in two currencies is reported as mixed."""
     from app.modules.cost_explorer.schemas import CompareRequest
@@ -358,6 +453,41 @@ async def test_substitute_flags_unit_mismatch_only_when_units_differ(factory) ->
             )
         )
         assert same.unit_mismatch is False
+
+
+@pytest.mark.asyncio
+async def test_substitute_unit_compare_is_case_insensitive(factory) -> None:
+    """A line measured in 'kg' and a substitute priced in 'KG' are the same unit."""
+    from app.modules.cost_explorer.schemas import SubstituteRequest
+
+    work_id = await _add_work(
+        factory,
+        code="W-CASE",
+        description="Rebar in slab",
+        region="TR_ANKARA",
+        currency="TRY",
+        components=[_line("STL-KG", name="Rebar", qty="80", unit_rate="12", unit="kg")],
+    )
+    # Same unit as the line but written in a different case; must not warn.
+    await _add_catalog(
+        factory,
+        resource_code="STL-UP",
+        name="Alt rebar",
+        region="TR_ANKARA",
+        currency="TRY",
+        base_price="13",
+        unit="KG",
+    )
+
+    async with factory() as s:
+        resp = await _svc(s).substitute(
+            SubstituteRequest(
+                cost_item_id=work_id,
+                resource_code="STL-KG",
+                substitute_resource_code="STL-UP",
+            )
+        )
+        assert resp.unit_mismatch is False
 
 
 @pytest.mark.asyncio
