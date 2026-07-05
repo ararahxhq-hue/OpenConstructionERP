@@ -355,6 +355,7 @@ async def inventory_totals(
     totals = await service.compute_inventory_totals_fresh(inventory_id)
     return InventoryTotalsResponse(
         inventory_id=inventory_id,
+        unit=totals.get("unit", "kgCO2e"),
         embodied_a1a3=totals.get("embodied_a1a3", "0"),
         embodied_a4=totals.get("embodied_a4", "0"),
         embodied_a5=totals.get("embodied_a5", "0"),
@@ -369,6 +370,7 @@ async def inventory_totals(
         operational=totals.get("operational", "0"),
         end_of_life=totals.get("end_of_life", "0"),
         total=totals.get("total", "0"),
+        basis=totals.get("basis", []),
     )
 
 

@@ -321,14 +321,39 @@ def compute_embodied_entry_carbon(
     factor_unit: str,
     density: Decimal | float | int | None = None,
 ) -> Decimal:
-    """Pure: compute embodied carbon kg = normalised_qty × factor_value."""
+    """Compute embodied carbon in kgCO2e = normalised quantity x factor value.
+
+    The result is always in kgCO2e. ``factor_value`` is the emission factor in
+    kgCO2e per ``factor_unit`` (for example kgCO2e per kg of steel, or kgCO2e
+    per m3 of concrete). The quantity is first converted into ``factor_unit`` so
+    the multiplication is dimensionally correct in any unit system.
+
+    A quantity may be zero (an empty line contributes 0 kgCO2e) but must not be
+    negative, and the emission factor must not be negative: embodied carbon of a
+    real material is never below zero. End-of-life credits (EN 15978 module D)
+    are recorded on their own stage and are not routed through this function.
+
+    Raises:
+        ValueError: quantity or factor value is negative.
+        UnitMismatchError: units are incompatible and no density was supplied.
+    """
+    qty = Decimal(str(quantity))
+    factor = Decimal(str(factor_value))
+    if qty < 0:
+        raise ValueError(
+            f"quantity must not be negative (got {qty}); embodied carbon needs a positive quantity",
+        )
+    if factor < 0:
+        raise ValueError(
+            f"emission factor must not be negative (got {factor}); module D credits use their own stage",
+        )
     normalised = normalise_quantity_to_factor_unit(
         quantity,
         quantity_unit,
         factor_unit,
         density,
     )
-    return normalised * Decimal(str(factor_value))
+    return normalised * factor
 
 
 def compute_scope1_co2e(
@@ -336,21 +361,47 @@ def compute_scope1_co2e(
     fuel_type: str,
     factor: Decimal | float | int | str,
 ) -> Decimal:
-    """Pure: scope-1 emissions = litres × factor.
+    """Compute direct (Scope 1) emissions in kgCO2e = fuel quantity x factor.
 
-    ``fuel_type`` is accepted but the emission factor is the source of
-    truth - the caller is expected to supply the per-fuel factor.
+    ``litres`` is the fuel burned in the reporting period, in litres for liquid
+    fuels or m3 for gases. ``factor`` is the emission factor in kgCO2e per that
+    same unit; the caller supplies the per-fuel factor. ``fuel_type`` is kept for
+    a readable record and future fuel-aware logic. Both inputs must be
+    non-negative; you cannot burn a negative amount of fuel.
+
+    Raises:
+        ValueError: fuel quantity or emission factor is negative.
     """
     _ = fuel_type  # accepted for API symmetry / future fuel-aware logic
-    return Decimal(str(litres)) * Decimal(str(factor))
+    amount = Decimal(str(litres))
+    ef = Decimal(str(factor))
+    if amount < 0:
+        raise ValueError(f"fuel quantity must not be negative (got {amount})")
+    if ef < 0:
+        raise ValueError(f"emission factor must not be negative (got {ef})")
+    return amount * ef
 
 
 def compute_scope2_co2e(
     kwh: Decimal | float | int | str,
     factor: Decimal | float | int | str,
 ) -> Decimal:
-    """Pure: scope-2 emissions = kWh × factor."""
-    return Decimal(str(kwh)) * Decimal(str(factor))
+    """Compute purchased-energy (Scope 2) emissions in kgCO2e = kWh x factor.
+
+    ``kwh`` is the electricity or heat purchased in the period, in kWh. ``factor``
+    is the grid or supplier emission factor in kgCO2e per kWh. Both must be
+    non-negative.
+
+    Raises:
+        ValueError: energy amount or emission factor is negative.
+    """
+    energy = Decimal(str(kwh))
+    ef = Decimal(str(factor))
+    if energy < 0:
+        raise ValueError(f"energy amount must not be negative (got {energy})")
+    if ef < 0:
+        raise ValueError(f"emission factor must not be negative (got {ef})")
+    return energy * ef
 
 
 def match_cost_item_to_epd(
@@ -725,8 +776,26 @@ def compute_inventory_totals(
 
     operational = s1 + s2
     total = a1a5 + stage_totals["b"] + stage_totals["c"] + operational + s3
+    # Plain-language audit trail: exactly which parts add up to the headline
+    # total, all in kgCO2e. This makes the number traceable for a reviewer and
+    # states the one deliberate exclusion (module D benefits are reported apart
+    # from the total, per EN 15978, so a credit cannot flatter the footprint).
+    basis = [
+        "All figures are in kgCO2e (kilograms of CO2 equivalent).",
+        f"Product stage A1-A3 (materials): {stage_totals['a1a3']}",
+        f"Transport to site A4: {stage_totals['a4']}",
+        f"Construction / installation A5: {stage_totals['a5']}",
+        f"Use stage B (embodied B1-B5 plus B6 operational {b6_operational}): {stage_totals['b']}",
+        f"End of life C1-C4: {stage_totals['c']}",
+        f"Scope 1 direct + Scope 2 purchased energy: {operational}",
+        f"Scope 3 value chain: {s3}",
+        f"Total (A1-A5 + B + C + Scope 1/2/3) = {total}",
+        f"Module D benefits beyond the system boundary ({stage_totals['d']}) are reported "
+        "separately and are not included in the total.",
+    ]
     return {
         "inventory_id": str(inventory_id),
+        "unit": "kgCO2e",
         "embodied_a1a3": str(stage_totals["a1a3"]),
         "embodied_a4": str(stage_totals["a4"]),
         "embodied_a5": str(stage_totals["a5"]),
@@ -741,6 +810,7 @@ def compute_inventory_totals(
         "operational": str(operational),
         "end_of_life": str(stage_totals["c"]),
         "total": str(total),
+        "basis": basis,
     }
 
 
@@ -924,6 +994,56 @@ GRID_FACTORS_DEFAULT: dict[tuple[str, int], dict[str, Any]] = {
     ("TR", 2023): {"factor": "0.4380", "method": "location", "source": "IEA 2023"},
     # Japan - IEA
     ("JP", 2023): {"factor": "0.4360", "method": "location", "source": "IEA 2023"},
+    # South Korea - IEA
+    ("KR", 2023): {"factor": "0.4360", "method": "location", "source": "IEA 2023"},
+    # Mexico - IEA
+    ("MX", 2023): {"factor": "0.4230", "method": "location", "source": "IEA 2023"},
+    # Indonesia - IEA
+    ("ID", 2023): {"factor": "0.7600", "method": "location", "source": "IEA 2023"},
+    # Vietnam - IEA
+    ("VN", 2023): {"factor": "0.4750", "method": "location", "source": "IEA 2023"},
+    # Nigeria - IEA
+    ("NG", 2023): {"factor": "0.4400", "method": "location", "source": "IEA 2023"},
+    # Egypt - IEA
+    ("EG", 2023): {"factor": "0.4700", "method": "location", "source": "IEA 2023"},
+    # Argentina - IEA
+    ("AR", 2023): {"factor": "0.3300", "method": "location", "source": "IEA 2023"},
+    # Chile - IEA
+    ("CL", 2023): {"factor": "0.3500", "method": "location", "source": "IEA 2023"},
+    # Switzerland - IEA (hydro / nuclear heavy)
+    ("CH", 2023): {"factor": "0.0300", "method": "location", "source": "IEA 2023"},
+    # Austria - IEA
+    ("AT", 2023): {"factor": "0.1100", "method": "location", "source": "IEA 2023"},
+    # Belgium - IEA
+    ("BE", 2023): {"factor": "0.1700", "method": "location", "source": "IEA 2023"},
+    # Ireland - IEA
+    ("IE", 2023): {"factor": "0.3200", "method": "location", "source": "IEA 2023"},
+    # Portugal - IEA
+    ("PT", 2023): {"factor": "0.1800", "method": "location", "source": "IEA 2023"},
+    # Greece - IEA
+    ("GR", 2023): {"factor": "0.3700", "method": "location", "source": "IEA 2023"},
+    # Denmark - IEA
+    ("DK", 2023): {"factor": "0.1400", "method": "location", "source": "IEA 2023"},
+    # Finland - IEA
+    ("FI", 2023): {"factor": "0.0900", "method": "location", "source": "IEA 2023"},
+    # New Zealand - IEA
+    ("NZ", 2023): {"factor": "0.1000", "method": "location", "source": "IEA 2023"},
+    # Thailand - IEA
+    ("TH", 2023): {"factor": "0.5100", "method": "location", "source": "IEA 2023"},
+    # Malaysia - IEA
+    ("MY", 2023): {"factor": "0.5500", "method": "location", "source": "IEA 2023"},
+}
+
+# Last-resort worldwide average electricity grid carbon intensity
+# (kgCO2e per kWh, location-based). Used only when a project's country is not
+# in the catalogue above, so an operational-carbon estimate anywhere in the
+# world still returns a number, clearly flagged as a low-confidence global
+# default rather than a country-specific figure. Source: IEA global average
+# electricity CO2 intensity, 2023 (about 0.48 kgCO2e/kWh).
+GRID_FACTOR_WORLD_DEFAULT: dict[str, Any] = {
+    "factor": "0.4800",
+    "method": "location",
+    "source": "IEA world average 2023",
 }
 
 
@@ -968,6 +1088,41 @@ def lookup_grid_factor_default(
         "method": best["method"],
         "source": best["source"],
         "fallback": True,
+    }
+
+
+def resolve_grid_factor(
+    country_code: str,
+    year: int,
+    *,
+    allow_world_fallback: bool = True,
+) -> dict[str, Any] | None:
+    """Resolve a grid emission factor for any country, worldwide.
+
+    Tries the catalogued country / year factor first (see
+    :func:`lookup_grid_factor_default`). When the country is not in the
+    catalogue and ``allow_world_fallback`` is true, returns the documented IEA
+    world-average intensity, flagged ``fallback=True`` and ``world_fallback=True``
+    with ``country_code="WORLD"``. This keeps operational-carbon estimates
+    possible for every country while making the low-confidence global default
+    obvious, so a reviewer is never handed a country-specific-looking number
+    that is really a world average. Returns ``None`` only when the country is
+    uncatalogued and the world fallback is switched off.
+    """
+    hit = lookup_grid_factor_default(country_code, year)
+    if hit is not None:
+        return hit
+    if not allow_world_fallback:
+        return None
+    return {
+        "country_code": "WORLD",
+        "requested_country": (country_code or "").strip().upper(),
+        "year": year,
+        "factor_kg_co2e_per_kwh": Decimal(GRID_FACTOR_WORLD_DEFAULT["factor"]),
+        "method": GRID_FACTOR_WORLD_DEFAULT["method"],
+        "source": GRID_FACTOR_WORLD_DEFAULT["source"],
+        "fallback": True,
+        "world_fallback": True,
     }
 
 
@@ -1602,11 +1757,17 @@ class CarbonService:
     async def create_scope1(self, data: Scope1EntryCreate) -> Scope1Entry:
         payload = data.model_dump(exclude={"metadata"})
         if payload.get("total_co2e_kg") is None:
-            payload["total_co2e_kg"] = compute_scope1_co2e(
-                payload["litres_or_m3"],
-                payload["fuel_type"],
-                payload["emission_factor_kg_co2e_per_unit"],
-            )
+            try:
+                payload["total_co2e_kg"] = compute_scope1_co2e(
+                    payload["litres_or_m3"],
+                    payload["fuel_type"],
+                    payload["emission_factor_kg_co2e_per_unit"],
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
         entry = Scope1Entry(**payload)
         entry.metadata_ = data.metadata
         return await self.scope1_repo.create(entry)
@@ -1653,10 +1814,16 @@ class CarbonService:
     async def create_scope2(self, data: Scope2EntryCreate) -> Scope2Entry:
         payload = data.model_dump(exclude={"metadata"})
         if payload.get("total_co2e_kg") is None:
-            payload["total_co2e_kg"] = compute_scope2_co2e(
-                payload["kwh"],
-                payload["emission_factor_kg_co2e_per_kwh"],
-            )
+            try:
+                payload["total_co2e_kg"] = compute_scope2_co2e(
+                    payload["kwh"],
+                    payload["emission_factor_kg_co2e_per_kwh"],
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
         entry = Scope2Entry(**payload)
         entry.metadata_ = data.metadata
         return await self.scope2_repo.create(entry)
@@ -2144,6 +2311,12 @@ class CarbonService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"unit_mismatch: {exc}",
             ) from exc
+        except ValueError as exc:
+            # Negative quantity / factor caught by compute_embodied_entry_carbon.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
 
         entry = EmbodiedCarbonEntry(
             inventory_id=inventory_id,
@@ -2402,11 +2575,15 @@ class CarbonService:
         inventory_id: uuid.UUID,
         req: OperationalCarbonComputeRequest,
     ) -> tuple[Decimal, str]:
-        """Resolve the grid emission factor (kgCO2e/kWh) + its provenance.
+        """Resolve the grid emission factor (kgCO2e/kWh) and its provenance.
 
-        Priority: an explicit request override, then the built-in country/year
-        catalogue, then the average of the inventory's Scope-2 entry factors.
-        Raises HTTP 400 when none can be established.
+        Priority, most trustworthy first: an explicit request override, then the
+        built-in country / year catalogue, then the average of the inventory's
+        own Scope-2 entry factors, and finally the IEA world-average intensity
+        so a country outside the catalogue still gets an estimate (flagged as a
+        low-confidence world default). Raises HTTP 400 only when the caller gave
+        no location signal at all and the inventory has no Scope-2 data to lean
+        on.
         """
         if req.grid_factor_kg_co2e_per_kwh is not None:
             return Decimal(str(req.grid_factor_kg_co2e_per_kwh)), "override"
@@ -2423,11 +2600,21 @@ class CarbonService:
         if factors:
             avg = sum(factors, Decimal("0")) / Decimal(len(factors))
             return avg, "scope2_average"
+        # A country was named but is outside the catalogue: fall back to the IEA
+        # world average rather than failing, so the estimate still runs. The
+        # provenance string makes clear this is a global default, not a
+        # country-specific figure.
+        if req.grid_country:
+            world = resolve_grid_factor(req.grid_country, req.grid_year, allow_world_fallback=True)
+            if world is not None:
+                return Decimal(str(world["factor_kg_co2e_per_kwh"])), str(world["source"])
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "No grid emission factor available: pass grid_factor_kg_co2e_per_kwh, "
-                "a catalogued grid_country/grid_year, or add a Scope-2 entry first."
+                "No grid emission factor to work from. Do one of these: pass "
+                "grid_factor_kg_co2e_per_kwh directly, set grid_country (any "
+                "country works, uncatalogued ones use the IEA world average), or "
+                "add at least one Scope-2 entry to this inventory first."
             ),
         )
 

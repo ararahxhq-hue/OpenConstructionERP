@@ -600,9 +600,15 @@ class SustainabilityReportPayload(BaseModel):
 
 
 class InventoryTotalsResponse(BaseModel):
-    """Fresh totals for an inventory."""
+    """Fresh totals for an inventory.
+
+    Every carbon figure below is in ``unit`` (kgCO2e). ``basis`` is a
+    plain-language, line-by-line explanation of how ``total`` was built, so the
+    number is auditable without opening the code.
+    """
 
     inventory_id: UUID
+    unit: str = Field(default="kgCO2e")
     embodied_a1a3: Decimal = Field(default=Decimal("0"))
     embodied_a4: Decimal = Field(default=Decimal("0"))
     embodied_a5: Decimal = Field(default=Decimal("0"))
@@ -619,6 +625,7 @@ class InventoryTotalsResponse(BaseModel):
     operational: Decimal = Field(default=Decimal("0"))
     end_of_life: Decimal = Field(default=Decimal("0"))
     total: Decimal = Field(default=Decimal("0"))
+    basis: list[str] = Field(default_factory=list)
 
 
 class AlternativeMaterialOption(BaseModel):
@@ -662,12 +669,15 @@ class CarbonDashboardResponse(BaseModel):
 class OperationalCarbonComputeRequest(BaseModel):
     """Request to compute B6 operational carbon for an inventory's BIM.
 
-    The grid factor is resolved as: an explicit ``grid_factor_kg_co2e_per_kwh``
-    override, else the built-in country/year catalogue, else the average of the
-    inventory's Scope-2 entries. Per-asset lines come from elements carrying an
-    energy signal (annual energy, or a rated power x run hours). A single
-    modelled whole-building line is added only when both ``gross_floor_area_m2``
-    and ``modelled_intensity_kwh_per_m2_year`` are supplied.
+    The grid factor (in kgCO2e per kWh) is resolved most-trustworthy first: an
+    explicit ``grid_factor_kg_co2e_per_kwh`` override, else the built-in country
+    / year catalogue, else the average of the inventory's Scope-2 entries, else
+    the IEA world-average intensity when a country outside the catalogue is
+    named (flagged as a low-confidence global default). Per-asset lines come
+    from elements carrying an energy signal (annual energy, or a rated power x
+    run hours). A single modelled whole-building line is added only when both
+    ``gross_floor_area_m2`` and ``modelled_intensity_kwh_per_m2_year`` are
+    supplied.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
