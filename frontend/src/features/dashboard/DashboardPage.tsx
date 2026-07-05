@@ -57,6 +57,11 @@ import { WeatherSiteWidget } from './components/NewWidgets';
 import { OperationsSnapshotCard } from './components/OperationsSnapshotCard';
 import { LatestSitePhotosCard } from './components/LatestSitePhotosCard';
 import { LabourCostWidget } from './LabourCostWidget';
+import { UpcomingMilestonesCard } from './UpcomingMilestonesCard';
+import { RfiTurnaroundCard } from './RfiTurnaroundCard';
+import { SubmittalsPendingCard } from './SubmittalsPendingCard';
+import { InspectionsQualityCard } from './InspectionsQualityCard';
+import { PunchListQualityCard } from './PunchListQualityCard';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { DashboardLayoutManager } from './DashboardLayoutManager';
 import { DASHBOARD_WIDGET_IDS } from './widgetRegistry';
@@ -2337,6 +2342,16 @@ function DashboardPageInner() {
     //    want to embed them elsewhere) but no longer have IDs in the
     //    registry, so the dashboard never renders them inline.
     operations_snapshot: <OperationsSnapshotCard projects={projects} />,
+
+    // ── Delivery & quality (2026-07-05) — each card self-hides when its
+    //    module has no data for the active project, so they never show as
+    //    empty cards on a fresh install.
+    upcoming_milestones: <UpcomingMilestonesCard />,
+    rfi_turnaround: <RfiTurnaroundCard />,
+    submittals_pending: <SubmittalsPendingCard />,
+    inspections_quality: <InspectionsQualityCard />,
+    punch_quality: <PunchListQualityCard />,
+
     weather_site: <WeatherSiteWidget projects={projects} />,
     labour_cost: <LabourCostWidget />,
     latest_photos: <LatestSitePhotosCard />,
