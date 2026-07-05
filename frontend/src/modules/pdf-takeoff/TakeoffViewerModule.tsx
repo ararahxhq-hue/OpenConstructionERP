@@ -1337,7 +1337,9 @@ export default function TakeoffViewerModule({
       // Optional per-measurement stroke width (issue #312). Linear types honour
       // it directly; annotation markups reset their own width below. Defaults
       // to the 2px hairline so unset measurements render exactly as before.
-      ctx.lineWidth = (m.strokeWidth ?? 2) * dpr;
+      // The width scales with zoom (issue #321) so the outline stays fixed
+      // relative to the geometry as the user zooms, matching document space.
+      ctx.lineWidth = (m.strokeWidth ?? 2) * dpr * zoom;
       // AI suggestions (#194) render translucent + dashed until the user
       // confirms them, so they read as proposals rather than committed work.
       ctx.globalAlpha = m.suggested ? 0.5 : 1.0;

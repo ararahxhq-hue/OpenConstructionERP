@@ -254,8 +254,9 @@ export function renderMeasurementsOnCanvas(
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     // Per-measurement stroke width (issue #312); defaults to the 2px hairline
-    // so the export matches the on-screen canvas.
-    ctx.lineWidth = (m.strokeWidth ?? 2) * dpr;
+    // so the export matches the on-screen canvas. Scales with zoom (issue #321)
+    // to stay in document space, keeping the export a mirror of the overlay.
+    ctx.lineWidth = (m.strokeWidth ?? 2) * dpr * zoom;
 
     if (m.type === 'distance' && m.points.length === 2) {
       const p0 = m.points[0]!;
