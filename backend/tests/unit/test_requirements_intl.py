@@ -64,7 +64,19 @@ def test_explain_coverage():
 
 
 def test_labels_have_no_em_dashes_or_smart_quotes():
-    banned = "—–‘’“”"
+    banned = "".join(
+        map(
+            chr,
+            (
+                0x2014,
+                0x2013,
+                0x2018,
+                0x2019,
+                0x201C,
+                0x201D,
+            ),
+        )
+    )
     blobs = []
     for lang in ("en", "de", "ru"):
         blobs += [deliverable_status_label(s, lang) for s in ("accepted", "submitted", "missing")]

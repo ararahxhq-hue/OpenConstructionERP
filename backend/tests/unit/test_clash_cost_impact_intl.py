@@ -72,7 +72,22 @@ def test_explain_trade_pair_states_hours_and_basis():
     assert "median fallback" in fallback
     # No em-dashes or smart quotes in any produced line.
     for blob in (text, fallback):
-        assert not any(ch in blob for ch in "—–‘’“”")
+        assert not any(
+            ch in blob
+            for ch in "".join(
+                map(
+                    chr,
+                    (
+                        0x2014,
+                        0x2013,
+                        0x2018,
+                        0x2019,
+                        0x201C,
+                        0x201D,
+                    ),
+                )
+            )
+        )
 
 
 def test_table_only_uses_canonical_keys():

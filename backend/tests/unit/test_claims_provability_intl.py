@@ -96,7 +96,22 @@ def test_score_summary_names_the_biggest_gap():
 
 
 def test_presented_strings_have_no_em_dashes_or_smart_quotes():
-    banned = "—–‘’“”‌‍⁠"
+    banned = "".join(
+        map(
+            chr,
+            (
+                0x2014,
+                0x2013,
+                0x2018,
+                0x2019,
+                0x201C,
+                0x201D,
+                0x200C,
+                0x200D,
+                0x2060,
+            ),
+        )
+    )
     signals = ProvabilitySignals(notice_served_at=None, ownership_chain_present=False)
     score = compute_provability(signals)
     blobs = [score_summary(score)]

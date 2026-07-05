@@ -85,7 +85,19 @@ def test_score_summary_counts_and_pluralizes():
 
 
 def test_helpers_produce_no_em_dashes_or_smart_quotes():
-    banned = "—–‘’“”"
+    banned = "".join(
+        map(
+            chr,
+            (
+                0x2014,
+                0x2013,
+                0x2018,
+                0x2019,
+                0x201C,
+                0x201D,
+            ),
+        )
+    )
     score = _score(45.0, "D", [_gap("a", "blocker")])
     blobs = [score_summary(score)]
     blobs += [severity_label(s, lang) for s in SEVERITIES for lang in ("en", "de", "ru")]
