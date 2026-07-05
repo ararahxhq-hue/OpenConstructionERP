@@ -48,12 +48,18 @@ APPROVED_UNITS: Final[frozenset[str]] = frozenset(
         "m2",
         "cm2",
         "ft2",
+        "yd2",
+        # US roofing square (100 sq ft) - GitHub #320
+        "sq",
         # volume
         "m3",
         "cm3",
         "l",
         "ft3",
         "gal",
+        # US trade volume units - GitHub #320
+        "cy",
+        "bdft",
         # mass / weight
         "kg",
         "g",
@@ -108,6 +114,21 @@ _UNIT_ALIASES: Final[dict[str, str]] = {
     "cu.m": "m3",
     "cuft": "ft3",
     "cu.ft": "ft3",
+    # US trade units - GitHub #320
+    "cuyd": "cy",
+    "cu.yd": "cy",
+    "yd3": "cy",
+    "cubicyard": "cy",
+    "bf": "bdft",
+    "fbm": "bdft",
+    "boardfoot": "bdft",
+    "boardfeet": "bdft",
+    "board foot": "bdft",
+    "board feet": "bdft",
+    "sqyd": "yd2",
+    "sq.yd": "yd2",
+    "square": "sq",
+    "squares": "sq",
     # counts / lump synonyms
     "piece": "pcs",
     "pieces": "pcs",
