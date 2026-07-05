@@ -7539,6 +7539,70 @@ async def get_cost_breakdown(
     return await service.get_cost_breakdown(boq_id)
 
 
+@router.get(
+    "/positions/{position_id}/price-analysis/",
+    summary="Unit-price breakdown for a position",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def get_position_price_analysis(
+    position_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    fmt: str = Query(default="json", alias="format"),
+    preset: str = Query(default="international"),
+    service: BOQService = Depends(_get_service),
+) -> StreamingResponse | dict[str, Any]:
+    """Return the detailed unit-price breakdown (price analysis) of a position.
+
+    Splits the unit rate into labour, material, machinery, equipment,
+    subcontract and other, then stacks the BoQ overhead and profit markups, so
+    an estimator can see and justify how the rate is built. This is the
+    international core; ``preset=efb`` also returns the German EFB 221/222/223
+    style grouping. ``format=markdown`` streams a readable table.
+
+    Reads the resource split already stored on the position
+    (``metadata.resources``); positions without one show the whole rate as a
+    single line so the sheet always renders.
+    """
+    from app.modules.price_breakdown import efb_221_view, from_position, render_markdown
+
+    existing = await service.position_repo.get_by_id(position_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate("errors.position_not_found", locale=get_locale()),
+        )
+    await _verify_boq_owner(session, existing.boq_id, user_id, payload)
+
+    markups = await service.markup_repo.list_for_boq(existing.boq_id)
+    markup_dicts = [{"category": m.category, "markup_type": m.markup_type, "percentage": m.percentage} for m in markups]
+    position_dict = {
+        "ordinal": existing.ordinal,
+        "reference_code": getattr(existing, "reference_code", None),
+        "description": existing.description,
+        "unit": existing.unit,
+        "quantity": existing.quantity,
+        "unit_rate": existing.unit_rate,
+        "metadata_": existing.metadata_ or {},
+    }
+    breakdown = from_position(position_dict, markups=markup_dicts)
+
+    if fmt == "markdown":
+        text = render_markdown(breakdown, preset=preset)
+        safe = str(existing.ordinal or "position").replace("/", "-").replace(" ", "_")
+        return StreamingResponse(
+            io.BytesIO(text.encode("utf-8")),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="price_analysis_{safe}.md"'},
+        )
+
+    result = breakdown.to_dict()
+    if preset == "efb":
+        result["efb"] = efb_221_view(breakdown)
+    return result
+
+
 # ── Statistics ──────────────────────────────────────────────────────────────
 
 
