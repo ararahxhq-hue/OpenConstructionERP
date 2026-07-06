@@ -38,7 +38,6 @@ import {
   CircleDashed,
   Activity,
   LayoutGrid,
-  GraduationCap,
   ChevronDown,
   ChevronUp,
   MapPin,
@@ -48,6 +47,7 @@ import { dashboardGuide } from './dashboardGuide';
 import { MultiCurrencyTotal } from '@/shared/ui/MultiCurrencyTotal';
 import { WhatsNewCard } from '@/shared/ui/WhatsNewCard';
 import BIMCoverageCard from './BIMCoverageCard';
+import { DashboardCasesCard } from './DashboardCasesCard';
 import { FinanceSummaryCard } from './FinanceSummaryCard';
 import { InboxPanel } from '@/features/inbox';
 import { CompactProjectCard } from './components/CompactProjectCard';
@@ -84,7 +84,7 @@ import {
  * friendly label from the local-part: take everything before "@", split on
  * dots / underscores / hyphens / digits, title-case the first usable token,
  * and trim. Returns `undefined` when nothing usable can be derived so the
- * greeting can render name-less — we never expose a raw email or "undefined".
+ * greeting can render name-less - we never expose a raw email or "undefined".
  *
  * Examples:
  *   "artem.boiko@acme.io" → "Artem"
@@ -132,7 +132,7 @@ interface ProjectSummary {
   currency: string;
   locale?: string;
   created_at: string;
-  // Optional location fields — only present on /v1/projects/ payload
+  // Optional location fields - only present on /v1/projects/ payload
   // when the project has been geocoded. The map widget needs them.
   address?: {
     street?: string | null;
@@ -183,7 +183,7 @@ interface CurrencyTotal {
  * (see backend dashboard/service.py). The shared rollup payload type does
  * not yet declare them, so we read them through this narrow local shape.
  * RULE: across projects with different currencies there is no blended
- * rate — render per-currency chips, never one mixed scalar.
+ * rate - render per-currency chips, never one mixed scalar.
  */
 interface BoqCurrencyBreakdown {
   by_currency?: CurrencyTotal[];
@@ -864,7 +864,7 @@ function KpiRibbon({
     {
       icon: <ShieldCheck size={20} strokeWidth={1.75} />,
       // When no validation report exists yet we swap the "N/A" string for a
-      // dashed-circle icon — reads as "not measured" and doesn't compete
+      // dashed-circle icon - reads as "not measured" and doesn't compete
       // with the percentage on validated tiles. The sublabel keeps the CTA.
       value: qualityScore !== null
         ? `${qualityScore}%`
@@ -1046,7 +1046,7 @@ function PortfolioOverview({ projects: _projects }: { projects: ProjectSummary[]
   );
 }
 
-/* ── Today widget — action items, scoped to the active project ────────
+/* ── Today widget - action items, scoped to the active project ────────
    Source data is `/v1/projects/dashboard/cards/` (per-project aggregates).
    The destination pages (/tasks, /rfi, /safety) are project-scoped via
    `useProjectContextStore.activeProjectId`. To prevent the dashboard
@@ -1099,7 +1099,7 @@ function TodaySnapshot({ cards }: { cards?: ProjectCardMetrics[] }) {
     count >= urgentAt ? 'urgent' : count >= attentionAt ? 'attention' : 'info';
 
   // When we're in portfolio mode, clicking a tile sends the user to the
-  // project list so they can pick one — the destination pages need a
+  // project list so they can pick one - the destination pages need a
   // project context to render anything meaningful.
   const tileUrl = (singleProjectUrl: string) =>
     activeCard ? singleProjectUrl : '/projects';
@@ -1326,7 +1326,7 @@ function NextSteps({
       });
     }
 
-    // Evergreen filler — always-on suggestions added at the END so they
+    // Evergreen filler - always-on suggestions added at the END so they
     // only surface when the conditional state-aware ones leave space.
     // Guarantees the 3-card grid stays visually complete regardless of
     // the user's setup. (Added 2026-05-11.)
@@ -1569,7 +1569,7 @@ function SystemStatusSummary({
     enabled: canListUsers,
   });
 
-  // FA-0005: `undefined` data means the query is still PENDING — every
+  // FA-0005: `undefined` data means the query is still PENDING - every
   // queryFn above settles errors to a concrete fallback ([], {modules: []}),
   // so we can safely treat `undefined` as "loading" and render a skeleton
   // pulse instead of a misleading "0" on a cold server. `null` = pending.
@@ -1880,8 +1880,8 @@ function QuickUploadCard({ projects }: { projects?: ProjectSummary[] }) {
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 
 export function DashboardPage() {
-  // Mount the rollup provider ONCE so every wave-2 widget — and the inner
-  // page's KPI ribbon / lastBoq / Analytics — reads from the same single
+  // Mount the rollup provider ONCE so every wave-2 widget - and the inner
+  // page's KPI ribbon / lastBoq / Analytics - reads from the same single
   // ``GET /api/v1/dashboard/rollup/`` instead of fanning out per-project.
   // The previous build fired 7×``/v1/boq/boqs/`` + 7×``/v1/schedule/
   // schedules/`` at 7 projects (≈100 at 50). v4.6.2 N+1 nuke 2026-05-24:
@@ -1900,7 +1900,7 @@ function DashboardPageInner() {
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [customizing, setCustomizing] = useState(false);
 
-  // Single rollup-context read — every widget on this page shares this one
+  // Single rollup-context read - every widget on this page shares this one
   // fetch via the provider mounted above. Replaces the per-project fan-out
   // for BOQs + schedules below.
   const rollup = useDashboardRollupContext();
@@ -1909,7 +1909,7 @@ function DashboardPageInner() {
 
   // The rollup feeds the KPI ribbon and most wave-2 widgets in one request.
   // Its `error` was previously never read, so a failed rollup silently
-  // rendered every dependent widget as empty/zero — indistinguishable from a
+  // rendered every dependent widget as empty/zero - indistinguishable from a
   // brand-new workspace. We surface a small, non-blocking retry banner above
   // the widget grid (the rest of the dashboard still renders). The context
   // does not expose `refetch`, so retry by invalidating the rollup query.
@@ -2017,7 +2017,7 @@ function DashboardPageInner() {
 
   // Fetch system status for vector DB count (used in onboarding steps).
   // Shares the ``['system-status']`` cache with the SystemStatus panel
-  // below — same 60s staleTime, no polling interval, so the two observers
+  // below - same 60s staleTime, no polling interval, so the two observers
   // never fire competing fetches against the expensive status endpoint.
   const { data: systemStatus } = useQuery({
     queryKey: ['system-status'],
@@ -2028,14 +2028,14 @@ function DashboardPageInner() {
 
   const vectorCount = systemStatus?.vector_db?.vectors ?? 0;
 
-  // ── allBoqs / allSchedules — derived from the rollup payload, NOT a
+  // ── allBoqs / allSchedules - derived from the rollup payload, NOT a
   // per-project fan-out (v4.6.2 N+1 nuke 2026-05-24). The wave-2 widgets
   // consume their slices directly via context; KPI ribbon + Analytics +
   // OnboardingSteps still expect ``BOQWithTotal[]`` / ``ScheduleSummary[]``
   // shapes, so we synthesize lite stubs from ``boq_summary.by_project`` +
   // ``boq_summary.last_boq`` + ``schedule_critical.total_schedules`` that
   // carry only the fields those consumers actually read. Anything beyond
-  // counts / aggregates was never used here — full position arrays + per-
+  // counts / aggregates was never used here - full position arrays + per-
   // schedule rows live in the dedicated pages (``/boq`` / ``/schedule``).
   const allBoqs = useMemo<BOQWithTotal[] | undefined>(() => {
     if (!boqSummary) return undefined;
@@ -2043,15 +2043,15 @@ function DashboardPageInner() {
       id: `summary-${row.project_id}`,
       project_id: row.project_id,
       name: row.project_name,
-      // KpiRibbon counts non-archived BOQs — without per-row status we mark
+      // KpiRibbon counts non-archived BOQs - without per-row status we mark
       // the synthesized stub as ``active`` so it lands in the bucket. The
       // accurate count for the tile comes from ``boqSummary.active_boqs``
       // below; this stub only matters for legacy length-based checks.
       status: 'active',
-      // Per-project total in project currency, as Number — KpiRibbon and
+      // Per-project total in project currency, as Number - KpiRibbon and
       // AnalyticsSection sum these.
       grand_total: Number(row.total_value) || 0,
-      // Synthetic position list — one entry per ``position_count`` would
+      // Synthetic position list - one entry per ``position_count`` would
       // bloat memory, so we mark a single representative position carrying
       // the rolled-up total. OnboardingSteps + SystemStatusSummary only
       // check ``positions.length > 0`` + ``positions.some(p => p.total > 0)``.
@@ -2061,7 +2061,7 @@ function DashboardPageInner() {
           : [],
     }));
     // If the user has at least one real BOQ but no per-project rollup row
-    // covered it (defensive — should be impossible), insert a single fall-
+    // covered it (defensive - should be impossible), insert a single fall-
     // back so OnboardingSteps "Build your BOQ" step still ticks.
     if (stubs.length === 0 && boqSummary.total_boqs > 0) {
       stubs.push({
@@ -2122,7 +2122,7 @@ function DashboardPageInner() {
   });
   const contactsCount = contactsList?.length ?? 0;
 
-  // Most-recently updated BOQ for "Continue your work" — sourced from the
+  // Most-recently updated BOQ for "Continue your work" - sourced from the
   // rollup's pre-computed ``boq_summary.last_boq`` so we don't need to
   // fan out a ``/v1/boq/boqs/?project_id=…`` per project just to sort by
   // ``updated_at`` client-side.
@@ -2141,7 +2141,7 @@ function DashboardPageInner() {
     };
   }, [boqSummary]);
 
-  // ── Widget node map — keyed by registry id. The dashboard renders these
+  // ── Widget node map - keyed by registry id. The dashboard renders these
   //    in the user's saved order (`resolvedWidgets`), skipping hidden ones.
   //    Conditional widgets resolve to `null` (and contribute nothing) just
   //    as they did when they were inline. */
@@ -2223,7 +2223,7 @@ function DashboardPageInner() {
       <>
         <ProjectMetricCards cards={projectCards} loading={cardsLoading} />
         {/* FA-0005: only fall back to the recent-projects list once the
-            cards query has SETTLED empty — while it is pending the metric
+            cards query has SETTLED empty - while it is pending the metric
             cards above already render a skeleton grid, and rendering this
             block too would flash the first-project welcome state. */}
         {!cardsLoading && (projectCards?.length ?? 0) === 0 && (
@@ -2336,14 +2336,14 @@ function DashboardPageInner() {
       </div>
     ),
 
-    // ── Wave 2 operations widgets (2026-05-23) — consolidated 2026-05-25
+    // ── Wave 2 operations widgets (2026-05-23) - consolidated 2026-05-25
     //    into a single OperationsSnapshotCard. The 9 individual widgets
     //    still exist in NewWidgets.tsx (importable for projects that
     //    want to embed them elsewhere) but no longer have IDs in the
     //    registry, so the dashboard never renders them inline.
     operations_snapshot: <OperationsSnapshotCard projects={projects} />,
 
-    // ── Delivery & quality (2026-07-05) — each card self-hides when its
+    // ── Delivery & quality (2026-07-05) - each card self-hides when its
     //    module has no data for the active project, so they never show as
     //    empty cards on a fresh install.
     upcoming_milestones: <UpcomingMilestonesCard />,
@@ -2360,7 +2360,7 @@ function DashboardPageInner() {
   return (
     <DashboardRollupProvider>
     <div className="space-y-5 animate-fade-in">
-      {/* Partner co-brand strip — only renders when a partner pack is
+      {/* Partner co-brand strip - only renders when a partner pack is
           active (env OE_PARTNER_PACK or first installed). Dismissable
           per session; reappears on next browser launch. */}
       <PartnerLogoBadge variant="dashboard" />
@@ -2369,7 +2369,7 @@ function DashboardPageInner() {
           appears once per release per browser. Sits above the hero so
           the user sees release highlights before the dashboard hero. */}
       <WhatsNewCard />
-      {/* ─── 1. Hero · row A — greeting + primary actions ────────────────
+      {/* ─── 1. Hero · row A - greeting + primary actions ────────────────
           Compressed from the previous 6-row hero (audit 2026-05-11): the
           greeting and the 3 CTAs share a single line on desktop; row B
           below merges DDC attribution + OSS badge + status pills into a
@@ -2458,9 +2458,9 @@ function DashboardPageInner() {
               ? t('dashboard.layout.done', { defaultValue: 'Done' })
               : t('dashboard.layout.customize', { defaultValue: 'Customize' })}
           </Button>
-          {/* Per-module Tour CTA — launches the Dashboard guided tour. */}
+          {/* Per-module Tour CTA - launches the Dashboard guided tour. */}
           <ModuleHelpButton tourId="dashboard" />
-          {/* "How it works" guide — concept walkthrough; CTA starts a new estimate. */}
+          {/* "How it works" guide - concept walkthrough; CTA starts a new estimate. */}
           <ModuleGuideButton
             content={dashboardGuide}
             onCta={() => {
@@ -2475,9 +2475,9 @@ function DashboardPageInner() {
         </div>
       </div>
 
-      {/* ─── 2. Hero · row B — thin meta-strip ───────────────────────── */}
+      {/* ─── 2. Hero · row B - thin meta-strip ───────────────────────── */}
       <div className="flex items-center flex-wrap gap-x-4 gap-y-2 pl-2 animate-stagger-in" style={{ animationDelay: '140ms' }}>
-        {/* DDC attribution — slim inline link with tiny logo */}
+        {/* DDC attribution - slim inline link with tiny logo */}
         <a
           href="https://datadrivenconstruction.io/?utm_source=erp"
           target="_blank"
@@ -2496,7 +2496,7 @@ function DashboardPageInner() {
 
         <span aria-hidden className="h-3 w-px bg-border-light" />
 
-        {/* Open-source pill — slimmer (was a heavy gradient card) */}
+        {/* Open-source pill - slimmer (was a heavy gradient card) */}
         <a
           href="https://github.com/datadrivenconstruction/OpenConstructionERP"
           target="_blank"
@@ -2519,40 +2519,12 @@ function DashboardPageInner() {
 
       {/* ─── Start here: Cases (learn by example) ─────────────────────────
           A discoverable entry into the guided, cross-module playbooks at
-          /cases. Slim, always visible, not part of the customizable widget
-          grid so it never gets hidden. */}
-      <button
-        type="button"
-        onClick={() => navigate('/cases')}
-        data-testid="dashboard-cases-card"
-        className="group flex w-full items-center gap-4 rounded-xl border border-oe-blue/30 bg-gradient-to-r from-oe-blue/[0.06] to-transparent px-4 py-3 text-left shadow-xs transition-all hover:border-oe-blue/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 animate-card-in"
-        style={{ animationDelay: '120ms' }}
-      >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue ring-1 ring-inset ring-oe-blue/20">
-          <GraduationCap size={20} strokeWidth={1.9} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-content-primary">
-            {t('cases.dashboard_card.title', { defaultValue: 'Start here - learn by example' })}
-          </p>
-          <p className="mt-0.5 text-xs leading-relaxed text-content-secondary">
-            {t('cases.dashboard_card.body', {
-              defaultValue:
-                'Follow a guided playbook from a PDF to a priced, validated estimate, step by step across the modules.',
-            })}
-          </p>
-        </div>
-        <span className="hidden shrink-0 items-center gap-1 text-xs font-semibold text-oe-blue sm:inline-flex">
-          {t('cases.dashboard_card.cta', { defaultValue: 'Browse cases' })}
-          <ArrowRight
-            size={14}
-            className="transition-transform group-hover:translate-x-0.5"
-            aria-hidden="true"
-          />
-        </span>
-      </button>
+          /cases, with quick-launch into resumable and role-matched cases.
+          Always visible, not part of the customizable widget grid so it never
+          gets hidden. */}
+      <DashboardCasesCard />
 
-      {/* ─── Customize panel (collapsible) — same manager as Settings ─── */}
+      {/* ─── Customize panel (collapsible) - same manager as Settings ─── */}
       {customizing && (
         <Card className="animate-card-in border-oe-blue/30">
           <CardHeader
@@ -2571,7 +2543,7 @@ function DashboardPageInner() {
       {/* Rollup-failure banner. The shared ``/v1/dashboard/rollup/`` feeds
           the KPI ribbon and most widgets below; when it fails they render
           empty/zero, which looks identical to a fresh workspace. Surface the
-          failure explicitly with a Retry CTA without blanking the page — the
+          failure explicitly with a Retry CTA without blanking the page - the
           non-rollup widgets (projects, documents, system status) still work. */}
       {rollup.error != null && (
         <div
@@ -2603,7 +2575,7 @@ function DashboardPageInner() {
         </div>
       )}
 
-      {/* ─── Widgets — rendered in the user's saved order, hidden ones
+      {/* ─── Widgets - rendered in the user's saved order, hidden ones
           skipped. Conditional widgets resolve to null and contribute
           nothing (same behaviour as when they were inline). ──────────── */}
       {resolvedWidgets.map((id) => {
@@ -2627,7 +2599,7 @@ function ProjectsList({ projects }: { projects?: ProjectSummary[] }) {
   // FA-0005: `projects === undefined` means the query is still PENDING (the
   // queryFn settles errors to []). Render placeholder rows instead of
   // flashing the first-project welcome block at users whose projects simply
-  // have not arrived yet — the welcome CTA is reserved for a SETTLED empty
+  // have not arrived yet - the welcome CTA is reserved for a SETTLED empty
   // result below.
   if (!projects) {
     return (
@@ -2730,7 +2702,7 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
   const { t } = useTranslation();
 
   // Source aggregates from the dashboard rollup the parent provider already
-  // fetched — eliminates the per-project ``/v1/boq/boqs/?project_id=…`` fan
+  // fetched - eliminates the per-project ``/v1/boq/boqs/?project_id=…`` fan
   // -out this component used to do (v4.6.2 N+1 nuke 2026-05-24).
   const { byWidget } = useDashboardRollupContext();
   const boqSummary = byWidget('boq_summary');
@@ -2740,7 +2712,7 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
 
     const totalBoqs = boqSummary.total_boqs;
 
-    // Per-currency value subtotals — never a blended scalar. Prefer the
+    // Per-currency value subtotals - never a blended scalar. Prefer the
     // backend's ``by_currency``; fall back to grouping the per-project rows
     // by their own currency on an older backend.
     const extra = boqSummary as unknown as BoqCurrencyBreakdown;
@@ -2779,7 +2751,7 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
       .sort((a, b) => b.value - a.value);
 
     // We no longer have per-BOQ status (we'd need a BOQ list call for
-    // that) — present a binary active vs inactive split derived from
+    // that) - present a binary active vs inactive split derived from
     // the active-count the rollup exposes. The donut chart consumer just
     // wants ratio-shaped buckets, so this preserves the visual.
     const inactive = Math.max(0, totalBoqs - (boqSummary.active_boqs ?? totalBoqs));
@@ -2884,7 +2856,7 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
         </div>
 
         {/* Cleaned per audit 2026-05-11: removed the BOQ-status donut
-            (vanity metric — nobody asks "how many of my BOQs are drafts?").
+            (vanity metric - nobody asks "how many of my BOQs are drafts?").
             Bars now span full-width with slimmer height (h-2 vs h-6) and
             use the oe-blue brand color instead of a 10-colour rainbow. */}
         <div className="text-xs font-medium uppercase tracking-wider text-content-tertiary mb-3">
@@ -2955,7 +2927,7 @@ function SystemStatus() {
     retry: false,
     // The vector-DB probe behind this endpoint is comparatively expensive
     // (it pings LanceDB/Qdrant). Keep both ``['system-status']`` observers
-    // on the same cheap cadence — 60s staleTime, no aggressive polling —
+    // on the same cheap cadence - 60s staleTime, no aggressive polling -
     // so they share one cached response instead of stampeding the backend.
     staleTime: 60_000,
     refetchInterval: 60_000,
