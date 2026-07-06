@@ -1173,7 +1173,14 @@ export function CostsPage() {
       {/* My catalogs - user-owned price books (create / edit / delete /
           export, click to filter the items list to one catalog) */}
       <div data-guide="costs-catalogs">
-        <CatalogsSection selectedId={catalogId} onSelect={handleSelectCatalog} />
+        <CatalogsSection
+          selectedId={catalogId}
+          onSelect={handleSelectCatalog}
+          onAddPosition={(id) => {
+            handleSelectCatalog(id);
+            setShowCreateItem(true);
+          }}
+        />
       </div>
 
       {/* Favourites & Recent Quick Filters */}
@@ -1402,6 +1409,25 @@ export function CostsPage() {
         // (When stale results are still present via placeholderData we keep
         // rendering them rather than blanking the table.)
         <RecoveryCard error={error} onRetry={() => refetch()} />
+      ) : items.length === 0 && catalogId && !query && !specialTab ? (
+        // A user-owned catalog is selected and has no positions yet - the
+        // generic "No cost items found" message below gives no way forward
+        // here, which was the reported gap ("no obvious tool to add cost
+        // positions" right after creating a catalog). Offer the same
+        // "Add position" action inline instead.
+        <EmptyState
+          icon={<FolderOpen size={24} strokeWidth={1.5} />}
+          title={t('costs_catalogs.empty_catalog_title', {
+            defaultValue: 'This catalog has no positions yet',
+          })}
+          description={t('costs_catalogs.empty_catalog_hint', {
+            defaultValue: 'Add a code, description, unit and rate to start building this catalog.',
+          })}
+          action={{
+            label: t('costs_catalogs.add_position', { defaultValue: 'Add position' }),
+            onClick: () => setShowCreateItem(true),
+          }}
+        />
       ) : items.length === 0 ? (
         <EmptyState
           icon={specialTab === 'favourites' ? <Star size={24} strokeWidth={1.5} /> : specialTab === 'recent' ? <Clock size={24} strokeWidth={1.5} /> : <Database size={24} strokeWidth={1.5} />}
