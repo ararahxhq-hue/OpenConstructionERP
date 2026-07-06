@@ -71,7 +71,7 @@ function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominen
       <span
         className={clsx(
           'relative flex items-center justify-center overflow-hidden rounded-full shadow-sm transition-transform group-hover:scale-105',
-          prominent ? 'h-24 w-24 ring-2 ring-emerald-400/60' : 'h-20 w-20 ring-1 ring-border-light',
+          prominent ? 'h-24 w-24 ring-2 ring-emerald-400/60' : 'h-11 w-11 ring-1 ring-border-light',
         )}
       >
         {showImg ? (
@@ -86,7 +86,7 @@ function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominen
           <span
             className={clsx(
               'flex h-full w-full items-center justify-center font-bold text-white',
-              prominent ? 'text-xl' : 'text-lg',
+              prominent ? 'text-xl' : 'text-2xs',
               monogramColor(entry.name),
             )}
           >
@@ -94,15 +94,15 @@ function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominen
           </span>
         )}
       </span>
-      <span className="mt-2 w-full truncate text-center text-xs text-content-secondary group-hover:text-content-primary transition-colors">
+      <span className="mt-1 w-full truncate text-center text-2xs text-content-secondary group-hover:text-content-primary transition-colors">
         {entry.name}
       </span>
     </>
   );
 
   const cls = clsx(
-    'group flex flex-col items-center rounded-lg p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2',
-    prominent ? 'w-28' : 'w-24',
+    'group flex flex-col items-center rounded-lg p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2',
+    prominent ? 'w-28' : 'w-[3.75rem]',
   );
 
   return url ? (
@@ -1237,14 +1237,14 @@ export function AboutPage() {
               {/* Text-only nickname chips - no avatars or remote images, so the
                   wall stays self-contained and reads cleanly offline. When a
                   sponsor supplies a handle or url the chip links to it. */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 {SPONSORS.map(s => {
                   const url = acknowledgedUrl(s);
                   const chipCls =
-                    'inline-flex items-center gap-1.5 rounded-md border border-emerald-300/50 bg-emerald-50/50 dark:border-emerald-500/25 dark:bg-emerald-900/10 px-2.5 py-1 text-xs font-medium text-content-secondary';
+                    'inline-flex items-center gap-2 rounded-lg border border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-900/15 px-4 py-2 text-sm font-semibold text-content-primary';
                   const label = (
                     <>
-                      <HandCoins size={12} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <HandCoins size={18} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
                       <span>{s.name}</span>
                     </>
                   );
