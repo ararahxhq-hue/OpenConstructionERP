@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.3.0] - 2026-07-06
+
+This release reworks the Cases hub around the people who use it and the shape of a real project. On top of the company type, you can now pick your own professional role, estimator, quantity surveyor, site manager, project manager, BIM coordinator, procurement, planner, health and safety officer, design lead, document controller, commercial manager or foreman, each shown as its own illustrated persona avatar so the choice is obvious. A case keeps a sensible set of roles even when it does not name them, they are derived from its discipline and the company types it serves.
+
+The hub also lays the whole catalogue out along the project lifecycle, from Define and brief through Design, Estimate, Procurement, Plan, Build, Handover and Operate. A timeline across the top shows the eight stages with a count on each and filters the list when you pick one. Every case now carries its stage and a sequential number, and the grid reads in the order a real project runs, so you can see where each case sits from the first budget to running the finished building. Eleven more worked cases were added for the roles that had the fewest, a toolbox talk and a method statement and risk assessment, a baseline programme and a progress reforecast, a buying schedule, a variation assessment and an interim payment application, a model clash coordination round, an operation and maintenance handover manual, an asset register for facilities and a drawing register. The catalogue grows from 52 to 63 cases.
+
+The dashboard gets a stronger Cases block too. Instead of a single link it now offers quick launch into a few cases, anything you left half finished comes first so you can resume it, then cases that match the role and company you picked.
+
 ## [10.2.0] - 2026-07-06
 
 This release reorganizes the Cases hub around who you are. A new "I work as" selector lets you pick your company type, general contractor, specialist subcontractor, cost consultant, designer, developer, project manager, BIM consultant or owner and operator, and the list narrows to the cases that kind of company actually runs, so you see your own set instead of the whole catalogue. Discipline stays as a secondary filter, you can pin the cases that matter to a project and switch to a project only shortlist, and the catalogue grew from 40 to 52 worked examples. Cases also moved above Project files in the menu.
