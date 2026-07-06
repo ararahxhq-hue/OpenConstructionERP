@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'subcontractor-package',
   order: 65,
   category: 'commercial',
+  companyTypes: ['general-contractor', 'subcontractor', 'cost-consultant'],
   icon: 'PackageCheck',
   titleKey: 'cases.subcontractor_package.title',
   titleDefault: 'Run a subcontractor package',

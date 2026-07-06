@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'quantities-from-bim',
   order: 40,
   category: 'bim',
+  companyTypes: ['designer', 'bim-consultant', 'cost-consultant'],
   icon: 'Box',
   titleKey: 'cases.quantities_from_bim.title',
   titleDefault: 'Get quantities from a BIM model',

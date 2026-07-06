@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'run-the-site-day',
   order: 50,
   category: 'site',
+  companyTypes: ['general-contractor', 'subcontractor', 'project-manager'],
   icon: 'HardHat',
   titleKey: 'cases.run_the_site_day.title',
   titleDefault: 'Run the site day',

@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'validate-estimate',
   order: 15,
   category: 'estimating',
+  companyTypes: ['general-contractor', 'cost-consultant', 'subcontractor'],
   icon: 'Calculator',
   titleKey: 'cases.validate_estimate.title',
   titleDefault: 'Check an estimate before you send it',

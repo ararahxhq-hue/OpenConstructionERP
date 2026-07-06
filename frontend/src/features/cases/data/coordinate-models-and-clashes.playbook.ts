@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'coordinate-models-and-clashes',
   order: 95,
   category: 'bim',
+  companyTypes: ['designer', 'bim-consultant', 'project-manager'],
   icon: 'Combine',
   titleKey: 'cases.coordinate_models_and_clashes.title',
   titleDefault: 'Coordinate models and resolve clashes',

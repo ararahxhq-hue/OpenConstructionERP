@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'sense-check-an-estimate-with-benchmarks',
   order: 195,
   category: 'estimating',
+  companyTypes: ['cost-consultant', 'general-contractor', 'developer-client'],
   icon: 'Scale',
   titleKey: 'cases.sense_check_an_estimate_with_benchmarks.title',
   titleDefault: 'Sense-check an estimate against benchmarks',

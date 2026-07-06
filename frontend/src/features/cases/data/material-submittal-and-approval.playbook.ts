@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'material-submittal-and-approval',
   order: 165,
   category: 'quality',
+  companyTypes: ['subcontractor', 'designer', 'general-contractor'],
   icon: 'FileCheck',
   titleKey: 'cases.material_submittal_and_approval.title',
   titleDefault: 'Get a material submittal approved',

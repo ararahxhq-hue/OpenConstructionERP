@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'set-up-a-new-project',
   order: 130,
   category: 'planning',
+  companyTypes: ['general-contractor', 'project-manager', 'developer-client'],
   icon: 'Building2',
   titleKey: 'cases.set_up_a_new_project.title',
   titleDefault: 'Set up a new project',

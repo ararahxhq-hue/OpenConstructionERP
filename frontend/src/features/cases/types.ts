@@ -78,6 +78,25 @@ export type CaseCategory =
   | 'handover';
 
 /**
+ * The kind of company or role a user works for. This is the PRIMARY
+ * organizing axis on the Cases hub: the "I work as..." selector filters the
+ * whole list down to the cases actually built for that kind of work. A case
+ * almost always fits more than one company type (an estimating case usually
+ * serves a general contractor, a subcontractor and a cost consultant at
+ * once). Keep this list aligned with `COMPANY_TYPE_META` in
+ * `companyTypes.ts`.
+ */
+export type CompanyType =
+  | 'general-contractor'
+  | 'subcontractor'
+  | 'cost-consultant'
+  | 'designer'
+  | 'developer-client'
+  | 'project-manager'
+  | 'bim-consultant'
+  | 'owner-operator';
+
+/**
  * A complete case: an ordered set of steps spanning several modules.
  *
  * Drop a new one into `features/cases/data/<slug>.playbook.ts` as the file's
@@ -91,6 +110,9 @@ export interface Playbook {
   order: number;
   /** Discipline bucket for the category filter on the Cases hub. */
   category: CaseCategory;
+  /** Company types this case is built for (one or more). Drives the primary
+   *  "I work as..." selector on the Cases hub; see `companyTypes.ts`. */
+  companyTypes: CompanyType[];
   /** i18n key for the case title. */
   titleKey: string;
   /** Inline English default for the case title. */

@@ -19,6 +19,7 @@ const playbook: Playbook = {
   id: 'price-from-pdf',
   order: 10,
   category: 'estimating',
+  companyTypes: ['general-contractor', 'subcontractor', 'cost-consultant'],
   icon: 'FileSpreadsheet',
   titleKey: 'cases.price_from_pdf.title',
   titleDefault: 'Price a building from a PDF',

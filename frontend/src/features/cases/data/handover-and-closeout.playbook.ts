@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'handover-and-closeout',
   order: 70,
   category: 'handover',
+  companyTypes: ['general-contractor', 'project-manager', 'owner-operator'],
   icon: 'ShieldCheck',
   titleKey: 'cases.handover_and_closeout.title',
   titleDefault: 'Hand over and close out',

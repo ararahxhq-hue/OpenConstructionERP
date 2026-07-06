@@ -20,6 +20,7 @@ import {
 } from './progress';
 import { PLAYBOOKS, getPlaybook } from './playbooks';
 import { CATEGORY_META } from './categories';
+import { COMPANY_TYPE_META } from './companyTypes';
 import type { Playbook, PlaybookProgress } from './types';
 
 /** A small synthetic playbook so the helper tests do not depend on shipped content. */
@@ -28,6 +29,7 @@ function makePlaybook(stepIds: string[]): Playbook {
     id: 'test-pb',
     order: 1,
     category: 'estimating',
+    companyTypes: ['general-contractor'],
     titleKey: 'x.title',
     titleDefault: 'Test',
     descKey: 'x.desc',
@@ -244,17 +246,30 @@ describe('playbook auto-discovery (import.meta.glob)', () => {
 /* ── Shipped-content integrity: every case must be usable end to end ─────── */
 
 const VALID_CATEGORIES = new Set(CATEGORY_META.map((c) => c.id));
+const VALID_COMPANY_TYPES = new Set(COMPANY_TYPE_META.map((c) => c.id));
 
 describe('shipped cases integrity', () => {
   it('ships the full expected catalogue', () => {
     // Guards against a data file silently dropping out of the glob.
-    expect(PLAYBOOKS.length).toBeGreaterThanOrEqual(24);
+    expect(PLAYBOOKS.length).toBeGreaterThanOrEqual(50);
   });
 
   it('every case has a known category and a positive time estimate', () => {
     for (const pb of PLAYBOOKS) {
       expect(VALID_CATEGORIES.has(pb.category)).toBe(true);
       expect(pb.estMinutes).toBeGreaterThan(0);
+    }
+  });
+
+  it('every case declares at least one known company type', () => {
+    for (const pb of PLAYBOOKS) {
+      expect(Array.isArray(pb.companyTypes)).toBe(true);
+      expect(pb.companyTypes.length).toBeGreaterThan(0);
+      for (const id of pb.companyTypes) {
+        expect(VALID_COMPANY_TYPES.has(id), `unknown company type "${id}" on "${pb.id}"`).toBe(
+          true,
+        );
+      }
     }
   });
 

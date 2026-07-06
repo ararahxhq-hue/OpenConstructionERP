@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'toolbox-talk-and-safety',
   order: 105,
   category: 'quality',
+  companyTypes: ['general-contractor', 'subcontractor', 'project-manager'],
   icon: 'HardHat',
   titleKey: 'cases.toolbox_talk_and_safety.title',
   titleDefault: 'Toolbox talk and safety check',

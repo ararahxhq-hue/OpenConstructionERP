@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'compare-bids-and-award',
   order: 85,
   category: 'tendering',
+  companyTypes: ['general-contractor', 'cost-consultant', 'project-manager', 'developer-client'],
   icon: 'Gavel',
   titleKey: 'cases.compare_bids_and_award.title',
   titleDefault: 'Compare bids and award',

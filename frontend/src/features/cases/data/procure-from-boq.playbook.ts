@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'procure-from-boq',
   order: 25,
   category: 'tendering',
+  companyTypes: ['general-contractor', 'subcontractor', 'cost-consultant'],
   icon: 'PackageCheck',
   titleKey: 'cases.procure_from_boq.title',
   titleDefault: 'Procure materials from the BOQ',

@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'control-cost-against-budget',
   order: 160,
   category: 'commercial',
+  companyTypes: ['general-contractor', 'cost-consultant', 'project-manager'],
   icon: 'Scale',
   titleKey: 'cases.control_cost_against_budget.title',
   titleDefault: 'Control cost against budget',

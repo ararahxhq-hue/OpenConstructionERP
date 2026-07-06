@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'build-and-run-an-itp',
   order: 185,
   category: 'quality',
+  companyTypes: ['general-contractor', 'subcontractor', 'project-manager'],
   icon: 'ListChecks',
   titleKey: 'cases.build_and_run_an_itp.title',
   titleDefault: 'Build and run an inspection and test plan',

@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'compile-weekly-progress-report',
   order: 170,
   category: 'planning',
+  companyTypes: ['general-contractor', 'project-manager', 'developer-client'],
   icon: 'FileBarChart',
   titleKey: 'cases.compile_weekly_progress_report.title',
   titleDefault: 'Compile the weekly progress report',

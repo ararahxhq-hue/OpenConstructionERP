@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'report-and-action-a-near-miss',
   order: 190,
   category: 'site',
+  companyTypes: ['general-contractor', 'subcontractor', 'project-manager'],
   icon: 'ShieldAlert',
   titleKey: 'cases.report_and_action_a_near_miss.title',
   titleDefault: 'Report and action a near-miss',

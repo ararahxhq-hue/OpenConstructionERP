@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'localize-an-estimate-to-a-region',
   order: 140,
   category: 'estimating',
+  companyTypes: ['cost-consultant', 'general-contractor', 'developer-client'],
   icon: 'Ruler',
   titleKey: 'cases.localize_an_estimate_to_a_region.title',
   titleDefault: 'Localize an estimate to a region',

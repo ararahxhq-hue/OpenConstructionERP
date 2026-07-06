@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'inspect-and-close-ncr',
   order: 55,
   category: 'quality',
+  companyTypes: ['general-contractor', 'subcontractor', 'project-manager'],
   icon: 'BadgeCheck',
   titleKey: 'cases.inspect_and_close_ncr.title',
   titleDefault: 'Inspect work and close a non-conformance',

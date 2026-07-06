@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'payment-application-and-reconciliation',
   order: 110,
   category: 'commercial',
+  companyTypes: ['general-contractor', 'subcontractor', 'cost-consultant'],
   icon: 'Receipt',
   titleKey: 'cases.payment_application_and_reconciliation.title',
   titleDefault: 'Payment application and reconciliation',

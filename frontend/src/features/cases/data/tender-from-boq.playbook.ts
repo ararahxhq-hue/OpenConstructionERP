@@ -22,6 +22,7 @@ const playbook: Playbook = {
   id: 'tender-from-boq',
   order: 20,
   category: 'tendering',
+  companyTypes: ['general-contractor', 'cost-consultant', 'project-manager'],
   icon: 'Handshake',
   titleKey: 'cases.tender_from_boq.title',
   titleDefault: 'Run a tender from a BOQ',

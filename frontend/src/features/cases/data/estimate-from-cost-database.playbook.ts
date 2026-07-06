@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'estimate-from-cost-database',
   order: 75,
   category: 'estimating',
+  companyTypes: ['general-contractor', 'subcontractor', 'cost-consultant'],
   icon: 'Database',
   titleKey: 'cases.estimate_from_cost_database.title',
   titleDefault: 'Estimate from a cost database',

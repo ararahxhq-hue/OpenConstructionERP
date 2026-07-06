@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'takeoff-from-dwg',
   order: 45,
   category: 'bim',
+  companyTypes: ['cost-consultant', 'general-contractor', 'bim-consultant'],
   icon: 'Ruler',
   titleKey: 'cases.takeoff_from_dwg.title',
   titleDefault: 'Measure quantities from a DWG',

@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'as-built-and-om-handover',
   order: 115,
   category: 'handover',
+  companyTypes: ['general-contractor', 'designer', 'owner-operator', 'bim-consultant'],
   icon: 'BookOpen',
   titleKey: 'cases.as_built_and_om_handover.title',
   titleDefault: 'As-built and O and M handover',

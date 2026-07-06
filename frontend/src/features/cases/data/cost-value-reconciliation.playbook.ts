@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'cost-value-reconciliation',
   order: 180,
   category: 'commercial',
+  companyTypes: ['general-contractor', 'cost-consultant', 'project-manager'],
   icon: 'Scale',
   titleKey: 'cases.cost_value_reconciliation.title',
   titleDefault: 'Run the cost-value reconciliation',

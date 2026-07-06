@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'forecast-project-cash-flow',
   order: 145,
   category: 'commercial',
+  companyTypes: ['general-contractor', 'developer-client', 'cost-consultant'],
   icon: 'LineChart',
   titleKey: 'cases.forecast_project_cash_flow.title',
   titleDefault: 'Forecast project cash flow',

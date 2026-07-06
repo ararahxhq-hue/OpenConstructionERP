@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'answer-an-rfi',
   order: 100,
   category: 'site',
+  companyTypes: ['general-contractor', 'designer', 'project-manager'],
   icon: 'MessageSquare',
   titleKey: 'cases.answer_an_rfi.title',
   titleDefault: 'Answer an RFI',

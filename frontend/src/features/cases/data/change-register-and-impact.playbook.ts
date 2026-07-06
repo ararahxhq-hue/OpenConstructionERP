@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'change-register-and-impact',
   order: 120,
   category: 'commercial',
+  companyTypes: ['general-contractor', 'project-manager', 'cost-consultant', 'developer-client'],
   icon: 'GitCompare',
   titleKey: 'cases.change_register_and_impact.title',
   titleDefault: 'Change register and impact',

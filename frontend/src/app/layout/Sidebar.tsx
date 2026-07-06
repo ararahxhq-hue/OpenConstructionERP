@@ -214,10 +214,11 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'nav.dashboard', to: '/', icon: LayoutDashboard },
       { labelKey: 'projects.title', to: '/projects', icon: FolderOpen, tourId: 'projects' },
-      { labelKey: 'nav.project_files', to: '/files', icon: HardDrive },
       // Cases (playbooks) - guided, cross-module worked examples. Sits in
-      // Overview so the "learn by example" entry is discoverable from the top.
+      // Overview so the "learn by example" entry is discoverable from the top,
+      // and above Project files so the "learn by example" entry is seen first.
       { labelKey: 'nav.cases', to: '/cases', icon: Route },
+      { labelKey: 'nav.project_files', to: '/files', icon: HardDrive },
     ],
   },
   // ── 2. TAKEOFF ─────────────────────────────────────────────────────

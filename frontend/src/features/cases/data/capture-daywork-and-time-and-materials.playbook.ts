@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'capture-daywork-and-time-and-materials',
   order: 150,
   category: 'site',
+  companyTypes: ['subcontractor', 'general-contractor', 'cost-consultant'],
   icon: 'Clock',
   titleKey: 'cases.capture_daywork_and_time_and_materials.title',
   titleDefault: 'Capture daywork and time and materials',

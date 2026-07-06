@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'build-an-assembly-recipe-rate',
   order: 135,
   category: 'estimating',
+  companyTypes: ['cost-consultant', 'general-contractor', 'subcontractor'],
   icon: 'Combine',
   titleKey: 'cases.build_an_assembly_recipe_rate.title',
   titleDefault: 'Build an assembly (recipe rate)',

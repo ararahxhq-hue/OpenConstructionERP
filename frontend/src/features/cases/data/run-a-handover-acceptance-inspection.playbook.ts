@@ -13,6 +13,7 @@ const playbook: Playbook = {
   id: 'run-a-handover-acceptance-inspection',
   order: 155,
   category: 'handover',
+  companyTypes: ['general-contractor', 'project-manager', 'owner-operator', 'developer-client'],
   icon: 'ClipboardCheck',
   titleKey: 'cases.run_a_handover_acceptance_inspection.title',
   titleDefault: 'Run a handover acceptance inspection',
