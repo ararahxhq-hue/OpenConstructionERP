@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.4.0] - 2026-07-06
+
+The Cases hub gets a hand-drawn look. Every case, professional role and company type now carries a light line-art illustration. The hub pickers became picture-left chips, each case card shows a full illustration banner with a single discipline colour and an overlapping stack of the role avatars, and the case runner puts the illustration beside a bigger title with a clearer meta row and a primary action that names the module it opens. Where an illustration has not been drawn yet the card falls back to a plain glyph, so nothing breaks and there are no broken images.
+
+The two inbound capture webhooks, the email drop and the provider webhook, now also accept an X-API-Key header. An external system can post to them with a shared key instead of a signed-in user session. Permission based access keeps working exactly as before, the key is simply an additional way in, and the new path is covered by tests.
+
 ## [10.3.0] - 2026-07-06
 
 This release reworks the Cases hub around the people who use it and the shape of a real project. On top of the company type, you can now pick your own professional role, estimator, quantity surveyor, site manager, project manager, BIM coordinator, procurement, planner, health and safety officer, design lead, document controller, commercial manager or foreman, each shown as its own illustrated persona avatar so the choice is obvious. A case keeps a sensible set of roles even when it does not name them, they are derived from its discipline and the company types it serves.
