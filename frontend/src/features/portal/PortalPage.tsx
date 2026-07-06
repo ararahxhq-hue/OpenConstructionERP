@@ -35,6 +35,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { projectsApi } from '@/features/projects/api';
 import { fetchDocuments } from '@/features/documents/api';
 import { listTickets } from '@/features/service/api';
+import { fetchBIMModels } from '@/features/bim/api';
 import { copyToClipboard } from '@/shared/lib/browser';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
@@ -108,6 +109,8 @@ function portalResourceLink(type: string, id: string): string | null {
       return '/property-dev';
     case 'document':
       return '/files';
+    case 'bim':
+      return '/bim';
     case 'ticket':
       return '/service';
     case 'invoice':
@@ -1339,7 +1342,9 @@ function GrantAccessModal({
   // CONN-53: when granting access to a document we first need a project to
   // scope the document list (documents are project-scoped). Tickets are listed
   // org-wide. Both pickers submit the selected UUID to the backend so the
-  // inviter never pastes a raw id.
+  // inviter never pastes a raw id. Also reused by the BIM model picker below
+  // (models are project-scoped the same way documents are, and only one of
+  // the two resource types is ever active at a time).
   const [docProjectId, setDocProjectId] = useState('');
 
   const grantMut = useMutation({
@@ -1373,9 +1378,12 @@ function GrantAccessModal({
   const projectsQ = useQuery({
     queryKey: ['portal-grant', 'projects'],
     queryFn: () => projectsApi.list(),
-    // Load projects for the project picker AND the document picker (which needs
-    // a project to scope its list).
-    enabled: form.resource_type === 'project' || form.resource_type === 'document',
+    // Load projects for the project picker AND the document / BIM model
+    // pickers (both need a project to scope their list).
+    enabled:
+      form.resource_type === 'project' ||
+      form.resource_type === 'document' ||
+      form.resource_type === 'bim',
     staleTime: 60_000,
   });
 
@@ -1384,6 +1392,15 @@ function GrantAccessModal({
     queryKey: ['portal-grant', 'documents', docProjectId],
     queryFn: () => fetchDocuments(docProjectId),
     enabled: form.resource_type === 'document' && !!docProjectId,
+    staleTime: 60_000,
+  });
+
+  // BIM model picker - scoped to the chosen project, same pattern as the
+  // document picker above (project first, then the resource within it).
+  const bimModelsQ = useQuery({
+    queryKey: ['portal-grant', 'bim-models', docProjectId],
+    queryFn: () => fetchBIMModels(docProjectId),
+    enabled: form.resource_type === 'bim' && !!docProjectId,
     staleTime: 60_000,
   });
 
@@ -1488,6 +1505,7 @@ function GrantAccessModal({
             <option value="project">{t('portal.rt_project', { defaultValue: 'Project' })}</option>
             <option value="development">{t('portal.rt_development', { defaultValue: 'Development' })}</option>
             <option value="document">{t('portal.rt_document', { defaultValue: 'Document' })}</option>
+            <option value="bim">{t('portal.rt_bim', { defaultValue: 'BIM model' })}</option>
             <option value="ticket">{t('portal.rt_ticket', { defaultValue: 'Service ticket' })}</option>
             <option value="invoice">{t('portal.rt_invoice', { defaultValue: 'Invoice' })}</option>
           </select>
@@ -1587,6 +1605,63 @@ function GrantAccessModal({
                 {(documentsQ.data ?? []).map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
+                  </option>
+                ))}
+              </select>
+            </WideModalField>
+          </>
+        ) : form.resource_type === 'bim' ? (
+          <>
+            <WideModalField
+              label={t('portal.bim_project', { defaultValue: 'Project' })}
+              required
+              hint={t('portal.bim_project_hint', {
+                defaultValue: 'Pick the project that holds the BIM model.',
+              })}
+              span={2}
+            >
+              <select
+                value={docProjectId}
+                onChange={(e) => {
+                  setDocProjectId(e.target.value);
+                  setForm({ ...form, resource_id: '' });
+                }}
+                className={inputCls}
+                disabled={projectsQ.isLoading}
+              >
+                <option value="">— {t('common.select', { defaultValue: 'Select' })} —</option>
+                {(projectsQ.data ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </WideModalField>
+            <WideModalField
+              label={t('portal.bim_model', { defaultValue: 'BIM model' })}
+              required
+              hint={t('portal.bim_model_hint', {
+                defaultValue:
+                  'The portal user opens this model read-only - no editing, measuring or authoring tools.',
+              })}
+              span={2}
+            >
+              <select
+                value={form.resource_id}
+                onChange={(e) => setForm({ ...form, resource_id: e.target.value })}
+                className={inputCls}
+                disabled={!docProjectId || bimModelsQ.isLoading}
+              >
+                <option value="">
+                  {!docProjectId
+                    ? t('portal.pick_project_first', {
+                        defaultValue: 'Pick a project first',
+                      })
+                    : `— ${t('common.select', { defaultValue: 'Select' })} —`}
+                </option>
+                {(bimModelsQ.data?.items ?? []).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
                   </option>
                 ))}
               </select>

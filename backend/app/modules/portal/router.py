@@ -32,10 +32,14 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.modules.bim_hub import file_storage as bim_file_storage
+from app.modules.bim_hub.models import NON_3D_MODEL_FORMATS, BIMModel
+from app.modules.bim_hub.schemas import BIMElementListResponse, BIMElementResponse
+from app.modules.bim_hub.service import BIMHubService
 from app.modules.portal.dependencies import (
     PortalSessionToken,
     RequirePortalSession,
@@ -58,6 +62,8 @@ from app.modules.portal.schemas import (
     PaymentApplicationSubmitPayload,
     PortalAgreementSummary,
     PortalAgreementSummaryList,
+    PortalBimModelEntry,
+    PortalBimModelList,
     PortalChangeOrderEntry,
     PortalChangeOrderList,
     PortalInvoiceEntry,
@@ -808,6 +814,220 @@ async def portal_list_invoices(
         for inv in rows
     ]
     return PortalInvoiceList(items=items, total=total)
+
+
+# ── Portal-side BIM/CAD model visibility (view-only) ──────────────────────
+
+
+async def _portal_can_view_bim(
+    service: PortalService,
+    session: SessionDep,
+    user_id: uuid.UUID,
+    model: BIMModel,
+) -> bool:
+    """Dual-grant RLS check for a BIM model: per-model OR per-project.
+
+    ``session`` is accepted for symmetry with the rest of this module's
+    RLS helpers even though the lookup here only needs ``service`` - it
+    keeps the call site identical whether or not a future check needs a
+    raw query.
+    """
+    del session  # not needed directly; service already carries the session
+    if await service.enforce_rls(user_id, "bim", model.id, required="view"):
+        return True
+    accessible_projects = await service.list_accessible_resources(user_id, "project")
+    return model.project_id in accessible_projects
+
+
+@router.get(
+    "/me/bim-models",
+    response_model=PortalBimModelList,
+)
+async def portal_list_bim_models(
+    user: RequirePortalSession,
+    session: SessionDep,
+    service: PortalService = Depends(_get_service),
+    project_id: uuid.UUID | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> PortalBimModelList:
+    """List BIM/CAD models shared with the caller, for the view-only viewer.
+
+    Same dual access model as change orders / invoices: a per-model ``bim``
+    grant for specific models, or a ``project`` grant that exposes every
+    model under that project. Only ``status == "ready"`` models with a
+    real 3D mesh are returned - 2D-only formats (DWG/DXF/DGN, see
+    ``NON_3D_MODEL_FORMATS``) and models still converting or errored never
+    appear here, since there is nothing a read-only 3D viewer could show.
+    """
+    from sqlalchemy import func as _func
+    from sqlalchemy import not_, or_
+    from sqlalchemy import select as _select
+
+    accessible_models = await service.list_accessible_resources(user.id, "bim")
+    accessible_projects = await service.list_accessible_resources(user.id, "project")
+    if not accessible_models and not accessible_projects:
+        return PortalBimModelList(items=[], total=0)
+
+    # A per-model grant on project B must not unlock project A, so the scope
+    # predicate (project OR specific model) is ALWAYS applied, even when a
+    # project_id filter is supplied.
+    scope_ors = []
+    if accessible_projects:
+        scope_ors.append(BIMModel.project_id.in_(accessible_projects))
+    if accessible_models:
+        scope_ors.append(BIMModel.id.in_(accessible_models))
+    scope_predicate = or_(*scope_ors)
+
+    # Mirrors bim_hub.models.is_non_3d_format(): a NULL/empty model_format is
+    # 3D-eligible, everything else is excluded iff it substring-matches one
+    # of the 2D-drawing formats (case-insensitive).
+    non_3d_ors = [BIMModel.model_format.ilike(f"%{fmt}%") for fmt in NON_3D_MODEL_FORMATS]
+    format_predicate = or_(BIMModel.model_format.is_(None), not_(or_(*non_3d_ors)))
+
+    base = _select(BIMModel).where(BIMModel.status == "ready").where(scope_predicate).where(format_predicate)
+    if project_id is not None:
+        base = base.where(BIMModel.project_id == project_id)
+
+    count_stmt = _select(_func.count()).select_from(base.subquery())
+    total = int((await session.execute(count_stmt)).scalar_one())
+
+    stmt = base.order_by(BIMModel.created_at.desc()).offset(offset).limit(limit)
+    rows = list((await session.execute(stmt)).scalars().all())
+
+    items = [
+        PortalBimModelEntry(
+            id=m.id,
+            project_id=m.project_id,
+            name=m.name,
+            discipline=m.discipline or "",
+            model_format=m.model_format or "",
+            element_count=m.element_count,
+            status=m.status,
+        )
+        for m in rows
+    ]
+    return PortalBimModelList(items=items, total=total)
+
+
+@router.get(
+    "/me/bim-models/{model_id}/elements",
+    response_model=BIMElementListResponse,
+)
+async def portal_bim_model_elements(
+    model_id: uuid.UUID,
+    user: RequirePortalSession,
+    session: SessionDep,
+    service: PortalService = Depends(_get_service),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50000, ge=1, le=50000),
+) -> BIMElementListResponse:
+    """Return a skeleton element list for a shared BIM model, read-only.
+
+    Mirrors the ``skeleton=True`` branch of bim_hub's internal
+    ``GET /models/{model_id}/elements`` (plain id/mesh_ref/name/element_type/
+    bounding_box rows, no BOQ links / documents / tasks / validation joins)
+    so the portal 3D viewer can match meshes to elements without exposing
+    any cost data, links or authoring surface. The model is loaded first so
+    the RLS check below has its ``project_id``; only then is a 403 raised
+    for an ungranted caller.
+    """
+    model = await session.get(BIMModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="BIM model not found")
+    if not await _portal_can_view_bim(service, session, user.id, model):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this BIM model")
+
+    bim_service = BIMHubService(session)
+    plain_items, plain_total = await bim_service.list_elements(model_id, offset=offset, limit=limit)
+
+    items: list[BIMElementResponse] = []
+    for e in plain_items:
+        resp = BIMElementResponse.model_validate(e)
+        resp.properties = {}
+        resp.quantities = {}
+        resp.metadata = {}
+        items.append(resp)
+    return BIMElementListResponse(items=items, total=plain_total, offset=offset, limit=limit)
+
+
+@router.get("/me/bim-models/{model_id}/geometry", response_model=None)
+async def portal_bim_model_geometry(
+    model_id: uuid.UUID,
+    session: SessionDep,
+    service: PortalService = Depends(_get_service),
+    token: str | None = Query(
+        default=None,
+        description=(
+            "Portal session token, as an alternative to the Authorization "
+            "header - the browser's glTF/COLLADA geometry loader used by "
+            "the read-only viewer cannot attach custom headers."
+        ),
+    ),
+    authorization: str | None = Header(default=None),
+) -> FileResponse | RedirectResponse | Response:
+    """Serve the GLB/DAE geometry blob for a BIM model shared with the caller.
+
+    Auth accepts either an ``Authorization: Bearer <session_token>`` header
+    or a ``?token=`` query parameter, validated the same way
+    :func:`app.modules.portal.dependencies.get_current_portal_user` does
+    (:meth:`PortalService.verify_session`) - the query fallback exists only
+    because static geometry loaders cannot set headers. RLS is the same
+    dual grant as the model list. Geometry resolution and the disk-streaming
+    behaviour (Range-capable ``FileResponse`` with zero in-memory copy for
+    local disk, a presigned redirect for S3 - see issue #291) are delegated
+    straight to :mod:`app.modules.bim_hub.file_storage`, the same module the
+    internal BIM viewer uses, so both surfaces stay in sync.
+    """
+    auth_token = token
+    if not auth_token and authorization and authorization.lower().startswith("bearer "):
+        auth_token = authorization[7:]
+    if not auth_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Portal session required",
+        )
+    user = await service.verify_session(auth_token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired portal session",
+        )
+
+    model = await session.get(BIMModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="BIM model not found")
+    if not await _portal_can_view_bim(service, session, user.id, model):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this BIM model")
+
+    project_id = str(model.project_id)
+    found = await bim_file_storage.find_geometry_key(project_id, model_id)
+    if found is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="3D geometry is not available for this model yet",
+        )
+    key, ext = found
+    media_type = bim_file_storage.GEOMETRY_MEDIA_TYPES.get(ext, "application/octet-stream")
+    cache_headers = {"Cache-Control": "no-store, no-cache, must-revalidate"}
+
+    # Prefer a presigned URL so the browser fetches directly from the bucket
+    # (S3). Local backend returns None -> fall back to streaming below.
+    presigned = bim_file_storage.presigned_geometry_url(key)
+    if presigned:
+        return RedirectResponse(url=presigned, status_code=307)
+
+    from app.core.storage import get_storage_backend
+
+    backend = get_storage_backend()
+    disk_path = backend.local_path(key)
+    if disk_path is not None:
+        # Streams with HTTP Range support and zero in-memory copy - see the
+        # issue #291 note on the internal endpoint this mirrors.
+        return FileResponse(disk_path, media_type=media_type, headers=cache_headers)
+
+    geo_bytes = await backend.get(key)
+    return Response(content=geo_bytes, media_type=media_type, headers=cache_headers)
 
 
 # ── Portal-side progress-report visibility ────────────────────────────────

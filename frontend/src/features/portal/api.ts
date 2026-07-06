@@ -13,6 +13,7 @@
  */
 
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import type { BIMElementData } from '@/shared/ui/BIMViewer';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -591,6 +592,76 @@ export function listMyInvoices(params?: {
   if (params?.limit !== undefined) qs.set('limit', String(params.limit));
   const q = qs.toString();
   return portalFetch<PortalInvoiceList>(`${PORTAL_ME_BASE}/invoices${q ? `?${q}` : ''}`);
+}
+
+/* ── Portal-user-facing (session-token) BIM/CAD model sharing (view-only) ──
+ *
+ * An admin grants a portal user a `bim` (or `project`) access rule; the
+ * client then opens the model read-only in the portal's view-only 3D
+ * viewer (no editing / measure / authoring tools - see the `readOnly` prop
+ * on shared/ui/BIMViewer). List + skeleton elements ride the session token
+ * through `portalFetch`. Geometry is served by a dedicated endpoint that
+ * also accepts the session token as a `?token=` query param, because the
+ * browser's glTF/COLLADA loader used by the viewer cannot attach an
+ * Authorization header - mirrors how the internal BIM viewer authenticates
+ * its geometry requests (see features/bim/BIMPage.tsx `geometryUrl`).
+ */
+
+export interface PortalBimModel {
+  id: string;
+  project_id: string;
+  name: string;
+  discipline: string;
+  model_format: string;
+  element_count: number;
+  status: string;
+}
+
+export interface PortalBimModelList {
+  items: PortalBimModel[];
+  total: number;
+}
+
+/** List the BIM/CAD models shared with the portal caller (view-only). */
+export function listMyBimModels(params?: {
+  project_id?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<PortalBimModelList> {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return portalFetch<PortalBimModelList>(`${PORTAL_ME_BASE}/bim-models${q ? `?${q}` : ''}`);
+}
+
+export interface PortalBimElementsResponse {
+  items: BIMElementData[];
+  total: number;
+}
+
+/** Fetch the skeleton element list (id/mesh_ref/name/element_type/bounding_box
+ *  only - no BOQ links, no cost data) for a shared BIM model, for mesh
+ *  matching in the read-only viewer. */
+export function fetchMyBimElements(modelId: string): Promise<PortalBimElementsResponse> {
+  return portalFetch<PortalBimElementsResponse>(
+    `${PORTAL_ME_BASE}/bim-models/${encodeURIComponent(modelId)}/elements?limit=50000`,
+  );
+}
+
+/**
+ * Build the absolute geometry URL for a shared BIM model, with the portal
+ * session token attached as `?token=` so the Three.js geometry loader (which
+ * cannot set an Authorization header) can authenticate the request directly.
+ * Returns `null` when no portal session token is present.
+ */
+export function myBimGeometryUrl(modelId: string): string | null {
+  const token = getPortalSessionToken();
+  if (!token) return null;
+  const base = `${PORTAL_ME_BASE}/bim-models/${encodeURIComponent(modelId)}/geometry`;
+  const params = new URLSearchParams({ token });
+  return `${base}?${params.toString()}`;
 }
 
 /* ── Portal-user-facing (session-token) service tickets ────────────────────

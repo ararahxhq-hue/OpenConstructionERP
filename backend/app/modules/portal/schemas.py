@@ -369,6 +369,34 @@ class PortalInvoiceList(BaseModel):
     total: int = 0
 
 
+# ── Portal-side BIM/CAD model visibility (view-only) ──────────────────────
+
+
+class PortalBimModelEntry(BaseModel):
+    """Read-only client view of a BIM/CAD model shared through the portal.
+
+    Only what the client needs to pick a model from a list and open it in
+    the view-only 3D viewer. No file paths, no conversion internals, no
+    BOQ/cost linkage - the geometry and element endpoints enforce the same
+    grant separately.
+    """
+
+    id: UUID
+    project_id: UUID
+    name: str
+    discipline: str = ""
+    model_format: str = ""
+    element_count: int = 0
+    status: str = ""
+
+
+class PortalBimModelList(BaseModel):
+    """List of BIM/CAD models the caller can see, view-only."""
+
+    items: list[PortalBimModelEntry] = Field(default_factory=list)
+    total: int = 0
+
+
 # ── Portal-side progress-report visibility ────────────────────────────────
 
 
@@ -573,6 +601,8 @@ __all__ = [
     "PaymentApplicationSubmitPayload",
     "PortalAgreementSummary",
     "PortalAgreementSummaryList",
+    "PortalBimModelEntry",
+    "PortalBimModelList",
     "PortalChangeOrderEntry",
     "PortalChangeOrderList",
     "PortalProgressReportEntry",

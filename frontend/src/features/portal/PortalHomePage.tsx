@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -38,9 +39,12 @@ import {
   Receipt,
   ExternalLink,
   Download,
+  Boxes,
+  X,
 } from 'lucide-react';
 import { Badge, Card, EmptyState, SkeletonTable } from '@/shared/ui';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
+import { BIMViewer } from '@/shared/ui/BIMViewer';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { PortalProgressReportsTab } from './PortalProgressReportsTab';
@@ -53,14 +57,18 @@ import {
   listMyTickets,
   listMyDocuments,
   fetchMyDocumentBlob,
+  listMyBimModels,
+  fetchMyBimElements,
+  myBimGeometryUrl,
   type PortalChangeOrder,
   type PortalInvoice,
   type PortalTicket,
   type PortalSharedDocument,
+  type PortalBimModel,
 } from './api';
 import { PORTAL_PAYMENTS_PATH } from './portalLanding';
 
-type Tab = 'progress' | 'change_orders' | 'invoices' | 'tickets' | 'documents';
+type Tab = 'progress' | 'change_orders' | 'invoices' | 'tickets' | 'model' | 'documents';
 
 // Roles that see executed change orders on their landing.
 const CHANGE_ORDER_ROLES = new Set(['client', 'investor', 'consultant']);
@@ -68,6 +76,8 @@ const CHANGE_ORDER_ROLES = new Set(['client', 'investor', 'consultant']);
 const INVOICE_ROLES = new Set(['client', 'investor', 'consultant']);
 // Roles that see the tickets they filed on their landing.
 const TICKET_ROLES = new Set(['client', 'building_user']);
+// Roles that see shared BIM/CAD models (view-only 3D viewer) on their landing.
+const MODEL_ROLES = new Set(['client', 'investor', 'consultant']);
 
 export function PortalHomePage() {
   const { t } = useTranslation();
@@ -189,6 +199,7 @@ function PortalHomeContent() {
   const showChangeOrders = CHANGE_ORDER_ROLES.has(role);
   const showInvoices = INVOICE_ROLES.has(role);
   const showTickets = TICKET_ROLES.has(role);
+  const modelsRoleEligible = MODEL_ROLES.has(role);
 
   // Documents are shared with any role, so the tab always shows. This lightweight
   // query drives the tab count and, sharing DocumentsTab's cache key, doubles as
@@ -205,6 +216,17 @@ function PortalHomeContent() {
     enabled: showInvoices,
     staleTime: 60_000,
   });
+
+  // BIM/CAD models shared for view-only viewing. Self-hiding: even for an
+  // eligible role, the tab only appears once at least one model has
+  // actually been shared (no point showing an always-empty tab).
+  const modelsQ = useQuery({
+    queryKey: ['portal-home', 'models'],
+    queryFn: () => listMyBimModels({ limit: 100 }),
+    enabled: modelsRoleEligible,
+    staleTime: 60_000,
+  });
+  const showModels = modelsRoleEligible && (modelsQ.data?.total ?? 0) > 0;
 
   const tabs = (
     [
@@ -232,6 +254,13 @@ function PortalHomeContent() {
         label: t('homeportal.tab_tickets', { defaultValue: 'My Tickets' }),
         icon: LifeBuoy,
         show: showTickets,
+      },
+      {
+        id: 'model' as Tab,
+        label: t('homeportal.tab_models', { defaultValue: 'BIM Models' }),
+        icon: Boxes,
+        show: showModels,
+        count: modelsQ.data?.total,
       },
       {
         id: 'documents' as Tab,
@@ -348,6 +377,8 @@ function PortalHomeContent() {
         <InvoicesTab />
       ) : tab === 'tickets' && showTickets ? (
         <TicketsTab />
+      ) : tab === 'model' && showModels ? (
+        <ModelsTab />
       ) : tab === 'documents' ? (
         <DocumentsTab />
       ) : (
@@ -882,5 +913,199 @@ function DocumentCard({ doc }: { doc: PortalSharedDocument }) {
         </button>
       </div>
     </li>
+  );
+}
+
+/* ── BIM/CAD models (view-only) ────────────────────────────────────────────*/
+
+function ModelsTab() {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['portal-home', 'models'],
+    queryFn: () => listMyBimModels({ limit: 100 }),
+    staleTime: 60_000,
+  });
+  const items = q.data?.items ?? [];
+  const [openModel, setOpenModel] = useState<PortalBimModel | null>(null);
+
+  if (q.isLoading) {
+    return (
+      <Card padding="md">
+        <SkeletonTable rows={4} columns={3} />
+      </Card>
+    );
+  }
+  if (q.error) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<AlertCircle size={22} />}
+          title={t('homeportal.models_load_failed', { defaultValue: 'Could not load models' })}
+          description={q.error instanceof Error ? q.error.message : ''}
+          action={{
+            label: t('common.retry', { defaultValue: 'Retry' }),
+            onClick: () => void q.refetch(),
+          }}
+        />
+      </Card>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<Boxes size={22} />}
+          title={t('homeportal.models_empty', { defaultValue: 'No 3D models shared with you yet' })}
+          description={t('homeportal.models_empty_desc', {
+            defaultValue: 'BIM/CAD models shared with you will appear here for view-only viewing.',
+          })}
+        />
+      </Card>
+    );
+  }
+  return (
+    <>
+      <ul className="space-y-3">
+        {items.map((model) => (
+          <ModelCard key={model.id} model={model} onOpen={() => setOpenModel(model)} />
+        ))}
+      </ul>
+      {openModel && (
+        <ModelViewerModal model={openModel} onClose={() => setOpenModel(null)} />
+      )}
+    </>
+  );
+}
+
+function ModelCard({
+  model,
+  onOpen,
+}: {
+  model: PortalBimModel;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <li className="rounded-xl border border-border bg-surface-primary p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Boxes size={16} className="shrink-0 text-content-tertiary" />
+          <span className="truncate text-sm font-medium text-content-primary">{model.name}</span>
+        </div>
+        {model.discipline ? (
+          <Badge variant="neutral" size="sm">
+            {model.discipline}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-content-tertiary">
+        <span>
+          {t('homeportal.models_element_count', {
+            defaultValue: '{{count}} elements',
+            count: model.element_count,
+          })}
+        </span>
+        {model.model_format ? <span>{model.model_format.toUpperCase()}</span> : null}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="inline-flex items-center gap-1 rounded-lg border border-border-light bg-surface-primary px-3 py-1.5 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
+        >
+          <ExternalLink size={12} />
+          {t('homeportal.models_open', { defaultValue: 'View 3D model' })}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Full-screen, view-only 3D viewer for one shared BIM/CAD model. The
+ * BIMViewer itself is rendered with `readOnly` so no measure / section /
+ * walk-mode tools or authoring actions are available - the client can only
+ * look around, isolate/hide elements and inspect the read-only properties
+ * panel. Elements load in skeleton mode (no BOQ links, no cost data) and
+ * geometry streams from the dedicated portal geometry endpoint, which
+ * authenticates via the session token carried on the URL (the browser's
+ * glTF/COLLADA loader cannot send an Authorization header).
+ */
+function ModelViewerModal({
+  model,
+  onClose,
+}: {
+  model: PortalBimModel;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  const elementsQ = useQuery({
+    queryKey: ['portal-home', 'model-elements', model.id],
+    queryFn: () => fetchMyBimElements(model.id),
+    staleTime: 60_000,
+  });
+  const elements = elementsQ.data?.items ?? [];
+  const geometryUrl = myBimGeometryUrl(model.id);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handler, { capture: true });
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handler, { capture: true });
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex flex-col bg-surface-primary"
+    >
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border-light px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Boxes size={16} className="shrink-0 text-content-tertiary" />
+          <h2 className="truncate text-sm font-semibold text-content-primary">{model.name}</h2>
+          <Badge variant="neutral" size="sm">
+            {t('homeportal.models_view_only', { defaultValue: 'View only' })}
+          </Badge>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t('common.close', { defaultValue: 'Close' })}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-secondary hover:text-content-primary"
+        >
+          <X size={18} />
+        </button>
+      </header>
+      <div className="relative flex-1 overflow-hidden">
+        <BIMViewer
+          modelId={model.id}
+          projectId={model.project_id}
+          modelName={model.name}
+          elements={elements}
+          isLoading={elementsQ.isLoading}
+          error={
+            elementsQ.error
+              ? t('homeportal.models_elements_failed', {
+                  defaultValue: 'Failed to load model elements.',
+                })
+              : null
+          }
+          geometryUrl={geometryUrl}
+          readOnly
+        />
+      </div>
+    </div>,
+    document.body,
   );
 }
