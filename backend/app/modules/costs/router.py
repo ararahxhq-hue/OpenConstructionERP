@@ -568,10 +568,25 @@ async def autocomplete_cost_items(
 )
 async def create_cost_item(
     data: CostItemCreate,
-    _user_id: CurrentUserId,
+    user: CurrentUserPayload,
     service: CostItemService = Depends(_get_service),
+    catalog_service: CostCatalogService = Depends(_get_catalog_service),
 ) -> CostItemResponse:
-    """Create a new cost item."""
+    """Create a new cost item.
+
+    When ``catalog_id`` is set, the caller must own that catalog (or be an
+    admin) - this is the write-side half of the ownership gate already
+    enforced on update/delete (``_enforce_item_catalog_ownership``), closing
+    the gap where any caller holding ``costs.create`` could otherwise add a
+    position into another user's private catalog by guessing its UUID. A
+    non-owner gets a 404 (existence not leaked), matching
+    ``get_owned_catalog``. Items with no ``catalog_id`` keep going into the
+    shared global catalogue as before.
+    """
+    if data.catalog_id is not None:
+        owner_id = _parse_user_uuid((user or {}).get("sub"))
+        is_admin = (user or {}).get("role") == "admin"
+        await catalog_service.get_owned_catalog(data.catalog_id, owner_id=owner_id, is_admin=is_admin)
     item = await service.create_cost_item(data)
     return CostItemResponse.model_validate(item)
 
@@ -581,8 +596,9 @@ async def create_cost_item(
 
 @router.get("/")
 async def search_cost_items(
-    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    user: CurrentUserPayload = None,  # type: ignore[assignment]
     service: CostItemService = Depends(_get_service),
+    catalog_service: CostCatalogService = Depends(_get_catalog_service),
     q: str | None = Query(
         default=None,
         description=(
@@ -682,7 +698,19 @@ async def search_cost_items(
     Backwards compatibility: clients that don't send ``cursor`` continue
     to receive a non-null ``total``. The new fields ``next_cursor`` and
     ``has_more`` are additions to the response shape.
+
+    When ``catalog_id`` is supplied, the caller must own that catalog (or
+    be an admin) - listing is otherwise the one place a private catalog's
+    items were readable by anyone who could guess its UUID, even though the
+    single-item GET/PATCH/DELETE endpoints already scope by ownership. A
+    non-owner gets a 404 (existence not leaked), matching
+    ``get_owned_catalog``.
     """
+    if catalog_id is not None:
+        owner_id = _parse_user_uuid((user or {}).get("sub"))
+        is_admin = (user or {}).get("role") == "admin"
+        await catalog_service.get_owned_catalog(catalog_id, owner_id=owner_id, is_admin=is_admin)
+
     # Merge canonical ``q`` with the silent aliases ``search`` / ``query``.
     # First non-empty wins; explicit ``q`` always takes precedence so a
     # caller that mistakenly sends both ``q=foo&search=bar`` gets ``foo``
