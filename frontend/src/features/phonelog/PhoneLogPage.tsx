@@ -12,11 +12,14 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Phone, Users, Mic, MessageSquare, Clock, ListChecks, Inbox } from 'lucide-react';
+import { Phone, Users, Mic, MessageSquare, Clock, ListChecks, Inbox, Sparkles, ClipboardCheck } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo } from '@/shared/ui';
 import { getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { listPhoneLogs, createPhoneLog } from './api';
+import { RecordingProtocolCard } from './RecordingProtocolCard';
+import { RecordingPlayer } from './RecordingPlayer';
+import { hasRecording, isRecordingDraft, readProtocol } from './protocol';
 import type { PhoneChannel, PhoneDirection, PhoneLog } from './types';
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
@@ -82,11 +85,20 @@ function formatDuration(seconds: number | null): string {
 
 function PhoneLogCard({ log }: { log: PhoneLog }) {
   const { t } = useTranslation();
+  const proto = readProtocol(log);
   return (
     <Card className="space-y-2 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={DIRECTION_VARIANT[log.direction]}>{directionLabel(t, log.direction)}</Badge>
         <Badge variant={CHANNEL_VARIANT[log.channel]}>{channelLabel(t, log.channel)}</Badge>
+        {proto?.ai_generated && (
+          <Badge variant="blue" size="sm">
+            <span className="inline-flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              {t('phonelog.rec.ai_generated', { defaultValue: 'AI-drafted' })}
+            </span>
+          </Badge>
+        )}
         {log.occurred_at && (
           <span className="text-xs text-content-tertiary">{log.occurred_at.replace('T', ' ')}</span>
         )}
@@ -105,6 +117,50 @@ function PhoneLogCard({ log }: { log: PhoneLog }) {
 
       {log.summary && <p className="text-sm font-medium text-content-primary">{log.summary}</p>}
 
+      {proto && proto.decisions.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+            <ClipboardCheck className="h-3.5 w-3.5" />
+            {t('phonelog.rec.decisions', { defaultValue: 'Decisions' })}
+          </div>
+          <ul className="space-y-1">
+            {proto.decisions.map((line, i) => (
+              <li
+                key={i}
+                className="rounded-md border-s-2 border-green-500/50 bg-surface-secondary px-2 py-1 text-sm text-content-secondary"
+              >
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {proto && proto.action_items.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+            <ListChecks className="h-3.5 w-3.5" />
+            {t('phonelog.rec.action_items', { defaultValue: 'Action items' })}
+          </div>
+          <ul className="space-y-1">
+            {proto.action_items.map((item, i) => (
+              <li
+                key={i}
+                className="flex flex-wrap items-center gap-x-2 rounded-md border-s-2 border-oe-blue/50 bg-surface-secondary px-2 py-1 text-sm text-content-secondary"
+              >
+                <span className="text-content-primary">{item.task}</span>
+                {item.owner && <span className="text-xs text-content-tertiary">- {item.owner}</span>}
+                {item.due && (
+                  <Badge variant="neutral" size="sm">
+                    {item.due}
+                  </Badge>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {log.instructions.length > 0 && (
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
@@ -121,6 +177,12 @@ function PhoneLogCard({ log }: { log: PhoneLog }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {hasRecording(log) && (
+        <div className="pt-1">
+          <RecordingPlayer id={log.id} />
         </div>
       )}
     </Card>
@@ -143,6 +205,10 @@ export function PhoneLogPage() {
     retry: false,
     staleTime: 30_000,
   });
+
+  // Drafts from an in-progress recording review are reviewed in the card above,
+  // not in the log, so keep the log to confirmed records only.
+  const logs = (logsQuery.data ?? []).filter((log) => !isRecordingDraft(log));
 
   const createMutation = useMutation({
     mutationFn: () => {
@@ -207,9 +273,11 @@ export function PhoneLogPage() {
         })}
       </DismissibleInfo>
 
+      <RecordingProtocolCard projectId={projectId} />
+
       <Card className="space-y-3 p-4">
         <h2 className="text-sm font-semibold text-content-primary">
-          {t('phonelog.capture', { defaultValue: 'Capture a call' })}
+          {t('phonelog.capture_manual', { defaultValue: 'Or capture a call by hand' })}
         </h2>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -333,7 +401,7 @@ export function PhoneLogPage() {
             title={t('phonelog.error_title', { defaultValue: 'Could not load the phone log' })}
             description={getErrorMessage(logsQuery.error)}
           />
-        ) : !logsQuery.data || logsQuery.data.length === 0 ? (
+        ) : logs.length === 0 ? (
           <EmptyState
             icon={<Phone className="h-6 w-6" />}
             title={t('phonelog.empty_title', { defaultValue: 'No calls logged yet' })}
@@ -343,7 +411,7 @@ export function PhoneLogPage() {
           />
         ) : (
           <div className="space-y-3">
-            {logsQuery.data.map((log) => (
+            {logs.map((log) => (
               <PhoneLogCard key={log.id} log={log} />
             ))}
           </div>

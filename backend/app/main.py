@@ -1951,7 +1951,7 @@ def create_app() -> FastAPI:
         DDC_BRANCH = "main"
         WIN_DIRS: dict[str, tuple[str, str, str]] = {
             # ext: (github_dir, exe_name, display_name)
-            "rvt": ("DDC_WINDOWS_Converters/DDC_CONVERTER_REVIT", "RvtExporter.exe", "Revit (RVT) Parser"),
+            "rvt": ("DDC_WINDOWS_Converters/DDC_CONVERTER_REVIT", "RvtExporter.exe", "RVT Parser"),
             "ifc": ("DDC_WINDOWS_Converters/DDC_CONVERTER_IFC", "IfcExporter.exe", "IFC Import"),
             "dwg": ("DDC_WINDOWS_Converters/DDC_CONVERTER_DWG", "DwgExporter.exe", "DWG/DXF Converter"),
             "dgn": ("DDC_WINDOWS_Converters/DDC_CONVERTER_DGN", "DgnExporter.exe", "DGN Converter"),

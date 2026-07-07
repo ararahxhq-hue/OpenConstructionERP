@@ -146,6 +146,14 @@ import {
   computeGroupSummaries,
   formatGroupTotal,
 } from '../../features/takeoff/lib/takeoff-groups';
+import {
+  effectiveQuantity,
+  hasQuantityFactor,
+  reportedMagnitude,
+  slopeFactorFromDegrees,
+  degreesFromSlopeFactor,
+} from '../../features/takeoff/lib/takeoff-quantity';
+import { replicateMeasurementsToPages } from '../../features/takeoff/lib/takeoff-replicate';
 import { CalibrationDialog } from '../../features/takeoff/components/CalibrationDialog';
 import { ScaleAutoDetect } from '../../features/takeoff/components/ScaleAutoDetect';
 import { MeasurementLedger } from '../../features/takeoff/components/MeasurementLedger';
@@ -258,6 +266,16 @@ interface Measurement {
   height?: number; // Height for rectangle/highlight
   fillAlpha?: number; // Per-measurement fill opacity 0..1 (issue #311)
   strokeWidth?: number; // Per-measurement stroke width in CSS px (issue #312)
+  strokeAlpha?: number; // Per-measurement LINE opacity 0..1 for linear types (issue #332)
+  /** True-surface slope / pitch factor for an AREA measurement (roofs, ramps):
+   *  true surface qty = plan area x slopeFactor (>= 1). Undefined = 1 (flat). */
+  slopeFactor?: number;
+  /** Material wastage / allowance percent on the reported quantity (10 = +10%).
+   *  Undefined = 0. */
+  wastagePct?: number;
+  /** Typical-multiplier: this measurement stands for N identical repeats
+   *  (typical floors / bays). Effective qty = base x multiplier. Undefined = 1. */
+  multiplier?: number;
   /** Custom colour of this measurement's GROUP (issue #313), mirrored onto the
    *  measurement so the group colour scheme round-trips server-side through the
    *  metadata blob (like fillAlpha/strokeWidth) instead of being localStorage-
@@ -509,6 +527,20 @@ export default function TakeoffViewerModule({
     },
     [currentPage],
   );
+  // Issue #333: when persistence HYDRATES the page scales on load (restoring a
+  // saved calibration), that is a reconciliation, not a recalibration. The
+  // scale-change recompute effect below re-projects a volume's typed depth
+  // through the old->new pixels-per-unit ratio; on load the "old" ratio is the
+  // factory default, so the restore used to corrupt every stored depth (and,
+  // via the server recompute, the volume). We flag the hydrate so that one
+  // transition SKIPS the recompute entirely and every stored measurement stays
+  // byte-identical across a plain reload. A genuine user recalibration goes
+  // through ``setScale`` above (no flag) and still re-projects depth correctly.
+  const skipScaleRecomputeRef = useRef(false);
+  const hydratePageScalesFromPersistence = useCallback((next: PageScales) => {
+    skipScaleRecomputeRef.current = true;
+    setPageScales(next);
+  }, []);
   const [showScaleDialog, setShowScaleDialog] = useState(false);
   const [scaleRefPixels, setScaleRefPixels] = useState(0);
   const [scaleRefReal, setScaleRefReal] = useState(1);
@@ -694,6 +726,10 @@ export default function TakeoffViewerModule({
 
   // Selected measurement (drives the right-side Properties panel).
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  // "Copy to pages" target selection (issue #332 wave): pages the properties
+  // panel will replicate the selected measurement / its group onto. Cleared
+  // after a copy and whenever the selection changes.
+  const [copyTargetPages, setCopyTargetPages] = useState<Set<number>>(new Set());
 
   /* ── In-canvas editing (#194 Feature 1) ──────────────────────────────
    * Drag transient lives in a ref so mid-drag mousemove never triggers a
@@ -777,7 +813,7 @@ export default function TakeoffViewerModule({
   // PDF / Excel export in-flight flags (drive button spinner state).
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingXlsx, setIsExportingXlsx] = useState(false);
-  const { hasPersistedData, saveNow, clearPersisted, syncing, syncedToServer, registerDeletion } = useMeasurementPersistence({
+  const { hasPersistedData, saveNow, clearPersisted, syncing, syncedToServer, registerDeletion, hasUnsavedChanges } = useMeasurementPersistence({
     fileName,
     // Stable document UUID drives both the localStorage key and server sync
     // (issue #238); a null id (fresh local drop) keeps everything local.
@@ -791,7 +827,11 @@ export default function TakeoffViewerModule({
     // Per-page scale: the hook persists the whole page-scale model and
     // migrates a legacy single-scale document into the default on load.
     pageScales,
-    setPageScales,
+    // Hydration goes through the wrapped setter (issue #333) so a load-time
+    // scale restore flags the recompute effect to skip re-projecting depth -
+    // it is a reconciliation, not a recalibration. Still a stable callback, so
+    // the #276 load-teardown guarantee holds.
+    setPageScales: hydratePageScalesFromPersistence,
     // The current page's effective scale is still sent on each measurement
     // (scale_pixels_per_unit) so the server-side B8 recompute uses the same
     // ratio the row was drawn at.
@@ -1098,14 +1138,20 @@ export default function TakeoffViewerModule({
       // showed the browser prompt and relied on the user clicking "stay".
       // saveNow writes localStorage synchronously (and best-effort kicks the
       // server) so a tab close keeps the latest measurements regardless of
-      // which button the user picks. The prompt stays as a safety net.
+      // which button the user picks.
       saveNow();
+      // Only nag when work is genuinely unsaved (issue #336). The old handler
+      // prompted on EVERY navigation - even when everything was already synced -
+      // so users learned to click through it. ``hasUnsavedChanges`` reads the
+      // live pending state (debounced writes / server sync / edit-PATCH / queued
+      // deletes) so a fully-synced document leaves without a prompt.
+      if (!hasUnsavedChanges()) return;
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [measurements.length, saveNow]);
+  }, [measurements.length, saveNow, hasUnsavedChanges]);
 
   /* ── First-measurement-without-calibration warning ───────────────── */
   // Fires exactly once per session: when the user creates their first
@@ -1353,7 +1399,14 @@ export default function TakeoffViewerModule({
         ctx.beginPath();
         ctx.moveTo(p0.x * dpr * zoom, p0.y * dpr * zoom);
         ctx.lineTo(p1.x * dpr * zoom, p1.y * dpr * zoom);
+        // Per-measurement line opacity (issue #332), composed with the loop
+        // alpha (0.5 for an unconfirmed AI suggestion, else 1) so a suggested
+        // line still reads as translucent. Restored to the loop alpha right
+        // after the stroke so the value label / annotation that follow keep
+        // full loop opacity. Unset strokeAlpha is fully opaque (no change).
+        ctx.globalAlpha = (m.suggested ? 0.5 : 1) * (m.strokeAlpha ?? 1);
         ctx.stroke();
+        ctx.globalAlpha = m.suggested ? 0.5 : 1;
         // Measurement value label (converted to the user's system; stored
         // metric per D-TKC-016).
         const mx = ((p0.x + p1.x) / 2) * dpr * zoom;
@@ -1375,7 +1428,12 @@ export default function TakeoffViewerModule({
           const pt = m.points[i]!;
           ctx.lineTo(pt.x * dpr * zoom, pt.y * dpr * zoom);
         }
+        // Per-measurement line opacity (issue #332), composed with the loop
+        // alpha; restored to the loop alpha right after so the per-segment
+        // labels + vertex dots below keep full loop opacity.
+        ctx.globalAlpha = (m.suggested ? 0.5 : 1) * (m.strokeAlpha ?? 1);
         ctx.stroke();
+        ctx.globalAlpha = m.suggested ? 0.5 : 1;
         // Draw segment midpoint labels (values layer, #314). On a traced
         // foundation these per-segment lengths are the densest text of all.
         if (showDimensions) {
@@ -3013,7 +3071,19 @@ export default function TakeoffViewerModule({
   useEffect(() => {
     const prevPS = pageScalesRef.current;
     pageScalesRef.current = pageScales;
+    // Issue #333: a load-time hydrate is a reconciliation, not a recalibration.
+    // Consume the skip flag unconditionally (so a no-op transition can never
+    // leave it set to wrongly skip a LATER real recalibration), then skip the
+    // recompute for exactly the hydrate transition. Skipping keeps a stored
+    // volume's typed depth from being re-projected through the factory-default
+    // ratio (which corrupted it and, via the server recompute, the volume). The
+    // ref above is already advanced to the hydrated value, so a genuine user
+    // recalibration afterwards diffs against the correct baseline and still
+    // re-projects depth.
+    const skipRecompute = skipScaleRecomputeRef.current;
+    skipScaleRecomputeRef.current = false;
     if (prevPS === pageScales) return;
+    if (skipRecompute) return;
     setMeasurements((ms) =>
       ms.map((m) => {
         if (m.type === 'count') return m; // counts are scale-independent
@@ -3495,7 +3565,9 @@ export default function TakeoffViewerModule({
     // pass-through so the file is unchanged for metric users.
     const sumUnit = (ms: Measurement[]) =>
       convertQuantity(
-        ms.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0),
+        // Effective quantity folds slope / wastage / multiplier and the
+        // deduction sign, so this CSV reconciles with the ledger + Excel.
+        ms.reduce((s, m) => s + effectiveQuantity(m), 0),
         ms[0]!.unit || '',
         measurementSystem,
       );
@@ -3506,7 +3578,7 @@ export default function TakeoffViewerModule({
         // of the totals (net = gross - openings). Mirror the Excel and ledger
         // exports: show the row value as negative and flag the type, so the
         // CSV rows and subtotals reconcile instead of reporting inflated gross.
-        const signedValue = m.isDeduction ? -m.value : m.value;
+        const signedValue = effectiveQuantity(m);
         const disp = convertQuantity(signedValue, m.unit || '', measurementSystem);
         const typeLabel = m.isDeduction ? `${m.type} (deduction)` : m.type;
         rows.push(
@@ -3541,7 +3613,7 @@ export default function TakeoffViewerModule({
         rows.push(`"${groupName} - Subtotal","volume","Total volume",${d.value.toFixed(3)},"${d.unit}",""`);
       }
       if (countMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","count","Total count",${countMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(0)},"pcs",""`);
+        rows.push(`"${groupName} - Subtotal","count","Total count",${countMs.reduce((s, m) => s + effectiveQuantity(m), 0).toFixed(0)},"pcs",""`);
       }
     }
     const csvContent = rows.join('\n');
@@ -3724,6 +3796,51 @@ export default function TakeoffViewerModule({
     setSelectedMeasurementId(clone.id);
     setContextMenu(null);
   }, [measurements, pushUndo]);
+
+  /**
+   * Replicate takeoff measurements onto other pages (issue #332 wave): the
+   * "typical floor" shortcut. A slab outline / column run / fixture count
+   * measured once on one sheet is copied - same geometry, group, appearance
+   * and quantity adjustments - onto every selected page, as fresh, unlinked,
+   * unsynced measurements. Each clone gets its own undo frame so a copy that
+   * spanned five pages can be walked back one page-copy at a time. The heavy
+   * lifting is in the pure `replicateMeasurementsToPages` helper (unit-tested);
+   * this thin wrapper mints ids, appends to state, and toasts the result.
+   */
+  const copyMeasurementsToPages = useCallback(
+    (sources: Measurement[], pages: number[]) => {
+      if (sources.length === 0 || pages.length === 0) return;
+      const stamp = Date.now();
+      const clones = replicateMeasurementsToPages(
+        sources,
+        pages,
+        (_src, page, i) =>
+          `m_${stamp}_p${page}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+      );
+      if (clones.length === 0) return;
+      for (const c of clones) {
+        pushUndo({ kind: 'complete_measurement', measurement: c, previousActivePoints: [] });
+      }
+      setMeasurements((prev) => [...prev, ...clones]);
+      setCopyTargetPages(new Set());
+      addToast({
+        type: 'success',
+        title: t('takeoff_viewer.copied_to_pages_title', { defaultValue: 'Copied to pages' }),
+        message: t('takeoff_viewer.copied_to_pages_msg', {
+          defaultValue: '{{count}} measurement(s) copied to {{pages}} page(s).',
+          count: clones.length,
+          pages: new Set(clones.map((c) => c.page)).size,
+        }),
+      });
+    },
+    [pushUndo, addToast, t],
+  );
+
+  // Reset the "copy to pages" target selection whenever the selected
+  // measurement changes, so a stale page selection never carries across.
+  useEffect(() => {
+    setCopyTargetPages(new Set());
+  }, [selectedMeasurementId]);
 
   // Close the measurement context menu when the select tool is left or its
   // target measurement disappears (issue #302).
@@ -4366,17 +4483,23 @@ export default function TakeoffViewerModule({
       const canonicalUnit = normalizeUnit(measurement.unit);
       const positionUnit = (position.unit ?? '').trim();
 
+      // Reported (effective) quantity: folds slope / wastage / typical-
+      // multiplier so the BOQ receives the same number the ledger + exports
+      // show, not the raw geometry (issue #332 wave). Magnitude, since a BOQ
+      // quantity is positive; a no-factor measurement equals its raw value, so
+      // this is byte-identical for existing data.
+      const baseQty = reportedMagnitude(measurement);
       // Convert the measured value into the position's own unit before it is
       // written (GitHub #319). A position already priced per its unit (say cubic
       // yards) must receive the quantity restated in that unit or its unit_rate
       // silently mis-prices the line. Only when the position has no unit yet do
       // we adopt the measurement's unit, matching the create-and-link path.
-      let newQtyValue = measurement.value;
+      let newQtyValue = baseQty;
       let unitToWrite: string | undefined;
       if (!positionUnit) {
         unitToWrite = canonicalUnit;
       } else {
-        const converted = convertBetween(measurement.value, canonicalUnit, positionUnit);
+        const converted = convertBetween(baseQty, canonicalUnit, positionUnit);
         if (converted === null) {
           addToast({
             type: 'error',
@@ -4414,10 +4537,17 @@ export default function TakeoffViewerModule({
 
       // Link on server (only if the measurement has a real server id).
       // ``pushQuantity: true`` lets the backend copy its own recomputed
-      // measurement value into the position and re-run the canonical
-      // total recompute, so the server stays the authority on the number.
+      // measurement value into the position and re-run the canonical total
+      // recompute, so the server stays the authority on the number. But a
+      // frontend quantity adjustment (slope / wastage / typical-multiplier)
+      // lives only client-side, so the server recompute would DROP it and
+      // clobber the effective quantity we just wrote. In that case record the
+      // link WITHOUT pushing (a factored quantity is a deliberate manual figure,
+      // like a hand-typed quantity); with no factor keep the server push,
+      // byte-identical to before this wave.
       if (measurement.serverId) {
-        try { await takeoffApi.linkToBoq(measurement.serverId, position.id, { pushQuantity: true }); } catch { /* non-critical */ }
+        const pushQuantity = !hasQuantityFactor(measurement);
+        try { await takeoffApi.linkToBoq(measurement.serverId, position.id, { pushQuantity }); } catch { /* non-critical */ }
       }
 
       // Update local measurement so the badge appears immediately.
@@ -4480,7 +4610,9 @@ export default function TakeoffViewerModule({
       const nextNum = (takeoffOrdinals.length ? Math.max(...takeoffOrdinals) : 0) + 1;
       const ordinal = `TK.${String(nextNum).padStart(3, '0')}`;
 
-      const newQty = boqQuantity(measurement.value);
+      // Reported (effective) quantity: slope / wastage / multiplier folded in
+      // (issue #332 wave); equals the raw value for an unadjusted measurement.
+      const newQty = boqQuantity(reportedMagnitude(measurement));
       const canonicalUnit = normalizeUnit(measurement.unit);
       const description = measurement.annotation
         || t('takeoff.position_default_desc', {
@@ -4513,8 +4645,12 @@ export default function TakeoffViewerModule({
 
       if (measurement.serverId) {
         // pushQuantity keeps the server authoritative on the value (it
-        // re-copies its own recomputed measurement into the new position).
-        try { await takeoffApi.linkToBoq(measurement.serverId, newPos.id, { pushQuantity: true }); } catch { /* non-critical */ }
+        // re-copies its own recomputed measurement into the new position). A
+        // frontend adjustment (slope / wastage / multiplier) would be dropped
+        // by that recompute, so skip the push when one is present and let the
+        // effective quantity we wrote above stand (issue #332 wave).
+        const pushQuantity = !hasQuantityFactor(measurement);
+        try { await takeoffApi.linkToBoq(measurement.serverId, newPos.id, { pushQuantity }); } catch { /* non-critical */ }
       }
 
       setMeasurements((prev) => prev.map((m) =>
@@ -6985,6 +7121,46 @@ export default function TakeoffViewerModule({
                   </div>
                 )}
 
+                {/* Line opacity (issue #332): distance + polyline runs draw fully
+                    opaque; let the estimator fade a reference / underlay run so a
+                    busy sheet reads. Mirrors the #311 fill-opacity slider. Unset =
+                    fully opaque (100%), so lines are unchanged until touched. */}
+                {(selectedMeasurement.type === 'distance' ||
+                  selectedMeasurement.type === 'polyline') && (
+                  <div>
+                    <label className="text-[10px] font-semibold text-content-tertiary flex items-center justify-between mb-0.5">
+                      <span>{t('takeoff_viewer.prop_stroke_opacity', { defaultValue: 'Line opacity' })}</span>
+                      <span className="tabular-nums">
+                        {Math.round((selectedMeasurement.strokeAlpha ?? 1) * 100)}%
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round((selectedMeasurement.strokeAlpha ?? 1) * 100)}
+                        onChange={(e) =>
+                          updateSelectedMeasurement({ strokeAlpha: Number(e.target.value) / 100 })
+                        }
+                        className="flex-1"
+                        data-testid="prop-stroke-opacity"
+                      />
+                      {selectedMeasurement.strokeAlpha != null && (
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedMeasurement({ strokeAlpha: undefined })}
+                          className="text-[10px] text-content-tertiary hover:text-content-primary underline"
+                          data-testid="prop-stroke-opacity-reset"
+                        >
+                          {t('takeoff_viewer.reset', { defaultValue: 'Reset' })}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Value + Unit (read-only for computed types) */}
                 <div className="grid grid-cols-[1fr_auto] gap-2">
                   <div>
@@ -7039,6 +7215,174 @@ export default function TakeoffViewerModule({
                   </label>
                 )}
 
+                {/* Reported-quantity adjustments (issue #332 wave): slope /
+                    pitch (area only), wastage %, and a typical multiplier. Each
+                    defaults to its identity value, so an untouched measurement
+                    reports its raw geometry. Shown for measurable types only. */}
+                {(selectedMeasurement.type === 'distance' ||
+                  selectedMeasurement.type === 'polyline' ||
+                  selectedMeasurement.type === 'area' ||
+                  selectedMeasurement.type === 'volume' ||
+                  selectedMeasurement.type === 'count') && (
+                  <div
+                    className="space-y-2 rounded border border-border/60 bg-surface-secondary/30 p-2"
+                    data-testid="prop-adjustments"
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-content-tertiary">
+                      {t('takeoff_viewer.prop_adjustments', { defaultValue: 'Quantity adjustments' })}
+                    </p>
+
+                    {/* Slope / pitch (area only): true surface = plan x factor.
+                        Accepts either a factor (>=1) or a pitch in degrees
+                        (factor = 1 / cos(deg)); editing one syncs the other. */}
+                    {selectedMeasurement.type === 'area' && (
+                      <div>
+                        <label className="text-[10px] font-semibold text-content-tertiary flex items-center justify-between mb-0.5">
+                          <span>{t('takeoff_viewer.prop_slope', { defaultValue: 'Slope / pitch (roof, ramp)' })}</span>
+                          {selectedMeasurement.slopeFactor != null && (
+                            <button
+                              type="button"
+                              onClick={() => updateSelectedMeasurement({ slopeFactor: undefined })}
+                              className="text-[10px] text-content-tertiary hover:text-content-primary underline"
+                              data-testid="prop-slope-reset"
+                            >
+                              {t('takeoff_viewer.reset', { defaultValue: 'Reset' })}
+                            </button>
+                          )}
+                        </label>
+                        <div className="flex items-end gap-1.5">
+                          <label className="flex-1 flex flex-col gap-0.5">
+                            <input
+                              type="number"
+                              min={1}
+                              step={0.01}
+                              value={selectedMeasurement.slopeFactor ?? 1}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                updateSelectedMeasurement({
+                                  slopeFactor: Number.isFinite(v) && v > 1 ? v : undefined,
+                                });
+                              }}
+                              className="w-full rounded border border-border bg-surface-primary px-2 py-1 text-xs text-content-primary tabular-nums"
+                              data-testid="prop-slope-factor"
+                            />
+                            <span className="text-[9px] text-content-quaternary">
+                              {t('takeoff_viewer.prop_slope_factor', { defaultValue: 'factor' })}
+                            </span>
+                          </label>
+                          <label className="flex-1 flex flex-col gap-0.5">
+                            <input
+                              type="number"
+                              min={0}
+                              max={89}
+                              step={0.5}
+                              value={Number(
+                                degreesFromSlopeFactor(selectedMeasurement.slopeFactor ?? 1).toFixed(1),
+                              )}
+                              onChange={(e) => {
+                                const deg = Number(e.target.value);
+                                const f = slopeFactorFromDegrees(deg);
+                                updateSelectedMeasurement({ slopeFactor: f > 1 ? f : undefined });
+                              }}
+                              className="w-full rounded border border-border bg-surface-primary px-2 py-1 text-xs text-content-primary tabular-nums"
+                              data-testid="prop-slope-degrees"
+                            />
+                            <span className="text-[9px] text-content-quaternary">
+                              {t('takeoff_viewer.prop_slope_degrees', { defaultValue: 'pitch °' })}
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Wastage / allowance % (all measurable types). */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-content-tertiary flex items-center justify-between mb-0.5">
+                        <span>{t('takeoff_viewer.prop_wastage', { defaultValue: 'Wastage / allowance %' })}</span>
+                        {selectedMeasurement.wastagePct != null && (
+                          <button
+                            type="button"
+                            onClick={() => updateSelectedMeasurement({ wastagePct: undefined })}
+                            className="text-[10px] text-content-tertiary hover:text-content-primary underline"
+                            data-testid="prop-wastage-reset"
+                          >
+                            {t('takeoff_viewer.reset', { defaultValue: 'Reset' })}
+                          </button>
+                        )}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={selectedMeasurement.wastagePct ?? 0}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          updateSelectedMeasurement({
+                            wastagePct: Number.isFinite(v) && v > 0 ? v : undefined,
+                          });
+                        }}
+                        className="w-full rounded border border-border bg-surface-primary px-2 py-1 text-xs text-content-primary tabular-nums"
+                        data-testid="prop-wastage"
+                      />
+                    </div>
+
+                    {/* Typical multiplier (all measurable types): this shape
+                        stands for N identical repeats (typical floors / bays). */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-content-tertiary flex items-center justify-between mb-0.5">
+                        <span>{t('takeoff_viewer.prop_multiplier', { defaultValue: 'Typical multiplier (x)' })}</span>
+                        {selectedMeasurement.multiplier != null && (
+                          <button
+                            type="button"
+                            onClick={() => updateSelectedMeasurement({ multiplier: undefined })}
+                            className="text-[10px] text-content-tertiary hover:text-content-primary underline"
+                            data-testid="prop-multiplier-reset"
+                          >
+                            {t('takeoff_viewer.reset', { defaultValue: 'Reset' })}
+                          </button>
+                        )}
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={selectedMeasurement.multiplier ?? 1}
+                        onChange={(e) => {
+                          const v = Math.floor(Number(e.target.value));
+                          updateSelectedMeasurement({
+                            multiplier: Number.isFinite(v) && v > 1 ? v : undefined,
+                          });
+                        }}
+                        className="w-full rounded border border-border bg-surface-primary px-2 py-1 text-xs text-content-primary tabular-nums"
+                        data-testid="prop-multiplier"
+                      />
+                    </div>
+
+                    {/* Effective (reported) quantity - shown only when a factor
+                        is active so an unadjusted measurement stays uncluttered. */}
+                    {hasQuantityFactor(selectedMeasurement) && (
+                      <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-border/50">
+                        <span className="text-content-tertiary">
+                          {t('takeoff_viewer.prop_effective_qty', { defaultValue: 'Effective qty' })}
+                        </span>
+                        <span
+                          className="font-mono tabular-nums text-oe-blue font-semibold"
+                          data-testid="prop-effective-qty"
+                        >
+                          {(() => {
+                            const eff = convertQuantity(
+                              Math.abs(effectiveQuantity(selectedMeasurement)),
+                              selectedMeasurement.unit || '',
+                              measurementSystem,
+                            );
+                            return `${eff.value.toFixed(3)} ${eff.unit}`;
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Annotation / label */}
                 <div>
                   <label className="text-[10px] font-semibold text-content-tertiary block mb-0.5">
@@ -7068,6 +7412,86 @@ export default function TakeoffViewerModule({
                     data-testid="prop-notes-input"
                   />
                 </div>
+
+                {/* Copy to pages (issue #332 wave): the "typical floor"
+                    shortcut - replicate this measurement, or its whole group on
+                    this page, onto other selected sheets as fresh unlinked
+                    measurements. Hidden for a single-page document. */}
+                {totalPages > 1 && (
+                  <div
+                    className="space-y-1.5 rounded border border-border/60 bg-surface-secondary/30 p-2"
+                    data-testid="prop-copy-to-pages"
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-content-tertiary">
+                      {t('takeoff_viewer.prop_copy_to_pages', { defaultValue: 'Copy to pages' })}
+                    </p>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-auto">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter((p) => p !== selectedMeasurement.page)
+                        .map((p) => {
+                          const on = copyTargetPages.has(p);
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() =>
+                                setCopyTargetPages((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(p)) next.delete(p);
+                                  else next.add(p);
+                                  return next;
+                                })
+                              }
+                              className={clsx(
+                                'px-1.5 py-0.5 rounded text-[10px] border tabular-nums transition-colors',
+                                on
+                                  ? 'bg-oe-blue/15 text-oe-blue border-oe-blue/30'
+                                  : 'bg-surface-primary text-content-secondary border-border hover:border-oe-blue/40',
+                              )}
+                              data-testid="copy-page-chip"
+                              data-page={p}
+                              data-active={on}
+                            >
+                              {p}
+                            </button>
+                          );
+                        })}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={copyTargetPages.size === 0}
+                        onClick={() =>
+                          copyMeasurementsToPages([selectedMeasurement], Array.from(copyTargetPages))
+                        }
+                        className="flex-1 rounded bg-oe-blue/10 text-oe-blue border border-oe-blue/30 hover:bg-oe-blue/20 disabled:opacity-40 disabled:pointer-events-none px-2 py-1 text-[11px] font-semibold transition-colors"
+                        data-testid="copy-measurement-btn"
+                      >
+                        {t('takeoff_viewer.copy_measurement', { defaultValue: 'This measurement' })}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={copyTargetPages.size === 0}
+                        onClick={() => {
+                          const groupHere = measurements.filter(
+                            (mm) =>
+                              mm.page === selectedMeasurement.page &&
+                              mm.group === selectedMeasurement.group &&
+                              !mm.suggested,
+                          );
+                          copyMeasurementsToPages(groupHere, Array.from(copyTargetPages));
+                        }}
+                        className="flex-1 rounded bg-surface-primary text-content-secondary border border-border hover:border-oe-blue/40 disabled:opacity-40 disabled:pointer-events-none px-2 py-1 text-[11px] font-semibold transition-colors"
+                        data-testid="copy-group-btn"
+                        title={t('takeoff_viewer.copy_group_hint', {
+                          defaultValue: 'Copy every measurement in this group on this page',
+                        })}
+                      >
+                        {t('takeoff_viewer.copy_group', { defaultValue: 'Whole group' })}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Delete button */}
                 <button

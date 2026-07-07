@@ -69,6 +69,7 @@ import {
   Wrench,
   Timer,
   Truck,
+  Factory,
   BookOpen,
   Globe,
   FileSignature,
@@ -310,6 +311,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal },
       { labelKey: 'nav.eir_matrix', to: '/requirements/matrix', icon: FileCheck, advancedOnly: true },
+      { labelKey: 'nav.prefab', to: '/prefab', icon: Factory, advancedOnly: true },
     ],
   },
   // ── 7. SCHEDULING ──────────────────────────────────────────────────
@@ -344,6 +346,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.capacity_planning', to: '/portfolio/capacity', icon: CalendarRange, advancedOnly: true },
       { labelKey: 'nav.resource_leveling', to: '/portfolio/leveling', icon: Scale, advancedOnly: true },
       { labelKey: 'nav.risk_register', to: '/risks', icon: ShieldAlert, advancedOnly: true },
+      { labelKey: 'nav.cvr', to: '/cvr', icon: Scale, advancedOnly: true },
     ],
   },
   // ── 9. COMMERCIAL ──────────────────────────────────────────────────
@@ -474,6 +477,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.field_time', to: '/field-time', icon: Timer, advancedOnly: true },
       { labelKey: 'nav.service', to: '/service', icon: Wrench },
       { labelKey: 'nav.portal', to: '/portal', icon: Globe },
+      { labelKey: 'nav.site_logistics', to: '/site-logistics', icon: Truck },
     ],
   },
   // ── 12. RESOURCES & ASSETS ─────────────────────────────────────────
@@ -506,6 +510,8 @@ const navGroups: NavGroup[] = [
       { labelKey: 'ncr.title', to: '/ncr', icon: AlertOctagon },
       { labelKey: 'nav.punchlist', to: '/punchlist', icon: ListChecks },
       { labelKey: 'closeout.title', to: '/closeout', icon: PackageCheck },
+      { labelKey: 'nav.forms', to: '/forms', icon: ClipboardList },
+      { labelKey: 'nav.commissioning', to: '/commissioning', icon: ClipboardCheck },
     ],
   },
   // ── 14. SAFETY & ESG ───────────────────────────────────────────────
@@ -523,6 +529,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.qms', to: '/qms', icon: BadgeCheck, advancedOnly: true },
       { labelKey: 'nav.carbon', to: '/carbon', icon: Leaf, advancedOnly: true },
       { labelKey: 'nav.sustainability', to: '/sustainability', icon: Leaf, moduleKey: 'sustainability', advancedOnly: true },
+      { labelKey: 'nav.esg', to: '/esg', icon: Leaf, advancedOnly: true },
     ],
   },
   // ── 15. COMMUNICATION ──────────────────────────────────────────────
@@ -812,6 +819,13 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   '/bi-dashboards': 'oe_bi_dashboards',
   '/reporting': 'oe_reporting',
   '/architecture': 'oe_architecture_map',
+  // v10.6.0 modules
+  '/prefab': 'oe_prefab',
+  '/cvr': 'oe_cvr',
+  '/site-logistics': 'oe_site_logistics',
+  '/commissioning': 'oe_commissioning',
+  '/esg': 'oe_esg',
+  '/forms': 'oe_forms',
 };
 
 // localStorage key for collapsed state

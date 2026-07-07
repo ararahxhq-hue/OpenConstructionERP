@@ -58,6 +58,7 @@ import {
   Wrench,
   Timer,
   Truck,
+  Factory,
   Users,
   Wallet,
   ShieldCheck,
@@ -207,6 +208,14 @@ const ROUTE_ICON_MAP: Record<string, LucideIcon> = {
   '/governance': Scale,
   '/admin/audit-log': ScrollText,
   '/about': Info,
+  // ── v10.6.0 modules ───────────────────────────────────────────────
+  '/prefab': Factory,
+  '/cvr': Scale,
+  '/site-logistics': Truck,
+  '/commissioning': ClipboardCheck,
+  '/esg': Leaf,
+  // ── Gap features ──────────────────────────────────────────────────
+  '/forms': ClipboardList,
   // ── Footer CTA ────────────────────────────────────────────────────
   '/modules/developer-guide': Plus,
 };

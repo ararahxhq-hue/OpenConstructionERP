@@ -27,6 +27,7 @@ import { FloatingQueuePanel } from './layout/FloatingQueuePanel';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { useBrandingStore } from '@/stores/useBrandingStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import { ddcVerifyIntegrity, ddcInjectMeta, DDC_ORIGIN } from '@/shared/lib/ddc-integrity';
 import { NavigationProgress } from '@/shared/lib/navigationProgress';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -496,6 +497,25 @@ const CostsPage = lazy(() =>
 const CostExplorerPage = lazy(() =>
   import('@/features/cost-explorer').then((m) => ({ default: m.CostExplorerPage }))
 );
+// v10.6.0 modules
+const PrefabPage = lazy(() =>
+  import('@/features/prefab').then((m) => ({ default: m.PrefabPage }))
+);
+const CvrPage = lazy(() =>
+  import('@/features/cvr').then((m) => ({ default: m.CvrPage }))
+);
+const SiteLogisticsPage = lazy(() =>
+  import('@/features/site-logistics').then((m) => ({ default: m.SiteLogisticsPage }))
+);
+const CommissioningPage = lazy(() =>
+  import('@/features/commissioning').then((m) => ({ default: m.CommissioningPage }))
+);
+const EsgPage = lazy(() =>
+  import('@/features/esg').then((m) => ({ default: m.EsgPage }))
+);
+const FormsPage = lazy(() =>
+  import('@/features/forms').then((m) => ({ default: m.FormsPage }))
+);
 const ValidationPage = lazy(() =>
   import('@/features/validation').then((m) => ({ default: m.ValidationPage }))
 );
@@ -783,6 +803,7 @@ export default function App() {
   // immediately sees their workspace brand.
   useEffect(() => {
     void useBrandingStore.getState().hydrateFromServer();
+    void usePreferencesStore.getState().hydrateFromServer();
   }, [isAuthenticated]);
 
   // Onboarding-tour migration (one-shot). The app used to mount two
@@ -979,6 +1000,16 @@ export default function App() {
 
         <Route path="/reports" element={<P title="Reports"><ReportsPage /></P>} />
         <Route path="/reporting" element={<P title="Reporting Dashboards"><ReportingPage /></P>} />
+
+        {/* v10.6.0 modules */}
+        <Route path="/projects/:projectId/prefab" element={<P title="Off-site / Prefab"><PrefabPage /></P>} />
+        <Route path="/prefab" element={<P title="Off-site / Prefab"><PrefabPage /></P>} />
+        <Route path="/projects/:projectId/cvr" element={<P title="Cost-Value Reconciliation"><CvrPage /></P>} />
+        <Route path="/cvr" element={<P title="Cost-Value Reconciliation"><CvrPage /></P>} />
+        <Route path="/site-logistics" element={<P title="Site Logistics"><SiteLogisticsPage /></P>} />
+        <Route path="/commissioning" element={<P title="Commissioning"><CommissioningPage /></P>} />
+        <Route path="/esg" element={<P title="ESG Site Performance"><EsgPage /></P>} />
+        <Route path="/forms" element={<P title="Forms & checklists"><FormsPage /></P>} />
 
         <Route path="/tendering" element={<P title="Tendering"><TenderingPage /></P>} />
 

@@ -67,6 +67,7 @@ import type {
   CreatePunchPayload,
 } from './api';
 import { punchlistGuide } from './punchlistGuide';
+import { VoiceEntry, getField } from '@/features/voice';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1305,6 +1306,26 @@ export function PunchListPage() {
                 {t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
               </Button>
             )}
+            <VoiceEntry
+              projectId={projectId}
+              target="defect"
+              triggerLabel={t('voice.trigger_defect', { defaultValue: 'Voice defect' })}
+              onConfirm={async (d) => {
+                const location = getField(d.fields, 'location').trim();
+                const desc = getField(d.fields, 'description').trim();
+                const description = location
+                  ? `${desc ? `${desc}\n` : ''}${t('voice.location_line', { defaultValue: 'Location' })}: ${location}`
+                  : desc;
+                await createMut.mutateAsync({
+                  project_id: projectId,
+                  title: getField(d.fields, 'title'),
+                  description: description || undefined,
+                  priority: (getField(d.fields, 'priority') || 'medium') as PunchPriority,
+                  category: (getField(d.fields, 'category') || 'general') as PunchCategory,
+                  trade: getField(d.fields, 'trade') || undefined,
+                });
+              }}
+            />
             <Button
               variant="primary"
               size="sm"

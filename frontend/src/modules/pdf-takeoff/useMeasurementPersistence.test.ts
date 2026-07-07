@@ -16,6 +16,10 @@ vi.mock('@/features/takeoff/api', () => ({
     bulkCreate: vi.fn().mockResolvedValue([]),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue(undefined),
+    // Issue #334: the load effect also fetches the document (for its
+    // authoritative page_scales) and PATCHes it when the user calibrates.
+    getDocument: vi.fn().mockResolvedValue(null),
+    saveDocumentScales: vi.fn().mockResolvedValue({ page_scales: null }),
   },
 }));
 
@@ -75,6 +79,8 @@ describe('useMeasurementPersistence', () => {
     (takeoffApi.bulkCreate as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue([]);
     (takeoffApi.update as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({});
     (takeoffApi.delete as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue(undefined);
+    (takeoffApi.getDocument as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue(null);
+    (takeoffApi.saveDocumentScales as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({ page_scales: null });
   });
 
   // Defensive: if a test leaves fake timers on (e.g. an assertion threw before

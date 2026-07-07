@@ -490,7 +490,7 @@ def _aggregate_quantities(elements: list[SourceElement]) -> dict[str, float]:
 
 # Fallback unit per IFC class when explicit quantities are missing. Used
 # when the BIM extractor could not derive volume/area/length (e.g. an IFC
-# file without proper Qto_* property sets, or an early-design Revit model
+# file without proper Qto_* property sets, or an early-design RVT model
 # where the only quantity is the count). Without this fallback every
 # such group defaults to "pcs" and the matcher then picks count-priced
 # catalogue rows for elements that should be priced by area or volume.
@@ -823,7 +823,7 @@ def _envelope_from_group(
 
     Each segment is included only when present, so a sparse group
     (just a name) still produces a useful envelope and a dense one
-    (Revit family with full Pset) carries every dimensioning hint into
+    (RVT family with full Pset) carries every dimensioning hint into
     the embedder. The previous implementation joined every attribute
     value into one string - that pollutes the embedding with GUIDs and
     layer names and caps recall. This composition is selective.
@@ -856,7 +856,7 @@ def _envelope_from_group(
 
     parts: list[str] = []
     # 1. Human category (translated IFC label) - anchors the embedding.
-    # ``ifc_labels.lookup`` aliases a raw Revit OST category ("Walls") to
+    # ``ifc_labels.lookup`` aliases a raw RVT OST category ("Walls") to
     # its canonical IFC class meta, so an RVT group inherits the right
     # label + din276 / masterformat / nrm hints. Genuine IFC and non-BIM
     # placeholder categories are unaffected.
@@ -876,7 +876,7 @@ def _envelope_from_group(
     raw_text = _attr("raw_text", "description")
     if source in {"text", "boq"} and raw_text:
         parts.append(raw_text)
-    # ``type_name`` carries the discriminating Revit family/type
+    # ``type_name`` carries the discriminating RVT family/type
     # ("Exterior - Brick on Mtl. Stud" / "Generic 150mm"). Prefer a real
     # family/type over the bare category word: the BIM adapter already
     # surfaces the RVT ``family`` as ``type_name``, but we also probe
@@ -947,7 +947,7 @@ def _envelope_from_group(
     classifier_hint: dict[str, str] | None = classifier_hint_parts or None
 
     # ── v3 ProjectItem-equivalent structured fields ──────────────────
-    # Populated when the upstream BIM/Revit extractor knows the value.
+    # Populated when the upstream BIM extractor knows the value.
     # The query builder downstream routes these to either Qdrant
     # ``hard_filters`` or ``soft_boosts`` per MAPPING_PROCESS.md §4.2.1.
     nominal_size_mm: int | None = None
@@ -958,7 +958,7 @@ def _envelope_from_group(
 
     # Forward ``ifc_class`` only when it's an actual IFC class - BIM
     # extractors set ``sample.category="IfcWall"`` / ``IfcSlab`` (and the
-    # adapter now crosswalks a Revit OST category into a canonical
+    # adapter now crosswalks an RVT OST category into a canonical
     # ``IfcXxx`` stored in ``attributes["ifc_class"]``), but BoQ / text /
     # image adapters synthesise placeholders (``"BoQ"``, ``"Text"``) that
     # aren't valid IFC identifiers. Promoting those to the v3 SearchPlan's
@@ -979,12 +979,12 @@ def _envelope_from_group(
         forwarded_ifc_class = raw_cat
 
     # Material bucket for the x1.3 soft boost. Prefer an explicit material
-    # property. When a Revit model carries the material inside the family
+    # property. When an RVT model carries the material inside the family
     # name instead ("Exterior - Brick on Mtl. Stud"), fall back to the
     # type/family string so a confident bucket ("brick") still fires. The
     # bucketiser is conservative (returns ``None`` when unsure), so this
     # never invents a material - it only recovers one the property layer
-    # missed. The type-name fallback is scoped to non-IFC (Revit) inputs
+    # missed. The type-name fallback is scoped to non-IFC (RVT) inputs
     # so a genuine IFC envelope's ``material_class`` stays exactly as
     # before (IFC elements always carry their material as a property).
     material_class = _normalise_material_class(material)
@@ -1001,9 +1001,9 @@ def _envelope_from_group(
         classifier_hint=classifier_hint,
         ifc_class=forwarded_ifc_class,
         ifc_predefined_type=_attr("ifc_predefined_type", "PredefinedType"),
-        # The Revit OST category drives the x1.5 ``ost_category`` soft
+        # The RVT OST category drives the x1.5 ``ost_category`` soft
         # boost. The BIM adapter records it under both ``ost_category``
-        # and ``revit_category`` for any non-IFC (Revit) source, so it
+        # and ``revit_category`` for any non-IFC (RVT) source, so it
         # fires for RVT models that previously had no OST hint at all.
         ost_category=_attr("ost_category", "revit_category", "Category", "OST_Category"),
         material_class=material_class,
@@ -1996,7 +1996,7 @@ class MatchElementsService:
                 gross_q = qty.get("gross_area_m2")
                 net_q = qty.get("net_area_m2")
             if gross_q is not None and net_q is not None and gross_q > 0:
-                # Catch the Revit IFC export bug - host has openings but
+                # Catch the RVT IFC export bug - host has openings but
                 # gross == net suggests the deduction never happened.
                 opening_warning = abs(gross_q - net_q) < 0.01
 
