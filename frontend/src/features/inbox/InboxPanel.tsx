@@ -117,26 +117,27 @@ function InboxRow({ item }: { item: InboxItem }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <p className="text-xs font-semibold text-content-primary line-clamp-1">{title}</p>
+          <p className="min-w-0 flex-1 truncate text-xs font-semibold text-content-primary">
+            {title}
+          </p>
           {item.kind === 'approval' && (
             <Badge variant="warning" size="sm">
               {t('inbox.badge_approval', { defaultValue: 'Approval' })}
             </Badge>
           )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-2 text-2xs text-content-tertiary">
-          {item.project_name && (
-            <span className="truncate max-w-[160px]">{item.project_name}</span>
+          {timeAgo && (
+            <span className="shrink-0 text-2xs tabular-nums text-content-tertiary">{timeAgo}</span>
           )}
-          {item.project_name && timeAgo && <span aria-hidden>·</span>}
-          {timeAgo && <span className="tabular-nums shrink-0">{timeAgo}</span>}
         </div>
+        {item.project_name && (
+          <div className="mt-0.5 truncate text-2xs text-content-tertiary">{item.project_name}</div>
+        )}
       </div>
       <SevIcon size={13} className={clsx('shrink-0 mt-0.5', sevStyle.color)} aria-hidden />
       {clickable && (
         <ArrowRight
           size={14}
-          className="shrink-0 mt-0.5 text-content-quaternary group-hover:text-oe-blue group-hover:translate-x-0.5 transition-all"
+          className="shrink-0 mt-0.5 text-content-quaternary opacity-0 transition-all group-hover:translate-x-0.5 group-hover:text-oe-blue group-hover:opacity-100"
         />
       )}
     </RowTag>
@@ -230,7 +231,7 @@ export function InboxPanel({ limit = 8, showHeader = true, compact = false }: In
   const hasItems = !isLoading && !isError && items.length > 0;
 
   const summaryRail = (
-    <div className="flex shrink-0 flex-row items-stretch gap-3 border-b border-border-light px-4 py-3 lg:w-56 lg:flex-col lg:gap-3 lg:border-b-0 lg:border-l lg:py-4">
+    <div className="flex shrink-0 flex-row items-stretch gap-3 border-b border-border-light px-4 py-3 lg:w-52 lg:flex-col lg:gap-3 lg:border-b-0 lg:border-l lg:py-4">
       <button
         type="button"
         onClick={() => navigate('/inbox')}
