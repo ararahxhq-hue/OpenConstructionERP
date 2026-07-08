@@ -222,3 +222,131 @@ export async function adjustAmounts(
   };
   return apiPost<AdjustResponse>(`${BASE}/adjust/`, payload);
 }
+
+/* -- Escalate stored rates (preview) -------------------------------------- */
+
+/**
+ * Selectors + target date for a read-only escalation preview. Every supplied
+ * constraint is applied together (AND); the backend requires at least one of
+ * `region` / `category` / `cost_item_ids` so the whole catalogue is never
+ * escalated by accident. `series_id` may be omitted when exactly one series
+ * exists (the backend defaults to it). Only fields the user actually sets are
+ * sent (see {@link escalatePreview}).
+ */
+export interface EscalatePreviewInput {
+  /** ISO calendar date (YYYY-MM-DD) to bring the stored rates to. */
+  target_date: string;
+  /** Index series to escalate against; optional when only one series exists. */
+  series_id?: string | null;
+  /** Filter items by region (matches `CostItem.region`). */
+  region?: string | null;
+  /** Filter items by category (the top classification level / collection). */
+  category?: string | null;
+  /** Explicit cost items to escalate, in addition to any region/category filter. */
+  cost_item_ids?: string[] | null;
+}
+
+/**
+ * One cost item's stored rate previewed at the target date. Money and the
+ * factor are decimal strings (never floats). When the rate cannot be escalated
+ * (`escalatable` is false) `base_date` / `base_period` / `factor` /
+ * `escalated_rate` may be null and `note` explains why, so one unusable item
+ * never voids the batch. `base_rate` is still present unless the stored rate is
+ * itself not a number.
+ */
+export interface EscalatePreviewLine {
+  cost_item_id: string;
+  code: string;
+  unit: string;
+  region: string | null;
+  currency: string;
+  base_rate: string | null;
+  /** ISO date the rate was captured (`price_as_of`), or null when unknown. */
+  base_date: string | null;
+  /** ISO year-month derived from `base_date`, or null. */
+  base_period: string | null;
+  factor: string | null;
+  escalated_rate: string | null;
+  escalatable: boolean;
+  note: string | null;
+}
+
+export interface EscalatePreviewResponse {
+  series_id: string;
+  series_name: string;
+  /** ISO calendar date the rates were brought to. */
+  target_date: string;
+  /** ISO year-month derived from `target_date`. */
+  target_period: string;
+  item_count: number;
+  escalatable_count: number;
+  results: EscalatePreviewLine[];
+}
+
+const ISO_DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/** True when `value` is a well-formed ISO calendar date (YYYY-MM-DD). */
+export function isValidIsoDate(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return ISO_DATE_RE.test(value.trim());
+}
+
+/**
+ * True when the request carries at least one item selector (an explicit
+ * region, category, or cost-item id). The backend rejects a request with no
+ * selector so the whole catalogue is never escalated by accident.
+ */
+export function hasEscalateSelector(input: {
+  region?: string | null;
+  category?: string | null;
+  cost_item_ids?: string[] | null;
+}): boolean {
+  const region = (input.region ?? '').trim();
+  const category = (input.category ?? '').trim();
+  const ids = input.cost_item_ids ?? [];
+  return region !== '' || category !== '' || ids.length > 0;
+}
+
+/**
+ * Preview the estimate's own stored rates escalated to a target date. Strictly
+ * read-only: nothing is written back to the cost items or the BOQ. Only fields
+ * the caller actually set are sent, so an empty region/category/series is
+ * omitted rather than posted as an empty string.
+ */
+export async function escalatePreview(
+  input: EscalatePreviewInput,
+): Promise<EscalatePreviewResponse> {
+  const payload: Record<string, unknown> = { target_date: input.target_date };
+  if (input.series_id) payload.series_id = input.series_id;
+  if (input.region && input.region.trim() !== '') payload.region = input.region.trim();
+  if (input.category && input.category.trim() !== '') payload.category = input.category.trim();
+  if (input.cost_item_ids && input.cost_item_ids.length > 0) {
+    payload.cost_item_ids = input.cost_item_ids;
+  }
+  return apiPost<EscalatePreviewResponse>(`${BASE}/escalate-preview/`, payload);
+}
+
+/* -- Cost-catalogue facets (populate the escalate selectors) -------------- */
+
+/**
+ * Distinct loaded regions on the cost catalogue. Reused to populate the
+ * escalate panel's region selector so it offers the same region codes the
+ * escalate-preview endpoint filters on (`CostItem.region`).
+ */
+export async function listCostRegions(): Promise<string[]> {
+  const res = await apiGet<string[]>('/v1/costs/regions/');
+  return Array.isArray(res) ? res : [];
+}
+
+/**
+ * Distinct categories (the top classification level / `classification.collection`),
+ * optionally scoped to a region. Populates the escalate panel's category
+ * selector; the same values feed the escalate-preview `category` filter.
+ */
+export async function listCostCategories(region?: string | null): Promise<string[]> {
+  const params = new URLSearchParams();
+  if (region && region.trim() !== '') params.set('region', region.trim());
+  const qs = params.toString();
+  const res = await apiGet<string[]>(`/v1/costs/categories/${qs ? `?${qs}` : ''}`);
+  return Array.isArray(res) ? res : [];
+}

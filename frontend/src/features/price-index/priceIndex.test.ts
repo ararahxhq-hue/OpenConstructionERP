@@ -9,6 +9,8 @@ import {
   factorDirection,
   blankAdjustLine,
   isAdjustLineReady,
+  isValidIsoDate,
+  hasEscalateSelector,
 } from './api';
 
 describe('isValidPeriod', () => {
@@ -112,5 +114,44 @@ describe('isAdjustLineReady', () => {
     expect(
       isAdjustLineReady({ ...base, amount: '10', base_period: '2019-13', target_period: '2026-01' }),
     ).toBe(false);
+  });
+});
+
+describe('isValidIsoDate', () => {
+  it('accepts a well-formed ISO calendar date', () => {
+    expect(isValidIsoDate('2026-07-08')).toBe(true);
+    expect(isValidIsoDate('1999-12-31')).toBe(true);
+    expect(isValidIsoDate(' 2026-01-01 ')).toBe(true); // trimmed
+  });
+
+  it('rejects a bad month/day, short year or wrong separator', () => {
+    expect(isValidIsoDate('2026-13-01')).toBe(false);
+    expect(isValidIsoDate('2026-00-10')).toBe(false);
+    expect(isValidIsoDate('2026-07-32')).toBe(false);
+    expect(isValidIsoDate('2026-07-00')).toBe(false);
+    expect(isValidIsoDate('2026-7-8')).toBe(false);
+    expect(isValidIsoDate('2026-07')).toBe(false);
+    expect(isValidIsoDate('2026/07/08')).toBe(false);
+  });
+
+  it('treats empty / null / undefined as invalid', () => {
+    expect(isValidIsoDate('')).toBe(false);
+    expect(isValidIsoDate(null)).toBe(false);
+    expect(isValidIsoDate(undefined)).toBe(false);
+  });
+});
+
+describe('hasEscalateSelector', () => {
+  it('is true when a region, category, or explicit ids are set', () => {
+    expect(hasEscalateSelector({ region: 'DE_BERLIN' })).toBe(true);
+    expect(hasEscalateSelector({ category: 'Concrete' })).toBe(true);
+    expect(hasEscalateSelector({ cost_item_ids: ['a'] })).toBe(true);
+  });
+
+  it('is false when nothing is selected (blank / whitespace / empty)', () => {
+    expect(hasEscalateSelector({})).toBe(false);
+    expect(hasEscalateSelector({ region: '', category: '' })).toBe(false);
+    expect(hasEscalateSelector({ region: '   ', category: '  ' })).toBe(false);
+    expect(hasEscalateSelector({ region: null, category: null, cost_item_ids: [] })).toBe(false);
   });
 });

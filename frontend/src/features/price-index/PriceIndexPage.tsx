@@ -22,6 +22,8 @@ import {
   Minus,
   Loader2,
   ArrowRight,
+  CalendarClock,
+  Inbox,
 } from 'lucide-react';
 import { Button, Badge, Card, CardHeader, EmptyState, ErrorState, Input, PageHeader } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
@@ -42,9 +44,16 @@ import {
   isAdjustLineReady,
   formatFactor,
   factorDirection,
+  escalatePreview,
+  listCostRegions,
+  listCostCategories,
+  isValidIsoDate,
+  hasEscalateSelector,
   type AdjustLineInput,
   type AdjustResponse,
   type FactorDirection,
+  type CostIndexSeries,
+  type EscalatePreviewResponse,
 } from './api';
 
 const QK = {
@@ -576,6 +585,9 @@ function PriceIndexContent() {
           {adjustResult && <AdjustResults result={adjustResult} />}
         </div>
       </Card>
+
+      {/* ── Escalate the estimate's own stored rates to a date ─────── */}
+      <EscalatePanel seriesList={seriesList} />
     </div>
   );
 }
@@ -665,6 +677,315 @@ function AdjustResults({ result }: { result: AdjustResponse }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Escalate the estimate's OWN stored cost rates to a chosen date. Unlike the
+ * Adjust panel (which escalates numbers you type in), this reads the stored
+ * cost items, brings each rate from its own capture date (price_as_of) to the
+ * target date on the chosen series, and shows which lines move and by how much.
+ * Strictly read-only: nothing is written back to the cost items or the BOQ.
+ */
+function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+
+  const [targetDate, setTargetDate] = useState('');
+  const [seriesId, setSeriesId] = useState('');
+  const [region, setRegion] = useState('');
+  const [category, setCategory] = useState('');
+  const [result, setResult] = useState<EscalatePreviewResponse | null>(null);
+
+  // Facets from the cost catalogue so the selectors offer the same region
+  // codes and categories the escalate-preview endpoint actually filters on.
+  const regionsQ = useQuery({ queryKey: ['price-index', 'cost-regions'], queryFn: listCostRegions });
+  const categoriesQ = useQuery({
+    queryKey: ['price-index', 'cost-categories', region],
+    queryFn: () => listCostCategories(region || null),
+  });
+  const regions = regionsQ.data ?? [];
+  const categories = categoriesQ.data ?? [];
+
+  const noSeries = seriesList.length === 0;
+  const seriesRequired = seriesList.length > 1;
+
+  // With exactly one series, adopt it so the request is explicit (the backend
+  // would default to the sole series anyway, but selecting keeps the UI honest).
+  useEffect(() => {
+    if (seriesId) return;
+    if (seriesList.length === 1) {
+      const only = seriesList[0];
+      if (only) setSeriesId(only.id);
+    }
+  }, [seriesList, seriesId]);
+
+  const dateValid = isValidIsoDate(targetDate);
+  const selectorReady = hasEscalateSelector({ region, category });
+  const seriesReady = !seriesRequired || seriesId !== '';
+
+  const previewMut = useMutation({
+    mutationFn: () =>
+      escalatePreview({
+        target_date: targetDate,
+        series_id: seriesId || null,
+        region: region || null,
+        category: category || null,
+      }),
+    onSuccess: (res) => setResult(res),
+    onError: (e: unknown) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: getErrorMessage(e),
+      }),
+  });
+
+  const canPreview = !noSeries && dateValid && selectorReady && seriesReady && !previewMut.isPending;
+
+  const selectClass =
+    'h-9 rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary ' +
+    'focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30';
+
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-oe-blue" aria-hidden />
+            {t('price_index.escalate_title', { defaultValue: 'Escalate estimate to date' })}
+          </span>
+        }
+        subtitle={t('price_index.escalate_subtitle', {
+          defaultValue:
+            'Bring your stored cost rates forward to a chosen date using an index series, so you can see which lines move and by how much. Read-only, nothing is written back.',
+        })}
+      />
+      <div className="mt-4 space-y-4">
+        <p className="text-xs text-content-tertiary">
+          {t('price_index.escalate_help', {
+            defaultValue:
+              'Each rate is escalated from its own capture date (price_as_of) to the target date. Rates with no capture date on record are listed but left unescalated.',
+          })}
+        </p>
+
+        {noSeries ? (
+          <EmptyState
+            icon={<LineChart className="h-5 w-5" />}
+            title={t('price_index.escalate_no_series', { defaultValue: 'No index series yet' })}
+            description={t('price_index.escalate_no_series_desc', {
+              defaultValue:
+                'Create a cost index series above and add its period points, then escalate your rates against it.',
+            })}
+          />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="w-44">
+                <Input
+                  type="date"
+                  label={t('price_index.target_date', { defaultValue: 'Target date' })}
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                />
+              </div>
+
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-content-primary">
+                  {t('price_index.index_series', { defaultValue: 'Index series' })}
+                </span>
+                <select value={seriesId} onChange={(e) => setSeriesId(e.target.value)} className={selectClass}>
+                  {seriesRequired && (
+                    <option value="">
+                      {t('price_index.escalate_pick_series', { defaultValue: 'Select a series' })}
+                    </option>
+                  )}
+                  {seriesList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-content-primary">
+                  {t('price_index.escalate_region', { defaultValue: 'Region' })}
+                </span>
+                <select
+                  value={region}
+                  onChange={(e) => {
+                    setRegion(e.target.value);
+                    setCategory('');
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">{t('price_index.escalate_any_region', { defaultValue: 'Any region' })}</option>
+                  {regions.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-content-primary">
+                  {t('price_index.escalate_category', { defaultValue: 'Category' })}
+                </span>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className={selectClass}>
+                  <option value="">
+                    {t('price_index.escalate_any_category', { defaultValue: 'Any category' })}
+                  </option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <Button
+                variant="primary"
+                icon={<CalendarClock className="h-4 w-4" />}
+                disabled={!canPreview}
+                loading={previewMut.isPending}
+                onClick={() => previewMut.mutate()}
+              >
+                {t('price_index.escalate_run', { defaultValue: 'Preview escalation' })}
+              </Button>
+            </div>
+
+            {!selectorReady && (
+              <p className="text-xs text-content-tertiary">
+                {t('price_index.escalate_need_selector', {
+                  defaultValue: 'Pick a region or a category to choose which stored rates to escalate.',
+                })}
+              </p>
+            )}
+
+            {previewMut.isPending ? (
+              <span className="inline-flex items-center gap-2 text-sm text-content-tertiary">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                {t('common.loading', { defaultValue: 'Loading...' })}
+              </span>
+            ) : (
+              result && <EscalateResults result={result} />
+            )}
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** Append an ISO 4217 currency label to a decimal string without touching the
+ *  number itself. Pure string join - never float math on money. */
+function withCurrency(value: string, currency: string): string {
+  return currency ? `${value} ${currency}` : value;
+}
+
+function EscalateResults({ result }: { result: EscalatePreviewResponse }) {
+  const { t } = useTranslation();
+
+  if (result.item_count === 0) {
+    return (
+      <EmptyState
+        icon={<Inbox className="h-5 w-5" />}
+        title={t('price_index.escalate_no_items', { defaultValue: 'No cost items matched' })}
+        description={t('price_index.escalate_no_items_desc', {
+          defaultValue: 'No stored cost rates matched these filters. Widen the region or category and preview again.',
+        })}
+      />
+    );
+  }
+
+  const skipped = result.item_count - result.escalatable_count;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant="success" size="sm">
+          {t('price_index.escalate_count_ok', {
+            defaultValue: '{{count}} escalatable',
+            count: result.escalatable_count,
+          })}
+        </Badge>
+        {skipped > 0 && (
+          <Badge variant="neutral" size="sm">
+            {t('price_index.escalate_count_skipped', {
+              defaultValue: '{{count}} left as-is',
+              count: skipped,
+            })}
+          </Badge>
+        )}
+        <span className="text-content-tertiary">
+          {t('price_index.escalate_summary_to', {
+            defaultValue: 'to {{period}} using {{series}}',
+            period: result.target_period,
+            series: result.series_name,
+          })}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-border-light">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border-light text-left text-xs uppercase tracking-wide text-content-tertiary">
+              <th className="px-3 py-2 font-medium">{t('price_index.escalate_col_code', { defaultValue: 'Code' })}</th>
+              <th className="px-3 py-2 font-medium">{t('price_index.escalate_col_unit', { defaultValue: 'Unit' })}</th>
+              <th className="px-3 py-2 text-right font-medium">
+                {t('price_index.escalate_col_base', { defaultValue: 'Base rate' })}
+              </th>
+              <th className="px-3 py-2 font-medium">
+                {t('price_index.escalate_col_base_date', { defaultValue: 'Base date' })}
+              </th>
+              <th className="px-3 py-2 text-right font-medium">
+                {t('price_index.escalate_col_factor', { defaultValue: 'Factor' })}
+              </th>
+              <th className="px-3 py-2 text-right font-medium">
+                {t('price_index.escalate_col_escalated', { defaultValue: 'Escalated rate' })}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.results.map((r) => (
+              <tr
+                key={r.cost_item_id}
+                className={
+                  'border-b border-border-light last:border-0 ' +
+                  (r.escalatable ? '' : 'bg-surface-secondary/40 text-content-tertiary')
+                }
+              >
+                <td className="px-3 py-2 font-mono text-content-secondary">{r.code}</td>
+                <td className="px-3 py-2 text-content-secondary">{r.unit || '-'}</td>
+                <td className="px-3 py-2 text-right font-mono text-content-secondary">
+                  {r.base_rate != null ? withCurrency(r.base_rate, r.currency) : '-'}
+                </td>
+                <td className="px-3 py-2 font-mono text-content-secondary">{r.base_date ?? '-'}</td>
+                {r.escalatable ? (
+                  <>
+                    <td className="px-3 py-2 text-right">
+                      <span className="inline-flex items-center justify-end gap-1 font-medium text-content-primary">
+                        <FactorArrow direction={factorDirection(r.factor)} />
+                        {formatFactor(r.factor)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono font-semibold text-content-primary">
+                      {r.escalated_rate != null ? withCurrency(r.escalated_rate, r.currency) : '-'}
+                    </td>
+                  </>
+                ) : (
+                  <td className="px-3 py-2 text-xs text-semantic-warning" colSpan={2}>
+                    {r.note ?? t('price_index.escalate_skipped', { defaultValue: 'cannot escalate' })}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
