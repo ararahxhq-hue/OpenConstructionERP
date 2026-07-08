@@ -16,8 +16,10 @@ manifest = ModuleManifest(
     ),
     author="OpenConstructionERP Core Team",
     category="business",
-    # Reads BOQ positions and verifies project access.
-    depends=["oe_boq", "oe_projects"],
+    # Reads BOQ positions and verifies project access; also reads the sibling
+    # estimating modules (allowances / contingency, preliminaries and the cost
+    # database price dates) to enrich the drafted assumptions.
+    depends=["oe_boq", "oe_projects", "oe_allowances", "oe_preliminaries", "oe_costs"],
     auto_install=True,
     enabled=True,
 )

@@ -428,11 +428,176 @@ _STANDARD_ASSUMPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+# ── Sibling estimating-module assumptions ───────────────────────────────────
+#
+# The basis is deepened with what the sibling estimating modules assumed, so a
+# reviewer sees them without opening each tool: the allowances / contingency
+# register, the preliminaries (general-conditions) roll-up, and the date the
+# priced rates are current to. The service reads each source and hands this
+# engine plain values; every block degrades gracefully, contributing no line
+# when the project has no data for it.
+
+# Human labels for the allowance types the register carries (an open
+# vocabulary; an unknown value folds to spaced words rather than raising).
+_ALLOWANCE_TYPE_LABELS: dict[str, str] = {
+    "provisional_sum": "provisional sum",
+    "pc_sum": "prime cost sum",
+    "contingency": "contingency",
+}
+
+
+def _allowance_type_label(raw: object) -> str:
+    """Return a human label for an allowance type code.
+
+    Args:
+        raw: The stored type code (``provisional_sum`` / ``pc_sum`` /
+            ``contingency``) or any other value.
+
+    Returns:
+        The mapped label, or the code with underscores spaced out when unknown;
+        an empty value yields ``"allowance"``.
+    """
+    key = str(raw or "").strip().lower()
+    if key in _ALLOWANCE_TYPE_LABELS:
+        return _ALLOWANCE_TYPE_LABELS[key]
+    return key.replace("_", " ") or "allowance"
+
+
+def _money_phrase(amount: Decimal, currency: object = "") -> str:
+    """Render a money amount as ``"1234.56 EUR"`` (the currency code optional)."""
+    text = fmt_decimal(amount)
+    code = str(currency or "").strip()
+    return f"{text} {code}" if code else text
+
+
+def _draft_allowance_assumptions(allowances: list[dict]) -> list[Qualification]:
+    """Draft one assumption per allowance plus a contingency-inclusion note.
+
+    Each allowance the estimate carries - a provisional sum, a prime-cost sum or
+    a contingency - becomes a line naming it, its held amount and its type, so a
+    reviewer sees what has been allowed for ahead of firm measurement. A closing
+    note states whether a contingency is included in the estimate total, and (for
+    a single currency) how much.
+
+    Args:
+        allowances: Allowance dicts, each optionally carrying ``id``, ``label``,
+            ``allowance_type``, ``held_amount`` and ``currency``. All keys are
+            defended - a sparse dict is handled, not assumed.
+
+    Returns:
+        The drafted assumption lines, in input order, with the contingency note
+        last. An empty input yields an empty list (no note is invented).
+    """
+    if not allowances:
+        return []
+
+    lines: list[Qualification] = []
+    contingency_total = Decimal("0")
+    contingency_currencies: set[str] = set()
+    has_contingency = False
+
+    for index, allowance in enumerate(allowances):
+        raw_type = str(allowance.get("allowance_type") or "").strip().lower()
+        type_label = _allowance_type_label(raw_type)
+        label = str(allowance.get("label") or "").strip()
+        name = label or type_label.capitalize()
+        amount = to_decimal(allowance.get("held_amount"))
+        currency = str(allowance.get("currency") or "").strip()
+        ident = str(allowance.get("id") or index)
+        phrase = _money_phrase(amount, currency)
+        lines.append(
+            Qualification(
+                id=f"asm-allowance-{ident}",
+                category="assumption",
+                text=f"Allowance included: {name} - {phrase} ({type_label}).",
+                basis="allowance",
+            )
+        )
+        if raw_type == "contingency":
+            has_contingency = True
+            contingency_total += amount
+            contingency_currencies.add(currency)
+
+    if not has_contingency:
+        note = "Contingency is not included in the estimate total."
+    elif len(contingency_currencies) == 1:
+        phrase = _money_phrase(contingency_total, next(iter(contingency_currencies)))
+        note = f"Contingency of {phrase} is included in the estimate total."
+    else:
+        note = "Contingency is included in the estimate total."
+    lines.append(
+        Qualification(
+            id="asm-contingency",
+            category="assumption",
+            text=note,
+            basis="allowance",
+        )
+    )
+    return lines
+
+
+def _draft_preliminaries_assumption(preliminaries: dict) -> Qualification | None:
+    """Draft the preliminaries summary assumption, or ``None`` when there is none.
+
+    Args:
+        preliminaries: The pre-computed roll-up the service builds from
+            ``preliminaries.prelim_math`` - ``grand_total``,
+            ``time_related_total``, ``item_count`` and an optional ``currency``.
+
+    Returns:
+        A single assumption line naming the preliminaries total, the item count
+        and the time-related portion, or ``None`` when no items were priced.
+    """
+    try:
+        item_count = int(preliminaries.get("item_count") or 0)
+    except (TypeError, ValueError):
+        item_count = 0
+    if item_count <= 0:
+        return None
+
+    currency = preliminaries.get("currency", "")
+    total_phrase = _money_phrase(to_decimal(preliminaries.get("grand_total")), currency)
+    time_phrase = _money_phrase(to_decimal(preliminaries.get("time_related_total")), currency)
+    item_word = "item" if item_count == 1 else "items"
+    return Qualification(
+        id="asm-preliminaries",
+        category="assumption",
+        text=(f"Preliminaries assumed: {total_phrase} ({item_count} {item_word}, {time_phrase} time-related)."),
+        basis="preliminaries",
+    )
+
+
+def _draft_pricing_base_date_assumption(pricing_base_date: str | None) -> Qualification | None:
+    """Draft the pricing-base-date assumption, or ``None`` when no date is known.
+
+    Args:
+        pricing_base_date: The date the priced rates are current to, as a string
+            (the service derives it from the freshest cost-item price date, or the
+            estimate's stated base date).
+
+    Returns:
+        A single assumption line stating the price currency date and that
+        escalation beyond it is excluded, or ``None`` when no date is available.
+    """
+    date_text = str(pricing_base_date or "").strip()
+    if not date_text:
+        return None
+    return Qualification(
+        id="asm-pricing-date",
+        category="assumption",
+        text=(f"Prices are current as of {date_text}; escalation beyond this date is excluded unless stated."),
+        basis="pricing-date",
+    )
+
+
 def draft_basis(
     coverage: TradeCoverage,
     *,
     currency: str = "",
     base_date: str | None = None,
+    allowances: list[dict] | None = None,
+    preliminaries: dict | None = None,
+    pricing_base_date: str | None = None,
 ) -> BasisDraft:
     """Draft the inclusions, exclusions and assumptions from trade coverage.
 
@@ -440,6 +605,14 @@ def draft_basis(
         coverage: The derived :class:`TradeCoverage`.
         currency: Optional ISO currency code, woven into a money assumption.
         base_date: Optional base date string, woven into an escalation assumption.
+        allowances: Optional allowance dicts from the allowances / contingency
+            register; each drafts an assumption and the set drafts a contingency
+            note (see :func:`_draft_allowance_assumptions`).
+        preliminaries: Optional pre-computed preliminaries roll-up; drafts one
+            summary assumption (see :func:`_draft_preliminaries_assumption`).
+        pricing_base_date: Optional date the priced rates are current to; drafts
+            a price-currency assumption (see
+            :func:`_draft_pricing_base_date_assumption`).
 
     Returns:
         A :class:`BasisDraft` of deterministic, editable qualification lines.
@@ -534,6 +707,18 @@ def draft_basis(
                 basis="flag",
             )
         )
+
+    # Sibling estimating-module assumptions - allowances / contingency, the
+    # preliminaries roll-up and the pricing base date. Each degrades gracefully:
+    # an absent source contributes no line.
+    draft.assumptions.extend(_draft_allowance_assumptions(allowances or []))
+    prelim_line = _draft_preliminaries_assumption(preliminaries or {})
+    if prelim_line is not None:
+        draft.assumptions.append(prelim_line)
+    pricing_line = _draft_pricing_base_date_assumption(pricing_base_date)
+    if pricing_line is not None:
+        draft.assumptions.append(pricing_line)
+
     if base_date:
         draft.assumptions.append(
             Qualification(

@@ -220,3 +220,123 @@ def test_no_currency_or_base_date_omits_those_assumptions() -> None:
     assert "asm-base-date" not in asm_ids
     # Standard assumptions are always present.
     assert "asm-quantities" in asm_ids
+
+
+# ── Sibling estimating-module assumptions (allowances / prelims / base date) ──
+
+
+def _by_id(draft: object) -> dict:
+    return {q.id: q for q in draft.assumptions}
+
+
+def test_allowance_assumptions_one_line_each_plus_contingency_note() -> None:
+    coverage = derive_trades([_pos(din276="330", total="1000")])
+    allowances = [
+        {
+            "id": "a1",
+            "label": "Ground works PS",
+            "allowance_type": "provisional_sum",
+            "held_amount": "50000",
+            "currency": "EUR",
+        },
+        {
+            "id": "a2",
+            "label": "Design reserve",
+            "allowance_type": "contingency",
+            "held_amount": "25000",
+            "currency": "EUR",
+        },
+    ]
+    draft = draft_basis(coverage, allowances=allowances)
+    by_id = _by_id(draft)
+
+    assert by_id["asm-allowance-a1"].text == ("Allowance included: Ground works PS - 50000.00 EUR (provisional sum).")
+    assert by_id["asm-allowance-a2"].text == ("Allowance included: Design reserve - 25000.00 EUR (contingency).")
+    # A contingency is present -> the note names its amount.
+    assert by_id["asm-contingency"].text == ("Contingency of 25000.00 EUR is included in the estimate total.")
+    assert by_id["asm-allowance-a1"].basis == "allowance"
+    assert all(q.category == "assumption" for q in draft.assumptions)
+
+
+def test_allowances_without_contingency_note_says_not_included() -> None:
+    coverage = derive_trades([_pos(din276="330", total="10")])
+    allowances = [
+        {
+            "id": "a1",
+            "label": "Facade PC",
+            "allowance_type": "pc_sum",
+            "held_amount": "12000",
+            "currency": "GBP",
+        },
+    ]
+    draft = draft_basis(coverage, allowances=allowances)
+    by_id = _by_id(draft)
+
+    assert by_id["asm-allowance-a1"].text == ("Allowance included: Facade PC - 12000.00 GBP (prime cost sum).")
+    assert by_id["asm-contingency"].text == "Contingency is not included in the estimate total."
+
+
+def test_allowance_blank_label_and_currency_degrade() -> None:
+    coverage = derive_trades([_pos(din276="330", total="10")])
+    # No id, no label, no currency - the line still reads cleanly.
+    allowances = [{"allowance_type": "contingency", "held_amount": "1000"}]
+    draft = draft_basis(coverage, allowances=allowances)
+    by_id = _by_id(draft)
+
+    assert by_id["asm-allowance-0"].text == ("Allowance included: Contingency - 1000.00 (contingency).")
+    assert by_id["asm-contingency"].text == ("Contingency of 1000.00 is included in the estimate total.")
+
+
+def test_preliminaries_assumption_summarises_rollup() -> None:
+    coverage = derive_trades([_pos(din276="330", total="10")])
+    prelim = {
+        "grand_total": "80000",
+        "time_related_total": "60000",
+        "fixed_total": "20000",
+        "item_count": 4,
+        "currency": "EUR",
+    }
+    draft = draft_basis(coverage, preliminaries=prelim)
+    by_id = _by_id(draft)
+
+    assert by_id["asm-preliminaries"].text == (
+        "Preliminaries assumed: 80000.00 EUR (4 items, 60000.00 EUR time-related)."
+    )
+    assert by_id["asm-preliminaries"].basis == "preliminaries"
+
+
+def test_preliminaries_singular_item_word_and_no_currency() -> None:
+    coverage = derive_trades([_pos(din276="330", total="10")])
+    prelim = {"grand_total": "5000", "time_related_total": "0", "item_count": 1}
+    draft = draft_basis(coverage, preliminaries=prelim)
+    by_id = _by_id(draft)
+
+    assert by_id["asm-preliminaries"].text == ("Preliminaries assumed: 5000.00 (1 item, 0.00 time-related).")
+
+
+def test_pricing_base_date_assumption() -> None:
+    coverage = derive_trades([_pos(din276="330", total="10")])
+    draft = draft_basis(coverage, pricing_base_date="2026-03-31")
+    by_id = _by_id(draft)
+
+    assert by_id["asm-pricing-date"].text == (
+        "Prices are current as of 2026-03-31; escalation beyond this date is excluded unless stated."
+    )
+    assert by_id["asm-pricing-date"].basis == "pricing-date"
+
+
+def test_sibling_module_assumptions_omitted_when_absent() -> None:
+    coverage = derive_trades([_pos(din276="330", total="10")])
+    draft = draft_basis(coverage)
+    asm_ids = {q.id for q in draft.assumptions}
+
+    assert not any(i.startswith("asm-allowance-") for i in asm_ids)
+    assert "asm-contingency" not in asm_ids
+    assert "asm-preliminaries" not in asm_ids
+    assert "asm-pricing-date" not in asm_ids
+
+    # An empty allowance list and a zero-item prelim summary also draft nothing.
+    draft2 = draft_basis(coverage, allowances=[], preliminaries={"item_count": 0})
+    ids2 = {q.id for q in draft2.assumptions}
+    assert "asm-contingency" not in ids2
+    assert "asm-preliminaries" not in ids2

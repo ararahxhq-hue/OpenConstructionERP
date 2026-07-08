@@ -15,11 +15,13 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
+from app.modules.allowances.models import Allowance
 from app.modules.boq.models import BOQ, Position
+from app.modules.costs.models import CostItem, CostItemUsage
 from app.modules.estimate_basis.derivation import (
     TradeCoverage,
     derive_trades,
@@ -36,6 +38,8 @@ from app.modules.estimate_basis.schemas import (
     TradeRefOut,
     UpdateRequest,
 )
+from app.modules.preliminaries.models import PrelimItem
+from app.modules.preliminaries.prelim_math import rollup_by_category
 
 # Bound the position scan so a runaway project can never OOM the worker; the same
 # ceiling the BOQ Project Intelligence widgets use. A basis of estimate is a
@@ -89,6 +93,90 @@ class EstimateBasisService:
             "total": pos.total,
         }
 
+    # ── Reads over the sibling estimating modules ────────────────────────────
+
+    async def _load_allowances(self, project_id: uuid.UUID) -> list[dict]:
+        """Return the project's allowances as plain dicts for the deriver.
+
+        Only the held amount is read (not the drawdowns): the basis records the
+        allowance that was set, not what has since been spent against it. Ordered
+        by type then age so a regenerate is stable.
+        """
+        stmt = (
+            select(Allowance)
+            .where(Allowance.project_id == project_id)
+            .order_by(Allowance.allowance_type, Allowance.created_at)
+            .limit(500)
+        )
+        rows = await self.session.execute(stmt)
+        return [
+            {
+                "id": str(a.id),
+                "label": a.label or "",
+                "allowance_type": a.allowance_type or "",
+                "held_amount": a.held_amount,
+                "currency": a.currency or "",
+            }
+            for a in rows.scalars().all()
+        ]
+
+    async def _load_preliminaries_summary(self, project_id: uuid.UUID, currency: str) -> dict:
+        """Roll the project's preliminaries up via ``prelim_math`` into a summary.
+
+        Returns the grand / time-related / fixed totals, the item count and the
+        estimate currency, ready for the deriver. An empty project yields a
+        zero-count summary that drafts no line.
+        """
+        stmt = select(PrelimItem).where(PrelimItem.project_id == project_id).limit(2000)
+        rows = await self.session.execute(stmt)
+        items = [
+            {
+                "item_type": p.item_type,
+                "category": p.category,
+                "rate_per_period": p.rate_per_period,
+                "periods": p.periods,
+                "fixed_amount": p.fixed_amount,
+            }
+            for p in rows.scalars().all()
+        ]
+        rollup = rollup_by_category(items)
+        return {
+            "grand_total": rollup.grand_total,
+            "time_related_total": rollup.time_related_total,
+            "fixed_total": rollup.fixed_total,
+            "item_count": rollup.item_count,
+            "currency": (currency or "").strip(),
+        }
+
+    async def _derive_pricing_base_date(
+        self,
+        project_id: uuid.UUID,
+        boq_id: uuid.UUID | None,
+    ) -> str | None:
+        """Return the date the priced rates are current to, or ``None``.
+
+        Prefers the freshest ``price_as_of`` across the cost items actually
+        applied in the project (through the usage ledger); falls back to the
+        estimate's stated base date (the BOQ ``base_date``, the escalation base).
+        """
+        price_stmt = (
+            select(func.max(CostItem.price_as_of))
+            .select_from(CostItemUsage)
+            .join(CostItem, CostItem.id == CostItemUsage.cost_item_id)
+            .where(CostItemUsage.project_id == project_id)
+        )
+        price_as_of = (await self.session.execute(price_stmt)).scalar()
+        if price_as_of is not None:
+            return price_as_of.isoformat()
+
+        base_stmt = select(func.max(BOQ.base_date)).where(BOQ.project_id == project_id)
+        if boq_id is not None:
+            base_stmt = base_stmt.where(BOQ.id == boq_id)
+        base_date = (await self.session.execute(base_stmt)).scalar()
+        if base_date:
+            return str(base_date).strip() or None
+        return None
+
     # ── Generate ─────────────────────────────────────────────────────────────
 
     async def generate(
@@ -108,7 +196,17 @@ class EstimateBasisService:
         """
         positions = await self._load_positions(project_id, boq_id)
         coverage = derive_trades([self._position_to_dict(p) for p in positions])
-        draft = draft_basis(coverage, currency=currency, base_date=base_date)
+        allowances = await self._load_allowances(project_id)
+        preliminaries = await self._load_preliminaries_summary(project_id, currency)
+        pricing_base_date = await self._derive_pricing_base_date(project_id, boq_id)
+        draft = draft_basis(
+            coverage,
+            currency=currency,
+            base_date=base_date,
+            allowances=allowances,
+            preliminaries=preliminaries,
+            pricing_base_date=pricing_base_date,
+        )
 
         doc = EstimateBasis(
             project_id=project_id,
