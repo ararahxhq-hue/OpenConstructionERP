@@ -66,6 +66,7 @@ from app.modules.costs.matcher import (
     match_cwicr_items,
 )
 from app.modules.costs.models import CostItem
+from app.modules.costs.repository import synonym_text_predicate  # noqa: F401
 from app.modules.costs.schemas import (
     BenchmarkRequest,
     BenchmarkResponse,
@@ -427,7 +428,17 @@ def _localize_response_payload(
 async def autocomplete_cost_items(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: CostItemService = Depends(_get_service),
-    q: str = Query(..., min_length=2, max_length=200, description="Search text (min 2 chars)"),
+    q: str = Query(
+        ...,
+        min_length=2,
+        max_length=200,
+        description=(
+            "Search text (min 2 chars). A single word is expanded with "
+            "multilingual construction synonyms, so 'rebar' also finds "
+            "'reinforcement' / 'Bewehrung' / 'armatura' and 'beton' finds "
+            "'concrete'; the word you type still matches as a substring."
+        ),
+    ),
     region: str | None = Query(default=None, description="Filter by region (e.g. DE_BERLIN)"),
     limit: int = Query(default=20, ge=1, le=200, description="Max results to return"),
     semantic: bool = Query(default=False, description="Use vector semantic search if available"),
@@ -442,7 +453,9 @@ async def autocomplete_cost_items(
 
     When ``semantic=true`` and a vector index exists, uses AI embeddings
     to find semantically similar items (e.g. "concrete wall" finds
-    "reinforced partition C30/37"). Falls back to text search otherwise.
+    "reinforced partition C30/37"). Falls back to a multilingual synonym
+    text search otherwise, so "rebar" also finds "reinforcement" /
+    "Bewehrung" / "armatura" without any vector index installed.
 
     The response carries a slim ``cost_breakdown`` (labor / material /
     equipment) and a thinned ``metadata_`` block so the BOQ description
@@ -602,11 +615,14 @@ async def search_cost_items(
     q: str | None = Query(
         default=None,
         description=(
-            "Free-text search - substring (ILIKE) match against code OR "
-            "description. Canonical param: ``search`` and ``query`` are "
-            "silently aliased to ``q`` at this boundary. SQL ILIKE is "
-            "always evaluated; the vector layer is a best-effort re-rank "
-            "on top, never the only source of recall."
+            "Free-text search against code OR description. Routed through the "
+            "multilingual construction-vocabulary matcher, so a single-word "
+            "query like 'rebar' also finds 'reinforcement' / 'Bewehrung' / "
+            "'armatura' and 'beton' finds 'concrete'; the word you type still "
+            "matches as an (accent- and case-insensitive) substring. Canonical "
+            "param: ``search`` and ``query`` are silently aliased to ``q`` at "
+            "this boundary. The vector layer is a best-effort re-rank on top, "
+            "never the only source of recall."
         ),
     ),
     search: str | None = Query(
