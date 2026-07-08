@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.7.0] - 2026-07-08
+
+This release deepens the estimating side of the platform with a wave of new tools that take a job from a first rough number all the way to a defensible, well-documented bill.
+
+You can now start from a conceptual, order-of-magnitude estimate driven by a few high-level parameters, and a guided copilot walks that concept through to a priced result with the assumptions, exclusions and confidence written up as a proper basis of estimate. General conditions and preliminaries are priced in their own right, split into time-related and fixed items, and an allowances and contingency register keeps provisional sums and risk money explicit instead of buried inside rates. Regional and time-based price indexing adjusts a rate for where and when the work happens, labor-rate build-ups turn a base wage plus on-costs into a chargeable rate, and a resource summary rolls a bill up into its total labor, material and equipment demand. Net quantities convert to gross through a reusable waste-factor library, and production norms expand a work item into the labor and material it implies.
+
+Cost rates now carry a price-date freshness signal. A rate whose price is going stale is flagged next to its usage certainty, independent of how often it is used, and the app suggests a refreshed value you can accept. AI-suggested assemblies are now grounded in real per-unit factors from the catalogue rather than a flat quantity, so a generated recipe is a sensible starting point rather than a list of ones.
+
+The desktop app now shows the real reason when startup fails. Before, a failure could surface only the embedded database shutdown output and leave you staring at cleanup noise; the launcher now latches the true cause, always ends with a clear next step and the log location, and the underlying startup errors that used to be swallowed are reported directly.
+
 ## [10.6.1] - 2026-07-08
 
 The app now loads noticeably faster on first open. The dashboard is the landing page and, through a chain of shared modules, it was pulling the whole 3D globe and 2D map libraries into the very first download even for people who never open a map. Those libraries now load only when a map or the geo hub is actually opened, which takes about 1.6 MB off the initial load with no change in behaviour. Clicks inside the takeoff Link to BOQ picker no longer bubble to the measurement row and toggle the properties panel.
