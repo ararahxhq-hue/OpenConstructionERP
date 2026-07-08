@@ -28,12 +28,14 @@ import {
 function grp(over: Partial<LaneGroupInput> & { group_key?: string } = {}): LaneGroupInput & {
   group_key: string;
 } {
+  // Default only when a key is absent - an explicit null (no candidate / no
+  // numeric confidence yet) must survive, so `??` would wrongly swallow it.
   return {
     group_key: over.group_key ?? 'g',
     status: over.status ?? 'suggested',
     confidence_band: over.confidence_band ?? 'medium',
-    confidence: over.confidence ?? '0.65',
-    suggested_code: over.suggested_code ?? 'CWICR-1',
+    confidence: over.confidence === undefined ? '0.65' : over.confidence,
+    suggested_code: over.suggested_code === undefined ? 'CWICR-1' : over.suggested_code,
   };
 }
 

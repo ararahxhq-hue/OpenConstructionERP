@@ -101,7 +101,10 @@ export function stepAt(index: number): CopilotStepDef | null {
 
 /** Clamp any number to a valid confirmed-count in [0, COPILOT_STEP_COUNT]. */
 export function clampConfirmedCount(count: number): number {
-  if (!Number.isFinite(count)) return 0;
+  // NaN is meaningless -> 0. A finite or infinite number falls through to the
+  // range clamp below: +Infinity floors above the max and saturates to it,
+  // -Infinity floors below 0 and pins to 0.
+  if (Number.isNaN(count)) return 0;
   const n = Math.floor(count);
   if (n < 0) return 0;
   if (n > COPILOT_STEP_COUNT) return COPILOT_STEP_COUNT;
