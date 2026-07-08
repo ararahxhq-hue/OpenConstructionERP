@@ -9,12 +9,12 @@ never loses digits through a JSON ``float`` bridge - the platform-wide
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 # Upper bound shared by every numeric input. 1e12 is far beyond any real index
 # value / money amount yet keeps each pairwise product finite in Decimal, so an
@@ -260,3 +260,85 @@ class AdjustResponse(BaseModel):
     series_id: UUID
     series_name: str
     results: list[AdjustLineResult] = Field(default_factory=list)
+
+
+# ── Escalate stored rates (preview) ───────────────────────────────────────────
+
+
+class EscalatePreviewRequest(BaseModel):
+    """Select stored cost items and preview their rates escalated to a date.
+
+    The escalation is purely temporal: each selected item's own stored rate is
+    brought from the period of its ``price_as_of`` capture date to the period of
+    ``target_date`` using the chosen index series. This is a read-only preview -
+    nothing is ever written back to the cost items or the BOQ.
+
+    Selection: pass explicit ``cost_item_ids`` and / or a ``region`` /
+    ``category`` filter; every supplied constraint is applied together (AND). At
+    least one selector is required so the whole catalogue is never escalated by
+    accident. When ``series_id`` is omitted and exactly one series exists, that
+    series is used; with several series ``series_id`` must be given.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    target_date: date = Field(..., description="Calendar date to bring the stored rates to")
+    series_id: UUID | None = Field(
+        default=None,
+        description="Index series to escalate against; optional when only one series exists",
+    )
+    region: str | None = Field(default=None, max_length=50, description="Filter items by region")
+    category: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Filter items by classification collection (the top classification level)",
+    )
+    cost_item_ids: list[UUID] | None = Field(
+        default=None,
+        max_length=5000,
+        description="Explicit cost items to escalate",
+    )
+
+    @model_validator(mode="after")
+    def _require_a_selector(self) -> EscalatePreviewRequest:
+        has_ids = bool(self.cost_item_ids)
+        has_filter = bool((self.region or "").strip() or (self.category or "").strip())
+        if not has_ids and not has_filter:
+            raise ValueError("provide cost_item_ids and / or a region / category filter to select items")
+        return self
+
+
+class EscalatePreviewLine(BaseModel):
+    """One cost item's stored rate previewed at the target date.
+
+    ``base_date``, ``base_period``, ``factor`` and ``escalated_rate`` are
+    ``null`` and ``escalatable`` is ``False`` when the rate cannot be escalated -
+    most commonly because ``price_as_of`` is null, the stored rate is not a
+    number, or the base / target period is absent from the series. ``note`` then
+    explains why, so a single unescalatable item never voids the batch.
+    """
+
+    cost_item_id: UUID
+    code: str
+    unit: str = ""
+    region: str | None = None
+    currency: str = ""
+    base_rate: DecimalStr | None = None
+    base_date: date | None = None
+    base_period: str | None = None
+    factor: DecimalStr | None = None
+    escalated_rate: DecimalStr | None = None
+    escalatable: bool = False
+    note: str | None = None
+
+
+class EscalatePreviewResponse(BaseModel):
+    """The full result of an :class:`EscalatePreviewRequest`."""
+
+    series_id: UUID
+    series_name: str
+    target_date: date
+    target_period: str
+    item_count: int
+    escalatable_count: int
+    results: list[EscalatePreviewLine] = Field(default_factory=list)

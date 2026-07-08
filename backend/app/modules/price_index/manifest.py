@@ -13,7 +13,7 @@ manifest = ModuleManifest(
     ),
     author="OpenConstructionERP Core Team",
     category="core",
-    depends=[],
+    depends=["oe_costs"],
     auto_install=True,
     enabled=True,
 )

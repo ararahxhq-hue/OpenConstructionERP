@@ -14,6 +14,7 @@ rounded to two decimal places with ``ROUND_HALF_UP`` - never float.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -166,3 +167,25 @@ def test_to_decimal_rejects_garbage() -> None:
 def test_quantize_factor_six_dp_half_up() -> None:
     assert pim.quantize_factor("1") == D("1.000000")
     assert pim.quantize_factor("1.2777777") == D("1.277778")
+
+
+# ── period_for_date ───────────────────────────────────────────────────────────
+
+
+def test_period_for_date_drops_the_day() -> None:
+    assert pim.period_for_date(date(2019, 3, 7)) == "2019-03"
+    assert pim.period_for_date(date(2019, 3, 31)) == "2019-03"
+
+
+def test_period_for_date_zero_pads_month() -> None:
+    assert pim.period_for_date(date(2026, 1, 1)) == "2026-01"
+    assert pim.period_for_date(date(2026, 12, 1)) == "2026-12"
+
+
+def test_period_for_date_feeds_resolve_factor() -> None:
+    # The whole point of period_for_date: two capture dates in the same months
+    # as the series points resolve to the series ratio.
+    points = {"2019-01": "1.0", "2026-01": "1.4"}
+    base = pim.period_for_date(date(2019, 1, 15))
+    target = pim.period_for_date(date(2026, 1, 20))
+    assert pim.resolve_factor(points, base, target) == D("1.400000")

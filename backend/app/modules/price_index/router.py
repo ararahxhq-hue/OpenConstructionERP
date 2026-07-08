@@ -31,11 +31,17 @@ from app.modules.price_index.schemas import (
     CostIndexSeriesDetail,
     CostIndexSeriesResponse,
     CostIndexSeriesUpdate,
+    EscalatePreviewRequest,
+    EscalatePreviewResponse,
     LocationFactorCreate,
     LocationFactorResponse,
     LocationFactorUpdate,
 )
-from app.modules.price_index.service import PriceIndexService, SeriesNotFoundError
+from app.modules.price_index.service import (
+    AmbiguousSeriesError,
+    PriceIndexService,
+    SeriesNotFoundError,
+)
 
 router = APIRouter(tags=["price-index"])
 
@@ -287,4 +293,37 @@ async def adjust(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Cost-index series not found",
+        ) from exc
+
+
+# ── Escalate stored rates (preview) ──────────────────────────────────────────
+
+
+@router.post("/escalate-preview/", response_model=EscalatePreviewResponse)
+async def escalate_preview(
+    request: EscalatePreviewRequest,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> EscalatePreviewResponse:
+    """Preview the estimate's own stored rates escalated to a target date.
+
+    For each selected cost item this returns its base rate, its capture date
+    (``price_as_of``), the temporal escalation factor from that date's period to
+    the target date's period on the chosen series, and the escalated rate. It is
+    strictly read-only: neither the cost items nor the BOQ are modified. An item
+    with no ``price_as_of`` (or an unparseable rate, or a period the series does
+    not carry) comes back flagged and unescalated rather than guessed.
+    """
+    service = PriceIndexService(session)
+    try:
+        return await service.escalate_stored_rates(request)
+    except SeriesNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cost-index series not found",
+        ) from exc
+    except AmbiguousSeriesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
         ) from exc

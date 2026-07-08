@@ -19,6 +19,7 @@ to two decimal places with ``ROUND_HALF_UP`` (:func:`adjust`).
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "adjust",
     "combined_factor",
     "location_multiplier",
+    "period_for_date",
     "quantize_factor",
     "resolve_factor",
     "to_decimal",
@@ -89,6 +91,26 @@ def to_decimal(value: Decimal | str | int) -> Decimal:
 def quantize_factor(value: Decimal | str | int) -> Decimal:
     """Round a dimensionless factor to :data:`FACTOR_QUANTUM` (6 dp, HALF_UP)."""
     return to_decimal(value).quantize(FACTOR_QUANTUM, rounding=ROUND_HALF_UP)
+
+
+def period_for_date(day: date) -> str:
+    """Return the ISO year-month period ``"YYYY-MM"`` a date falls in.
+
+    An index series carries at most one point per month, so a rate captured on
+    any day of a month escalates from that whole month's index point. The day
+    component is deliberately dropped: only the year and month select the
+    period. This is the bridge from a stored ``price_as_of`` capture date (or a
+    target date) to the period keys :func:`resolve_factor` looks up.
+
+    Args:
+        day: The calendar date a rate was captured on, or the date a rate is
+            being brought to.
+
+    Returns:
+        The zero-padded ``"YYYY-MM"`` period string; for example
+        ``date(2019, 3, 7)`` becomes ``"2019-03"``.
+    """
+    return f"{day.year:04d}-{day.month:02d}"
 
 
 def _normalise(points: Mapping[str, Decimal | str | int]) -> dict[str, Decimal]:
