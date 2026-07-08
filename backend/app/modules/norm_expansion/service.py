@@ -11,7 +11,7 @@ unit-testable without a database.
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import func, select
@@ -37,6 +37,18 @@ class WorkKeyExistsError(ValueError):
     def __init__(self, work_key: str) -> None:
         self.work_key = work_key
         super().__init__(f"work_key already exists: {work_key}")
+
+
+class NormNotFoundError(LookupError):
+    """Raised when a build target references a norm id that does not exist.
+
+    The router maps this to a 404 so building an assembly from a missing norm
+    never leaks an existence oracle or raises an unhandled 500.
+    """
+
+    def __init__(self, norm_id: uuid.UUID) -> None:
+        self.norm_id = norm_id
+        super().__init__(f"production norm not found: {norm_id}")
 
 
 def norm_to_coefficients(norm: ProductionNorm) -> NormCoefficients:
@@ -217,3 +229,260 @@ def _build_material(data: NormMaterialCreate, *, fallback_order: int) -> NormMat
         qty_per_unit=data.qty_per_unit,
         sort_order=data.sort_order or fallback_order,
     )
+
+
+# ── Priced assembly build (slice 1a) ─────────────────────────────────────────
+# Turn a production norm's per-unit coefficients into a saved, priced Assembly:
+# labour-hours costed by an all-in labour rate, machine-hours by an equipment
+# rate, and each material by a matched cost item. The resulting assembly's
+# total_rate is the built-up unit rate.
+
+# Reject a material match whose lexical score is below this. The matcher only
+# returns candidates that pass a token prefilter, but a weak best match is more
+# likely a false positive than a real price, so we leave the line unpriced (and
+# flagged) rather than attach a misleading rate.
+_MATERIAL_MATCH_MIN_SCORE = 0.30
+
+# Fallbacks so an Assembly (which requires a non-empty code / name / unit) can
+# always be created even from a sparsely filled norm row.
+_DEFAULT_ASSEMBLY_UNIT = "unit"
+_DEFAULT_ASSEMBLY_CURRENCY = "EUR"
+
+
+def _assembly_code(work_key: str) -> str:
+    """Build a unique, <=100 char assembly code for a norm-derived build.
+
+    A fresh random suffix is appended so re-building the same norm (for another
+    project, or with a different labour rate) never collides on the assembly's
+    unique ``code``.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    prefix = f"NORM-{work_key}"[: 100 - len(suffix) - 1]
+    return f"{prefix}-{suffix}"
+
+
+async def _resolve_labor_rate(
+    session: AsyncSession,
+    template_id: uuid.UUID | None,
+) -> tuple[Decimal | None, str]:
+    """Resolve an all-in labour rate per hour from a labour-rate template.
+
+    Returns ``(rate, currency)``. When no template id is given, or the template
+    does not exist, the rate is ``None`` so the caller prices labour to zero and
+    flags the line unpriced.
+    """
+    if template_id is None:
+        return None, ""
+    from app.modules.labor_rates import rate_math
+    from app.modules.labor_rates.service import LaborRateService
+
+    template = await LaborRateService(session).get_template(template_id)
+    if template is None:
+        return None, ""
+    rate = rate_math.all_in_rate(
+        template.base_wage,
+        [rate_math.OnCost(label=c.label, kind=c.kind, value=c.value) for c in template.components],
+    )
+    return rate, (template.currency or "")
+
+
+async def _resolve_material_price(
+    session: AsyncSession,
+    name: str,
+    unit: str,
+    *,
+    region: str | None,
+) -> tuple[object, str]:
+    """Find a cost item for a material and return its price plus currency.
+
+    Runs the shared lexical cost matcher, takes the best match above the score
+    floor, then reads that cost item's exact Decimal ``rate`` (not the matcher's
+    lossy float). Returns a :class:`price_math.MaterialPrice` and the matched
+    item's currency (empty string when unpriced).
+    """
+    from app.modules.costs.matcher import match_cwicr_items
+    from app.modules.costs.models import CostItem
+    from app.modules.norm_expansion.price_math import MaterialPrice
+
+    matches = await match_cwicr_items(
+        session,
+        name,
+        unit=unit or None,
+        top_k=1,
+        source=None,
+    )
+    if not matches or matches[0].score < _MATERIAL_MATCH_MIN_SCORE:
+        return MaterialPrice(unit_cost=None), ""
+
+    best = matches[0]
+    item = await session.get(CostItem, uuid.UUID(best.cost_item_id))
+    if item is None:
+        return MaterialPrice(unit_cost=None), ""
+
+    currency = item.currency or best.currency or ""
+    try:
+        rate = Decimal(str(item.rate))
+    except (InvalidOperation, ValueError):
+        rate = Decimal("NaN")
+    if not rate.is_finite() or rate < 0:
+        # Matched a row but its stored rate is unusable: link it for audit but
+        # leave the line unpriced so a bad rate never silently prices the build.
+        return (
+            MaterialPrice(
+                unit_cost=None,
+                cost_item_id=best.cost_item_id,
+                matched_description=best.description,
+            ),
+            currency,
+        )
+    return (
+        MaterialPrice(
+            unit_cost=rate,
+            cost_item_id=best.cost_item_id,
+            matched_description=best.description,
+        ),
+        currency,
+    )
+
+
+async def build_assembly_from_norm(
+    session: AsyncSession,
+    norm_id: uuid.UUID,
+    *,
+    labor_rate_template_id: uuid.UUID | None = None,
+    machine_rate_template_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    owner_id: str | None = None,
+    region: str | None = None,
+    currency: str | None = None,
+) -> object:
+    """Build and persist a priced Assembly from a production norm.
+
+    Loads the norm, resolves an all-in labour rate (from ``labor_rate_template_id``
+    when given), an optional equipment rate (from ``machine_rate_template_id``),
+    and a matched cost item per material, then prices the norm's per-unit
+    coefficients with the pure :func:`price_math.price_build_up`. The priced
+    lines are persisted as a new project-scoped Assembly (``is_template`` False)
+    through the existing assemblies service, so the assembly's ``total_rate`` is
+    the built-up unit rate and each component links back to its cost item.
+
+    Lines with no resolved rate / cost are still created, at a zero unit cost and
+    flagged ``priced=False`` in their metadata (and collected under the
+    assembly's ``metadata['unpriced']``), so the UI can surface them for the
+    estimator to resolve rather than hiding a gap.
+
+    Args:
+        session: Active async DB session.
+        norm_id: The production norm to build from.
+        labor_rate_template_id: Labour-rate template to price labour-hours; when
+            absent, labour is left unpriced and flagged.
+        machine_rate_template_id: Labour-rate template used as the equipment
+            rate to price machine-hours; when absent, machine time is left
+            unpriced and flagged.
+        project_id: When given, the assembly is scoped to that project.
+        owner_id: The creating user id (for per-tenant ownership).
+        region: Optional region hint biasing the material cost match.
+        currency: Optional currency override; otherwise resolved from the labour
+            rate, then the first matched material, then ``EUR``.
+
+    Returns:
+        The persisted :class:`Assembly` with its priced components loaded.
+
+    Raises:
+        NormNotFoundError: If ``norm_id`` does not resolve to a norm.
+    """
+    from app.modules.assemblies.schemas import AssemblyCreate, ComponentCreate
+    from app.modules.assemblies.service import AssemblyService
+    from app.modules.norm_expansion.price_math import price_build_up
+
+    service = NormExpansionService(session)
+    norm = await service.get_norm(norm_id)
+    if norm is None:
+        raise NormNotFoundError(norm_id)
+
+    coefficients = norm_to_coefficients(norm)
+
+    labor_rate, labor_currency = await _resolve_labor_rate(session, labor_rate_template_id)
+    machine_rate, machine_currency = await _resolve_labor_rate(session, machine_rate_template_id)
+
+    material_prices = []
+    material_currencies: list[str] = []
+    for material in norm.materials:
+        price, mat_currency = await _resolve_material_price(session, material.name, material.unit, region=region)
+        material_prices.append(price)
+        if mat_currency:
+            material_currencies.append(mat_currency)
+
+    resolved_currency = (
+        (currency or "").strip()
+        or labor_currency
+        or machine_currency
+        or (material_currencies[0] if material_currencies else "")
+        or _DEFAULT_ASSEMBLY_CURRENCY
+    )
+
+    build = price_build_up(
+        coefficients,
+        labor_rate=labor_rate,
+        machine_rate=machine_rate,
+        material_prices=material_prices,
+        currency=resolved_currency,
+    )
+
+    assembly_unit = (norm.unit or "").strip() or _DEFAULT_ASSEMBLY_UNIT
+    assembly_name = (norm.name or "").strip() or norm.work_key
+
+    assembly_service = AssemblyService(session)
+    assembly = await assembly_service.create_assembly(
+        AssemblyCreate(
+            code=_assembly_code(norm.work_key),
+            name=assembly_name,
+            description=f"Priced build-up from production norm '{norm.work_key}'.",
+            unit=assembly_unit,
+            category=norm.category or "",
+            currency=resolved_currency,
+            is_template=False,
+            project_id=project_id,
+            metadata={
+                "source": "production_norm",
+                "norm_id": str(norm.id),
+                "work_key": norm.work_key,
+                "labor_rate_template_id": (str(labor_rate_template_id) if labor_rate_template_id else None),
+                "machine_rate_template_id": (str(machine_rate_template_id) if machine_rate_template_id else None),
+                "built_up_unit_rate": format(build.unit_rate, "f"),
+                "unpriced": list(build.unpriced),
+            },
+        ),
+        owner_id=owner_id,
+    )
+
+    for line in build.lines:
+        component_unit = (line.unit or "").strip() or _DEFAULT_ASSEMBLY_UNIT
+        cost_item_uuid = uuid.UUID(line.cost_item_id) if line.cost_item_id else None
+        await assembly_service.add_component(
+            assembly.id,
+            ComponentCreate(
+                cost_item_id=cost_item_uuid,
+                description=line.description,
+                resource_type=line.resource_type,
+                factor=1.0,
+                quantity=line.quantity,
+                unit=component_unit,
+                unit_cost=line.unit_cost,
+                metadata={
+                    "source": "production_norm",
+                    "priced": line.priced,
+                    "resource_kind": line.kind,
+                    "kind_i18n_key": line.kind_i18n_key,
+                    "unpriced_reason": line.note,
+                },
+            ),
+        )
+
+    # ``AssemblyRepository.create`` calls ``session.refresh`` which eagerly
+    # selectin-loads an (empty) components collection onto the identity-mapped
+    # assembly, so a plain re-query would hand back that stale empty collection.
+    # Refresh the relationship (and the recomputed total_rate) explicitly to get
+    # the four persisted components and the built-up rate.
+    await session.refresh(assembly, attribute_names=["total_rate", "components"])
+    return assembly

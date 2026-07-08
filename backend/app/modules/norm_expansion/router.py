@@ -17,12 +17,16 @@ missing row returns 404, never 403, so probing never leaks a UUID's existence.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.norm_expansion.models import ProductionNorm
 from app.modules.norm_expansion.schemas import (
+    BuildAssemblyRequest,
+    BuildAssemblyResponse,
     ExpandBatchRequest,
     ExpandBatchResponse,
     ExpandRequest,
@@ -33,11 +37,14 @@ from app.modules.norm_expansion.schemas import (
     NormMaterialResponse,
     NormResponse,
     NormUpdate,
+    PricedComponentResponse,
 )
 from app.modules.norm_expansion.service import (
     ExpansionResult,
     NormExpansionService,
+    NormNotFoundError,
     WorkKeyExistsError,
+    build_assembly_from_norm,
 )
 
 router = APIRouter(tags=["norm-expansion"])
@@ -258,3 +265,98 @@ async def expand_batch(
         norm, result = outcome
         results.append(_expansion_to_response(norm, result, item.quantity))
     return ExpandBatchResponse(results=results, unmatched=unmatched)
+
+
+# ── Priced assembly build ────────────────────────────────────────────────────
+
+
+def _dec(value: object) -> Decimal:
+    """Read a string-stored numeric back as a finite, non-negative Decimal."""
+    try:
+        dec = Decimal(str(value if value not in (None, "") else "0"))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+    if not dec.is_finite() or dec < 0:
+        return Decimal("0")
+    return dec
+
+
+def _build_assembly_response(assembly: Any) -> BuildAssemblyResponse:
+    """Map a persisted, norm-derived Assembly onto the build response."""
+    metadata = assembly.metadata_ or {}
+    components: list[PricedComponentResponse] = []
+    unpriced: list[str] = []
+    for comp in assembly.components:
+        comp_meta = comp.metadata_ or {}
+        priced = bool(comp_meta.get("priced", True))
+        components.append(
+            PricedComponentResponse(
+                resource_type=comp.resource_type,
+                description=comp.description,
+                unit=comp.unit,
+                quantity=_dec(comp.quantity),
+                unit_cost=_dec(comp.unit_cost),
+                total=_dec(comp.total),
+                cost_item_id=comp.cost_item_id,
+                priced=priced,
+                unpriced_reason=str(comp_meta.get("unpriced_reason", "") or ""),
+            )
+        )
+        if not priced:
+            unpriced.append(comp.description)
+
+    return BuildAssemblyResponse(
+        id=assembly.id,
+        code=assembly.code,
+        name=assembly.name,
+        unit=assembly.unit,
+        category=assembly.category,
+        currency=assembly.currency,
+        total_rate=_dec(assembly.total_rate),
+        project_id=assembly.project_id,
+        is_template=assembly.is_template,
+        work_key=str(metadata.get("work_key", "") or ""),
+        components=components,
+        unpriced=unpriced,
+    )
+
+
+@router.post(
+    "/norms/{norm_id}/build-assembly",
+    response_model=BuildAssemblyResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(RequirePermission("norm_expansion.read")),
+        Depends(RequirePermission("assemblies.create")),
+    ],
+)
+async def build_assembly(
+    norm_id: uuid.UUID,
+    data: BuildAssemblyRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+) -> BuildAssemblyResponse:
+    """Build a priced assembly from a production norm's per-unit coefficients.
+
+    Costs the norm's labour-hours, machine-hours and materials, then saves the
+    result as a new assembly whose ``total_rate`` is the built-up unit rate. Any
+    line that could not be priced is created at a zero unit cost and flagged so
+    the estimator can resolve it. Requires both ``norm_expansion.read`` (to read
+    the norm) and ``assemblies.create`` (the output is a new assembly).
+    """
+    try:
+        assembly = await build_assembly_from_norm(
+            session,
+            norm_id,
+            labor_rate_template_id=data.labor_rate_template_id,
+            machine_rate_template_id=data.machine_rate_template_id,
+            project_id=data.project_id,
+            owner_id=user_id,
+            region=data.region,
+        )
+    except NormNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No production norm for id: {norm_id}",
+        ) from exc
+    return _build_assembly_response(assembly)

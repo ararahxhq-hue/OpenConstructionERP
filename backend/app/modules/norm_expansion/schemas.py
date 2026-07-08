@@ -178,3 +178,85 @@ class ExpandBatchResponse(BaseModel):
 
     results: list[ExpansionResponse] = Field(default_factory=list)
     unmatched: list[str] = Field(default_factory=list)
+
+
+# ── Priced assembly build (slice 1a) ─────────────────────────────────────────
+
+
+class BuildAssemblyRequest(BaseModel):
+    """Build a priced assembly from a production norm.
+
+    All fields are optional: with no labour-rate template the labour line is
+    created unpriced and flagged (the estimator supplies a rate later); with no
+    project the assembly is a library recipe rather than a project-scoped one.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    labor_rate_template_id: UUID | None = Field(
+        default=None,
+        description="Labour-rate template used to price labour-hours.",
+    )
+    machine_rate_template_id: UUID | None = Field(
+        default=None,
+        description="Rate template used as the equipment rate to price machine-hours.",
+    )
+    project_id: UUID | None = Field(
+        default=None,
+        description="Scope the built assembly to this project (omit for a library recipe).",
+    )
+    region: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Optional region hint biasing the material cost match.",
+    )
+
+
+class PricedComponentResponse(BaseModel):
+    """One priced component of an assembly built from a norm.
+
+    ``quantity`` is the per-unit coefficient; ``unit_cost`` and ``total`` are
+    money. All three are emitted as decimal strings.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    resource_type: str | None = None
+    description: str
+    unit: str
+    quantity: Decimal
+    unit_cost: Decimal
+    total: Decimal
+    cost_item_id: UUID | None = None
+    priced: bool = True
+    unpriced_reason: str = ""
+
+    @field_serializer("quantity", "unit_cost", "total")
+    def _ser_amounts(self, v: Decimal) -> str:
+        return _serialise_decimal(v)  # type: ignore[return-value]
+
+
+class BuildAssemblyResponse(BaseModel):
+    """The assembly created from a production norm, with its priced components.
+
+    ``total_rate`` is the built-up unit rate (the sum of the component totals).
+    ``unpriced`` lists the descriptions of any line that could not be priced so
+    the UI can flag them for the estimator to resolve.
+    """
+
+    id: UUID
+    code: str
+    name: str
+    unit: str
+    category: str
+    currency: str
+    total_rate: Decimal
+    project_id: UUID | None = None
+    is_template: bool
+    work_key: str
+    components: list[PricedComponentResponse] = Field(default_factory=list)
+    unpriced: list[str] = Field(default_factory=list)
+
+    @field_serializer("total_rate")
+    def _ser_total_rate(self, v: Decimal) -> str:
+        return _serialise_decimal(v)  # type: ignore[return-value]
