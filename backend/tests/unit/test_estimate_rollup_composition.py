@@ -136,6 +136,37 @@ def test_negative_contingency_from_overdraw_reduces_the_total() -> None:
     assert sum((line.amount for line in rollup.lines), Decimal("0")) == rollup.estimate_total
 
 
+def test_multicurrency_lines_reconcile_to_total_despite_per_type_rounding() -> None:
+    """Lines still sum to estimate_total when per-type FX rounding would drift.
+
+    ``fold_allowances_to_base`` rounds the grand total together but each type on
+    its own, so converting foreign remainders can leave the separately-rounded
+    provisional / PC and contingency figures a cent apart from the together-
+    rounded total. Here two 10.005 remainders make ``total`` 20.01 while each
+    part rounds up to 10.01 on its own (separately summing them gives 20.02). The
+    composition must derive the provisional / PC line as the remainder so the
+    shown lines reconstruct the total exactly.
+    """
+    allowances = AllowancesBreakdown(
+        total=Decimal("20.01"),
+        provisional_sum_total=Decimal("10.01"),
+        pc_sum_total=Decimal("0.00"),
+        contingency_total=Decimal("10.01"),
+        provisional_and_pc_count=1,
+        contingency_count=1,
+        allowance_count=2,
+    )
+    rollup = compose_estimate_rollup("EUR", Decimal("0.00"), _empty_prelim(), allowances)
+
+    assert rollup.estimate_total == Decimal("20.01")
+    assert sum((line.amount for line in rollup.lines), Decimal("0")) == rollup.estimate_total
+    by_key = {line.key: line.amount for line in rollup.lines}
+    # Contingency is shown at its own rounded value; the provisional / PC line
+    # takes the remainder (10.00), absorbing the sub-cent residual.
+    assert by_key[LINE_CONTINGENCY] == Decimal("10.01")
+    assert by_key[LINE_ALLOWANCES] == Decimal("10.00")
+
+
 # ── fold_allowances_to_base (remaining + FX) ─────────────────────────────
 
 

@@ -352,8 +352,15 @@ def compose_estimate_rollup(
     lines: list[RollupLine] = [RollupLine(LINE_BOQ_BASE, "BOQ base", boq_base_q)]
     if preliminaries.item_count > 0:
         lines.append(RollupLine(LINE_PRELIMINARIES, "Preliminaries", preliminaries.total))
+    # Derive the two allowance lines from the together-rounded ``allowances.total``
+    # so the emitted lines always reconcile to it (and thus to ``estimate_total``).
+    # Contingency is shown at its own rounded value; the provisional / PC line takes
+    # the remainder, absorbing any sub-cent FX-conversion residual so that
+    # ``sum(lines) == estimate_total`` holds in every currency scenario. Rounding
+    # each type separately (the earlier approach) could drift a cent apart from
+    # ``allowances.total`` once foreign-currency remainders were converted to base.
     if allowances.provisional_and_pc_count > 0:
-        provisional_and_pc = _q(allowances.provisional_sum_total + allowances.pc_sum_total)
+        provisional_and_pc = _q(allowances.total - allowances.contingency_total)
         lines.append(RollupLine(LINE_ALLOWANCES, "Provisional and prime-cost sums", provisional_and_pc))
     if allowances.contingency_count > 0:
         lines.append(RollupLine(LINE_CONTINGENCY, "Contingency", allowances.contingency_total))
