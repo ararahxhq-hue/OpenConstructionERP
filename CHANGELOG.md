@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.8.0] - 2026-07-08
+
+This release connects the estimating tools introduced in the last version into one working chain, from a resource-built rate through to a single defensible estimate total.
+
+A production norm now expands into a priced assembly and grosses its material quantities up from net to gross through the waste-factor library. A labor-rate build-up can be published as a reusable labor cost item, so an all-in rate you worked out once is available everywhere. The resource summary produces a material procurement buy-list you can export to CSV. The estimate rolls up as one total that composes the bill base, the priced preliminaries and the allowances and contingency register, and the conceptual order-of-magnitude estimate reconciles against the live bill so you can watch the concept close on the real number as it firms up. The basis of estimate reflects the allowances, preliminaries and pricing date in its drafted assumptions, and the guided copilot runs each step and keeps its live results per project.
+
+Rates can now be escalated in time and by region. You can escalate the estimate's own stored rates to a target date, escalate the specific rates a project's bill actually uses, and see the adjustment in the interface before you accept it. Off-site and prefabricated units can be linked to a bill position or an assembly so they carry real cost, and the estimating rate tools are regrouped in the navigation into their own section.
+
+The main dashboard is tighter and clearer. The delivery and quality cards no longer leave a wide empty margin, the project locations and weather panel shows its cities in two columns without scrolling, and the inbox and the day's work sit together in a compact top row. The Cases hub loads its first cards immediately and reveals the rest as you scroll, each card carries a very soft wash of its discipline colour so groups are easy to tell apart at a glance, a case that ships without a picture now gets a drawn line-art scene, and opening a case shows its action as a single row of step scenes.
+
+This release also fixes a set of things. A bill position without resources keeps its unit rate editable, while a position that does have priced resources still derives its rate from their total. The estimate breakdown lines reconcile exactly to the total even where multi-currency rounding would otherwise leave them a cent apart. Project-scoped rate escalation now checks project access so it cannot read another tenant's rates, the two open database migration heads were merged into one, embedded PostgreSQL retries a flaky first start and reports the real cause when it fails, and remaining commercial cost-data brand names were taken out of user-facing text.
+
 ## [10.7.0] - 2026-07-08
 
 This release deepens the estimating side of the platform with a wave of new tools that take a job from a first rough number all the way to a defensible, well-documented bill.
