@@ -31,6 +31,7 @@ import { tintFor, CATEGORY_BY_ID } from './categories';
 import { iconFor } from './icons';
 import { CaseArt } from './CaseArt';
 import { StepScene } from './StepScene';
+import { StepProcessScene, hasProcessScene } from './processScenes';
 import { useCasesStore, EMPTY_PROGRESS } from './useCasesStore';
 import {
   clampStepIndex,
@@ -124,6 +125,67 @@ function CaseActionStrip({ steps }: { steps: StripItem[] }): ReactElement | null
           );
         })}
       </div>
+    </section>
+  );
+}
+
+/**
+ * The case's process as its full step sequence: each step drawn as its own
+ * before -> after process scene, numbered, titled and arrowed left to right.
+ * Shown beside the title in the header for cases that define step scenes, so the
+ * whole process reads at a glance. Scrolls sideways on narrow screens rather
+ * than wrapping into a ragged grid.
+ */
+function ProcessFlow({ steps }: { steps: PlaybookStep[] }): ReactElement | null {
+  const { t } = useTranslation();
+  if (steps.length === 0) return null;
+  const heading = t('cases.the_process', { defaultValue: 'The process' });
+  return (
+    <section
+      aria-label={heading}
+      className="w-full shrink-0 rounded-2xl border border-border-light bg-surface-primary p-3 shadow-xs sm:p-4 lg:max-w-2xl"
+    >
+      <p className="mb-2.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+        {heading}
+      </p>
+      <ol className="flex flex-nowrap items-start gap-1.5 overflow-x-auto pb-1 sm:gap-2">
+        {steps.map((step, i) => {
+          const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
+          return (
+            <Fragment key={step.id}>
+              <li className="min-w-[6.25rem] max-w-[11rem] flex-1">
+                {step.scene && hasProcessScene(step.scene) ? (
+                  <StepProcessScene
+                    sceneId={step.scene}
+                    title={stepTitle}
+                    className="h-[4.75rem] w-full sm:h-20"
+                  />
+                ) : (
+                  <StepScene icon={step.icon} title={stepTitle} className="h-[4.75rem] w-full sm:h-20" />
+                )}
+                <div className="mt-1.5 flex items-start gap-1 px-0.5">
+                  <span
+                    className="mt-px flex h-4 min-w-[1rem] shrink-0 items-center justify-center rounded-full bg-oe-blue/15 px-1 text-[0.6rem] font-bold text-oe-blue"
+                    aria-hidden="true"
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0 text-2xs font-medium leading-tight text-content-secondary">
+                    {stepTitle}
+                  </span>
+                </div>
+              </li>
+              {i < steps.length - 1 && (
+                <ChevronRight
+                  size={15}
+                  className="mt-7 shrink-0 self-start text-content-tertiary sm:mt-8"
+                  aria-hidden="true"
+                />
+              )}
+            </Fragment>
+          );
+        })}
+      </ol>
     </section>
   );
 }
@@ -256,6 +318,27 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const PlaybookIcon = iconFor(playbook.icon);
   // Up to three step scenes (first / middle / last) shown as the action strip.
   const stripSteps = useMemo(() => actionStripSteps(playbook.steps), [playbook.steps]);
+  // When any step defines a bespoke process scene, the header shows the full
+  // step flow beside the title (and the compact "What happens" strip is
+  // dropped), and each step renders its process scene instead of the icon one.
+  const hasProcessSteps = useMemo(
+    () => playbook.steps.some((s) => hasProcessScene(s.scene)),
+    [playbook.steps],
+  );
+  const resetButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={<RotateCcw size={13} />}
+      onClick={() => reset(playbook.id, projectId)}
+      disabled={doneCount === 0 && progress.currentStepIndex === 0}
+      title={t('cases.reset_hint', {
+        defaultValue: 'Clear progress for this case and start over',
+      })}
+    >
+      {t('cases.reset', { defaultValue: 'Reset progress' })}
+    </Button>
+  );
   const currentStep = playbook.steps[currentIndex];
   const CurIcon = iconFor(currentStep?.icon);
   const curDone = currentStep ? isStepDone(progress, currentStep.id) : false;
@@ -278,7 +361,13 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           <ArrowLeft size={14} />
           {t('cases.back_to_list', { defaultValue: 'All cases' })}
         </button>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div
+          className={clsx(
+            hasProcessSteps
+              ? 'flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-6'
+              : 'flex flex-wrap items-start justify-between gap-3',
+          )}
+        >
           <div className="flex min-w-0 items-start gap-4">
             <div
               className="mt-0.5 flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04] sm:h-24 sm:w-24"
@@ -307,25 +396,17 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 </span>
                 <span className="text-2xs font-medium text-content-tertiary">{progressLabel}</span>
               </div>
+              {hasProcessSteps && <div className="mt-3">{resetButton}</div>}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<RotateCcw size={13} />}
-            onClick={() => reset(playbook.id, projectId)}
-            disabled={doneCount === 0 && progress.currentStepIndex === 0}
-            title={t('cases.reset_hint', {
-              defaultValue: 'Clear progress for this case and start over',
-            })}
-          >
-            {t('cases.reset', { defaultValue: 'Reset progress' })}
-          </Button>
+          {hasProcessSteps ? <ProcessFlow steps={playbook.steps} /> : resetButton}
         </div>
       </div>
 
-      {/* ── What happens: the case action as a single row of step scenes ─── */}
-      <CaseActionStrip steps={stripSteps} />
+      {/* ── What happens: the case action as a single row of step scenes. When
+          the case defines per-step process scenes the header already shows the
+          full flow beside the title, so this compact strip is skipped. ─────── */}
+      {!hasProcessSteps && <CaseActionStrip steps={stripSteps} />}
 
       {/* ── Work area: a compact step rail beside the focused step ───────── */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:items-start">
@@ -446,12 +527,21 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         <section className="min-w-0">
           {currentStep && (
             <div className="rounded-2xl border border-border-light bg-surface-primary p-5 shadow-xs sm:p-6">
-              {/* Line-art visual of what this step does */}
-              <StepScene
-                icon={currentStep.icon}
-                title={curTitle}
-                className="mb-4 h-32 w-full sm:h-36"
-              />
+              {/* Illustration of what this step does: the bespoke before -> after
+                  process scene when the step defines one, else the icon scene. */}
+              {currentStep.scene && hasProcessScene(currentStep.scene) ? (
+                <StepProcessScene
+                  sceneId={currentStep.scene}
+                  title={curTitle}
+                  className="mb-4 h-36 w-full sm:h-44"
+                />
+              ) : (
+                <StepScene
+                  icon={currentStep.icon}
+                  title={curTitle}
+                  className="mb-4 h-32 w-full sm:h-36"
+                />
+              )}
               {/* Eyebrow: step counter + module chip */}
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">

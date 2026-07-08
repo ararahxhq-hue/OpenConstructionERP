@@ -25,6 +25,7 @@ const playbook: Playbook = {
     {
       id: 'punch',
       icon: 'ListChecks',
+      scene: 'punchlist-to-zero',
       titleKey: 'cases.handover_and_closeout.step.punch.title',
       titleDefault: 'Clear the punch list',
       whatKey: 'cases.handover_and_closeout.step.punch.what',
@@ -40,6 +41,7 @@ const playbook: Playbook = {
     {
       id: 'quality',
       icon: 'ClipboardCheck',
+      scene: 'quality-closed',
       titleKey: 'cases.handover_and_closeout.step.quality.title',
       titleDefault: 'Confirm quality is closed',
       whatKey: 'cases.handover_and_closeout.step.quality.what',
@@ -55,6 +57,7 @@ const playbook: Playbook = {
     {
       id: 'documents',
       icon: 'FolderOpen',
+      scene: 'gather-handover-docs',
       titleKey: 'cases.handover_and_closeout.step.documents.title',
       titleDefault: 'Assemble the documents',
       whatKey: 'cases.handover_and_closeout.step.documents.what',
@@ -70,6 +73,7 @@ const playbook: Playbook = {
     {
       id: 'closeout',
       icon: 'ShieldCheck',
+      scene: 'issue-signed-handover',
       titleKey: 'cases.handover_and_closeout.step.closeout.title',
       titleDefault: 'Issue the handover',
       whatKey: 'cases.handover_and_closeout.step.closeout.what',

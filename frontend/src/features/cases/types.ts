@@ -58,6 +58,11 @@ export interface PlaybookStep {
   to: string;
   /** Optional lucide-react icon name for the step (resolved by the runner). */
   icon?: string;
+  /** Optional bespoke process-scene id (see `processScenes.tsx`). When set, the
+   *  runner draws a step-specific before -> after process illustration in place
+   *  of the generic icon scene, and the case shows its step flow beside the
+   *  title. A case opts in step by step; steps without it keep the icon scene. */
+  scene?: string;
   /** Optional CSS selector for a future in-module spotlight highlight. */
   spotlightSelector?: string;
 }
