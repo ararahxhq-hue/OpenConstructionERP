@@ -4198,6 +4198,8 @@ const resource = {
     "cases.search_placeholder": "Search cases...",
     "cases.no_matches_title": "No matching cases",
     "cases.no_matches_body": "Try a different search or category.",
+    "cases.show_more": "Show more cases",
+    "cases.showing_count": "Showing {{shown}} of {{total}}",
     "cases.cat.all": "All",
     "cases.cat.estimating": "Estimating & costing",
     "cases.cat.tendering": "Tendering & procurement",
