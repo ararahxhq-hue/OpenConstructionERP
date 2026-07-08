@@ -1258,7 +1258,7 @@ export function CostsPage() {
       >
         {t('costs.intro_body', {
           defaultValue:
-            'Browse and maintain unit and composite rates for materials, labour and equipment across regional catalogues like CWICR, BKI and RSMeans, or add your own. Each rate carries its currency and classification, so items you pull into a BOQ flow straight into the cost and schedule rollup.',
+            'Browse and maintain unit and composite rates for materials, labour and equipment across regional catalogues like CWICR, or add your own. Each rate carries its currency and classification, so items you pull into a BOQ flow straight into the cost and schedule rollup.',
         })}
       </DismissibleInfo>
 

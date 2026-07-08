@@ -144,7 +144,7 @@ class CostItemCreate(BaseModel):
     )
     rate: DecimalMoney = Field(..., ge=0, description="Unit rate (must be >= 0)")
     currency: str = Field(default="", max_length=10, description="ISO 4217 currency code (empty when unknown)")
-    source: str = Field(default="cwicr", max_length=50, description="Data source (e.g. cwicr, rsmeans, manual)")
+    source: str = Field(default="cwicr", max_length=50, description="Data source (e.g. cwicr, manual)")
     classification: dict[str, str] = Field(
         default_factory=dict,
         description='Classification codes (e.g. {"din276": "330", "masterformat": "03 30 00"})',
@@ -731,7 +731,7 @@ class CertaintyBadge(BaseModel):
             "the item has never been used - that's the red threshold."
         ),
     )
-    source: str = Field(..., description="Underlying CostItem.source (cwicr, rsmeans, manual, …)")
+    source: str = Field(..., description="Underlying CostItem.source (cwicr, manual, …)")
     confidence_badge: Literal["green", "yellow", "red"]
     last_used_at: datetime | None = Field(
         default=None,
