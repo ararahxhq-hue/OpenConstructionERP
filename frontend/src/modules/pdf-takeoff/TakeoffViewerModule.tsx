@@ -7098,14 +7098,32 @@ export default function TakeoffViewerModule({
                       <input
                         type="range"
                         min={1}
-                        max={10}
+                        max={50}
                         step={1}
-                        value={selectedMeasurement.strokeWidth ?? 2}
+                        value={Math.min(selectedMeasurement.strokeWidth ?? 2, 50)}
                         onChange={(e) =>
                           updateSelectedMeasurement({ strokeWidth: Number(e.target.value) })
                         }
                         className="flex-1"
                         data-testid="prop-stroke-width"
+                      />
+                      {/* Numeric field so a width beyond the 50px slider can be typed
+                          for very wide elements like a continuous footing (issue #338);
+                          clamped to 1-100px. The slider value above is capped at its own
+                          max so the thumb stays valid when a larger width is typed here. */}
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={selectedMeasurement.strokeWidth ?? 2}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (!Number.isFinite(v) || v < 1) return;
+                          updateSelectedMeasurement({ strokeWidth: Math.min(100, Math.round(v)) });
+                        }}
+                        className="w-16 rounded border border-border bg-surface-primary px-1.5 py-1 text-xs text-content-primary tabular-nums"
+                        data-testid="prop-stroke-width-num"
                       />
                       {selectedMeasurement.strokeWidth != null && (
                         <button
