@@ -19,7 +19,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.price_index.models import CostIndexSeries
 from app.modules.price_index.schemas import (
     AdjustRequest,
@@ -304,7 +304,7 @@ async def adjust(
 async def escalate_preview(
     request: EscalatePreviewRequest,
     session: SessionDep,
-    _user_id: CurrentUserId,
+    user_id: CurrentUserId,
 ) -> EscalatePreviewResponse:
     """Preview the estimate's own stored rates escalated to a target date.
 
@@ -319,6 +319,13 @@ async def escalate_preview(
     references instead of the catalogue at large; the result then carries the
     project context.
     """
+    # Project scope reads exactly the cost items a project's BOQ references, so
+    # it must be gated by project access: without this any authenticated user
+    # could read another project's name and the rates its estimate uses. The
+    # catalogue scope (no project_id) stays open as platform-wide reference data.
+    # verify_project_access returns 404 for both missing and forbidden.
+    if request.project_id is not None:
+        await verify_project_access(request.project_id, user_id, session)
     service = PriceIndexService(session)
     try:
         return await service.escalate_stored_rates(request)
