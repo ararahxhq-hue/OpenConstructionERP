@@ -49,10 +49,11 @@ interface StepSceneProps {
   title?: string;
 }
 
-const VB = '0 0 120 84';
+/** Shared viewBox for every step/case scene (matches the primitive coordinates). */
+export const VB = '0 0 120 84';
 
 /** Faint blueprint grid, shared by every scene for a cohesive feel. */
-function Grid(): ReactElement {
+export function Grid(): ReactElement {
   return (
     <g strokeWidth={0.6} opacity={0.16}>
       <path d="M0 21 H120 M0 42 H120 M0 63 H120" />

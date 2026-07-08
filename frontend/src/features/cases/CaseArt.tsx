@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from 'react';
 import clsx from 'clsx';
 import type { LucideProps } from 'lucide-react';
+import { CASE_SCENES, CaseScene } from './caseScenes';
 
 interface CaseArtProps {
   /** Playbook id; maps to /cases-art/line/<id>.webp. */
@@ -25,6 +26,13 @@ export function CaseArt({ id, fallbackIcon: Icon, fallbackClass, alt = '' }: Cas
   if (id !== lastId) {
     setLastId(id);
     setBroken(false);
+  }
+
+  // A bespoke line-art scene wins ahead of the picture: it gives cases without
+  // a generated illustration the same detailed artwork as the rest of the hub
+  // instead of a lone icon (mirrors RoleArt falling back to a drawn avatar).
+  if (CASE_SCENES[id]) {
+    return <CaseScene id={id} title={alt} />;
   }
 
   if (broken) {
