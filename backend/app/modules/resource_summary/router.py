@@ -6,6 +6,7 @@ estimate's resource demand:
 
     GET  /projects/{project_id}            - the aggregated procurement statement
     GET  /projects/{project_id}/csv        - the same statement as a CSV download
+    GET  /projects/{project_id}/buy-list   - materials grouped into a purchase list
     POST /projects/{project_id}/snapshots  - freeze the current statement (manager)
     GET  /projects/{project_id}/snapshots  - list frozen statements
 
@@ -29,6 +30,7 @@ from app.dependencies import (
 )
 from app.modules.resource_summary.aggregate import render_csv
 from app.modules.resource_summary.schemas import (
+    MaterialBuyListResponse,
     ResourceSnapshotDetail,
     ResourceSnapshotSummary,
     ResourceStatementResponse,
@@ -85,6 +87,26 @@ async def export_resource_statement_csv(
         content=body,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/projects/{project_id}/buy-list",
+    response_model=MaterialBuyListResponse,
+    dependencies=[_READ],
+)
+async def get_material_buy_list(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> MaterialBuyListResponse:
+    """Group the estimate's material resource lines into a procurement buy-list."""
+    await verify_project_access(project_id, user_id, session)
+    buy_list, generated_at = await _service(session).generate_buy_list(project_id)
+    return MaterialBuyListResponse.from_buy_list(
+        buy_list,
+        project_id=project_id,
+        generated_at=generated_at,
     )
 
 

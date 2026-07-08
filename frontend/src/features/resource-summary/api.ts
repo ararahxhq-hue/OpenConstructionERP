@@ -56,6 +56,30 @@ export interface ResourceSnapshotSummary {
   line_count: number;
 }
 
+/** One material purchase line in the procurement buy-list. */
+export interface MaterialBuyListItem {
+  name: string;
+  unit: string;
+  /** Gross (waste-inclusive) quantity to purchase across the estimate (Decimal string, 4dp). */
+  quantity: string;
+  /** Estimated spend across the estimate (Decimal string, 2dp). */
+  cost: string;
+  /** How many positions consume this material. */
+  position_count: number;
+  /** Currency of the cost, carried per line so a CSV export prints money verbatim. */
+  currency: string;
+}
+
+export interface MaterialBuyListResponse {
+  project_id: string;
+  generated_at: string;
+  currency: string;
+  total_cost: string;
+  item_count: number;
+  position_count: number;
+  items: MaterialBuyListItem[];
+}
+
 // ── Calls ─────────────────────────────────────────────────────────────────────
 
 const BASE = '/v1/resource-summary';
@@ -63,6 +87,11 @@ const BASE = '/v1/resource-summary';
 /** Fetch the aggregated procurement statement for a project. */
 export function getResourceStatement(projectId: string): Promise<ResourceStatementResponse> {
   return apiGet<ResourceStatementResponse>(`${BASE}/projects/${encodeURIComponent(projectId)}`);
+}
+
+/** Fetch the material procurement buy-list for a project. */
+export function getMaterialBuyList(projectId: string): Promise<MaterialBuyListResponse> {
+  return apiGet<MaterialBuyListResponse>(`${BASE}/projects/${encodeURIComponent(projectId)}/buy-list`);
 }
 
 /** Freeze the current statement as a stored snapshot (manager permission). */
@@ -117,6 +146,51 @@ export function statementCurrency(
 ): string | undefined {
   const code = statement?.currency?.trim();
   return code ? code : undefined;
+}
+
+/** Deterministic download filename for a project's material buy-list CSV. */
+export function buyListCsvName(projectId: string): string {
+  const safe = String(projectId || 'project').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 12) || 'project';
+  return `material-buy-list-${safe}.csv`;
+}
+
+/** True when a buy-list carries no material lines (nothing to procure yet). */
+export function isEmptyBuyList(buyList: Pick<MaterialBuyListResponse, 'items'> | null | undefined): boolean {
+  if (!buyList || !Array.isArray(buyList.items)) return true;
+  return buyList.items.length === 0;
+}
+
+/**
+ * Build a spreadsheet-friendly CSV from the fetched buy-list rows.
+ *
+ * Pure and client-side: no server round-trip. Money and quantity are the exact
+ * Decimal strings the backend served, written verbatim so a cent is never lost
+ * to a float. Any comma / quote / newline in a material name is escaped so it
+ * stays a single field, and rows use CRLF for maximal spreadsheet compatibility.
+ */
+export function buildBuyListCsv(items: MaterialBuyListItem[], currency: string | undefined): string {
+  const cell = (val: string | number | null | undefined): string => {
+    const s = val === null || val === undefined ? '' : String(val);
+    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const cur = (currency ?? '').trim();
+  const rows: string[] = [];
+  rows.push(['Material', 'Unit', 'Quantity', 'Estimated cost', 'Currency', 'Used in positions'].map(cell).join(','));
+  for (const item of items) {
+    rows.push([item.name, item.unit, item.quantity, item.cost, cur, item.position_count].map(cell).join(','));
+  }
+  return rows.join('\r\n');
+}
+
+/**
+ * Download the material buy-list as CSV, built entirely on the client from the
+ * already-fetched rows (the money strings are printed verbatim). A UTF-8 BOM is
+ * prepended so spreadsheets open non-ASCII material names correctly.
+ */
+export function downloadBuyListCsv(buyList: MaterialBuyListResponse): void {
+  const csv = buildBuyListCsv(buyList.items, buyList.currency);
+  const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' });
+  triggerDownload(blob, buyListCsvName(buyList.project_id));
 }
 
 /** Accent class per canonical resource kind, with a neutral default for unknowns. */

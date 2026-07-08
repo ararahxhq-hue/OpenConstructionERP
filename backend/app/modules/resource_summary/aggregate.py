@@ -299,6 +299,188 @@ def aggregate_resource_statement(
     )
 
 
+@dataclass
+class BuyListItem:
+    """One material purchase line: a distinct material to procure across the estimate."""
+
+    name: str
+    unit: str
+    quantity: Decimal
+    cost: Decimal
+    position_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "unit": self.unit,
+            "quantity": _q(self.quantity, _4P),
+            "cost": _q(self.cost, _2P),
+            "position_count": self.position_count,
+        }
+
+
+@dataclass
+class MaterialBuyList:
+    """A procurement buy-list: one order line per distinct material, plus totals."""
+
+    currency: str
+    items: list[BuyListItem] = field(default_factory=list)
+    position_count: int = 0
+
+    @property
+    def total_cost(self) -> Decimal:
+        return sum((item.cost for item in self.items), Decimal("0"))
+
+    @property
+    def item_count(self) -> int:
+        return len(self.items)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "currency": self.currency,
+            "item_count": self.item_count,
+            "position_count": self.position_count,
+            "total_cost": _q(self.total_cost, _2P),
+            "items": [item.to_dict() for item in self.items],
+        }
+
+
+def _line_gross_quantity_per_unit(res: Mapping[str, Any]) -> Decimal:
+    """Per-position-unit *gross* (purchased) quantity of one resource line.
+
+    The stored ``quantity`` is the net (installed) coefficient. A material may
+    carry a ``waste_pct`` written by the norm-expansion / assembly material path
+    (``gross = net * (1 + waste_pct/100)``); it lives in the line's nested
+    ``metadata`` but a top-level key is also honoured. Grossing up from the live
+    ``quantity`` rather than a stored absolute ``gross_qty`` keeps the figure
+    self-healing after an inline quantity edit, and applies the very factor the
+    money total was grossed up by, so a buy-list quantity and its cost stay in
+    step. A missing or non-positive waste leaves net == gross.
+    """
+    net = _dec(res.get("quantity"), "0")
+    waste_pct = res.get("waste_pct")
+    if waste_pct is None:
+        meta = res.get("metadata")
+        if isinstance(meta, Mapping):
+            waste_pct = meta.get("waste_pct")
+    pct = _dec(waste_pct, "0")
+    if pct > 0:
+        return net * (Decimal("1") + pct / Decimal("100"))
+    return net
+
+
+def aggregate_material_buy_list(
+    positions: Iterable[Mapping[str, Any]],
+    *,
+    currency: str = "",
+    fx_rates: Mapping[str, str] | None = None,
+) -> MaterialBuyList:
+    """Roll the estimate's material resource lines into a procurement buy-list.
+
+    Every ``type == material`` resource line across all positions is grouped by
+    ``(normalized name, unit)`` and its gross purchase quantity and cost summed,
+    so a buyer reads one order line per distinct material - the next action the
+    passive rollup never gave them. Non-material lines (labour, machinery,
+    equipment, subcontract, other) are skipped.
+
+    The quantity is grossed up for waste (see :func:`_line_gross_quantity_per_unit`)
+    and scaled by the position quantity; the cost reuses the same self-healing and
+    FX rules as :func:`aggregate_resource_statement`, so money is the project-base
+    figure a buyer commits to. Both are ``Decimal``-exact.
+
+    Args:
+        positions: BoQ position dicts. Each is read for ``quantity`` and its
+            ``metadata_["resources"]`` (``metadata`` is also accepted) split; an
+            optional ``id`` is used only to count distinct contributing positions.
+        currency: Project base currency label for the list. When empty, the first
+            resource currency seen is used so the response still carries a code.
+        fx_rates: Optional ``{code: rate}`` map (base units per one foreign unit)
+            used to convert a resource line priced in a foreign currency. A missing
+            rate leaves the line in its own units (deterministic, never zeroed).
+
+    Returns:
+        A :class:`MaterialBuyList` whose items are sorted by descending cost, then
+        name, for a stable, readable purchase order.
+    """
+    base = (currency or "").strip().upper()
+    fx = {str(k).strip().upper(): v for k, v in (fx_rates or {}).items()}
+    first_currency = ""
+
+    # (name_lower, unit_lower) -> accumulator
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    contributing: set[str] = set()
+    anon = 0
+
+    for position in positions:
+        meta = position.get("metadata_") or position.get("metadata") or {}
+        resources = meta.get("resources") if isinstance(meta, Mapping) else None
+        if not isinstance(resources, list) or not resources:
+            continue
+        pos_qty = _dec(position.get("quantity"), "0")
+        pos_id = str(position.get("id") or "")
+        if not pos_id:
+            pos_id = f"__anon_{anon}"
+            anon += 1
+        contributed = False
+
+        for res in resources:
+            if not isinstance(res, Mapping):
+                continue
+            kind = coerce_kind(res.get("type") or res.get("resource_type") or res.get("kind"))
+            if kind is not ResourceKind.MATERIAL:
+                continue
+            name = str(res.get("name") or res.get("description") or res.get("code") or "").strip() or "-"
+            unit = str(res.get("unit") or "").strip()
+
+            res_currency = str(res.get("currency") or "").strip().upper()
+            if res_currency and not first_currency:
+                first_currency = res_currency
+
+            per_unit_cost = _line_cost_per_unit(res)
+            # Convert a foreign-priced line into the base currency before summing.
+            if res_currency and base and res_currency != base:
+                rate = fx.get(res_currency)
+                if rate is not None:
+                    rate_dec = _dec(rate)
+                    if rate_dec.is_finite() and rate_dec > 0:
+                        per_unit_cost = per_unit_cost * rate_dec
+
+            line_qty = _line_gross_quantity_per_unit(res) * pos_qty
+            line_cost = per_unit_cost * pos_qty
+
+            key = (name.lower(), unit.lower())
+            acc = groups.get(key)
+            if acc is None:
+                acc = {"name": name, "unit": unit, "quantity": Decimal("0"), "cost": Decimal("0"), "positions": set()}
+                groups[key] = acc
+            acc["quantity"] += line_qty
+            acc["cost"] += line_cost
+            acc["positions"].add(pos_id)
+            contributed = True
+
+        if contributed:
+            contributing.add(pos_id)
+
+    items = [
+        BuyListItem(
+            name=acc["name"],
+            unit=acc["unit"],
+            quantity=acc["quantity"],
+            cost=acc["cost"],
+            position_count=len(acc["positions"]),
+        )
+        for acc in groups.values()
+    ]
+    # Highest-cost lines first, then name for a stable, readable purchase order.
+    items.sort(key=lambda item: (-item.cost, item.name.lower()))
+
+    return MaterialBuyList(
+        currency=base or first_currency or "",
+        items=items,
+        position_count=len(contributing),
+    )
+
+
 def render_csv(statement: ResourceStatement) -> str:
     """Render a procurement statement as spreadsheet-friendly CSV.
 

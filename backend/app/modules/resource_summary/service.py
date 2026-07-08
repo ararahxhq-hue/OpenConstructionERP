@@ -17,7 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.boq.repository import PositionRepository
-from app.modules.resource_summary.aggregate import ResourceStatement, aggregate_resource_statement
+from app.modules.resource_summary.aggregate import (
+    MaterialBuyList,
+    ResourceStatement,
+    aggregate_material_buy_list,
+    aggregate_resource_statement,
+)
 from app.modules.resource_summary.models import ResourceStatementSnapshot
 
 logger = logging.getLogger(__name__)
@@ -61,23 +66,51 @@ class ResourceSummaryService:
                 fx_map[code] = rate
         return base, fx_map
 
+    async def _load_position_dicts(
+        self,
+        project_id: uuid.UUID,
+    ) -> tuple[list[dict], str, dict[str, str]]:
+        """Load a project's positions as plain dicts plus its currency context.
+
+        Returns ``(position_dicts, base_currency, fx_map)`` ready to hand to the
+        pure aggregation library. Shared by every rollup so the statement and the
+        buy-list read exactly the same positions the same way.
+        """
+        base_currency, fx_map = await self._resolve_project_currency(project_id)
+        positions = await self.position_repo.list_for_project(project_id)
+        position_dicts: list[dict] = [
+            {"id": str(pos.id), "quantity": pos.quantity, "metadata_": pos.metadata_ or {}} for pos in positions
+        ]
+        return position_dicts, base_currency, fx_map
+
     async def generate(self, project_id: uuid.UUID) -> tuple[ResourceStatement, datetime]:
         """Build the live procurement statement for a project.
 
         Returns the statement plus the generation timestamp so a caller that also
         persists a snapshot stores the exact same moment it served.
         """
-        base_currency, fx_map = await self._resolve_project_currency(project_id)
-        positions = await self.position_repo.list_for_project(project_id)
-        position_dicts = [
-            {"id": str(pos.id), "quantity": pos.quantity, "metadata_": pos.metadata_ or {}} for pos in positions
-        ]
+        position_dicts, base_currency, fx_map = await self._load_position_dicts(project_id)
         statement = aggregate_resource_statement(
             position_dicts,
             currency=base_currency,
             fx_rates=fx_map,
         )
         return statement, datetime.now(UTC)
+
+    async def generate_buy_list(self, project_id: uuid.UUID) -> tuple[MaterialBuyList, datetime]:
+        """Build the live material procurement buy-list for a project.
+
+        Groups every position's material resource lines by material into a single
+        purchase list. Degrades gracefully: a project with no material lines yields
+        an empty list rather than an error.
+        """
+        position_dicts, base_currency, fx_map = await self._load_position_dicts(project_id)
+        buy_list = aggregate_material_buy_list(
+            position_dicts,
+            currency=base_currency,
+            fx_rates=fx_map,
+        )
+        return buy_list, datetime.now(UTC)
 
     async def save_snapshot(self, project_id: uuid.UUID) -> ResourceStatementSnapshot:
         """Generate the current statement and store it as a snapshot row."""

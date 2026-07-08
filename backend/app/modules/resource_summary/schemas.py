@@ -18,6 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.modules.price_breakdown import ResourceKind, kind_i18n_key
 from app.modules.resource_summary.aggregate import (
+    BuyListItem,
+    MaterialBuyList,
     ResourceKindGroup,
     ResourceLine,
     ResourceStatement,
@@ -138,6 +140,80 @@ class ResourceStatementResponse(BaseModel):
             line_count=statement.line_count,
             position_count=statement.position_count,
             groups=[ResourceStatementGroup.from_group(group) for group in statement.groups],
+        )
+
+
+class MaterialBuyListItem(BaseModel):
+    """One material purchase line in the procurement buy-list.
+
+    ``quantity`` is the gross (waste-inclusive) amount to purchase and ``cost``
+    the estimated spend, both summed across every position that uses the material
+    and both Decimal-serialised as strings. ``currency`` is carried on the line so
+    a client-side CSV export can print the money verbatim without a lookup.
+    """
+
+    name: str
+    unit: str
+    quantity: Decimal
+    cost: Decimal
+    position_count: int
+    currency: str
+
+    @field_serializer("quantity", when_used="json")
+    def _ser_quantity(self, v: Decimal) -> str:
+        return _qty(v)
+
+    @field_serializer("cost", when_used="json")
+    def _ser_cost(self, v: Decimal) -> str:
+        return _money(v)
+
+    @classmethod
+    def from_item(cls, item: BuyListItem, *, currency: str) -> MaterialBuyListItem:
+        return cls(
+            name=item.name,
+            unit=item.unit,
+            quantity=item.quantity,
+            cost=item.cost,
+            position_count=item.position_count,
+            currency=currency,
+        )
+
+
+class MaterialBuyListResponse(BaseModel):
+    """The material procurement buy-list for a project.
+
+    Degrades gracefully: a project with no material resource lines returns an
+    empty ``items`` list, a zero ``total_cost`` and ``position_count`` 0.
+    """
+
+    project_id: uuid.UUID
+    generated_at: datetime
+    currency: str
+    total_cost: Decimal
+    item_count: int
+    position_count: int
+    items: list[MaterialBuyListItem] = Field(default_factory=list)
+
+    @field_serializer("total_cost", when_used="json")
+    def _ser_total_cost(self, v: Decimal) -> str:
+        return _money(v)
+
+    @classmethod
+    def from_buy_list(
+        cls,
+        buy_list: MaterialBuyList,
+        *,
+        project_id: uuid.UUID,
+        generated_at: datetime,
+    ) -> MaterialBuyListResponse:
+        return cls(
+            project_id=project_id,
+            generated_at=generated_at,
+            currency=buy_list.currency,
+            total_cost=buy_list.total_cost,
+            item_count=buy_list.item_count,
+            position_count=buy_list.position_count,
+            items=[MaterialBuyListItem.from_item(item, currency=buy_list.currency) for item in buy_list.items],
         )
 
 
