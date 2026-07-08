@@ -36,6 +36,7 @@ import {
   FolderKanban,
   UserRound,
   Flag,
+  Info,
   type LucideProps,
 } from 'lucide-react';
 import { Badge, EmptyState } from '@/shared/ui';
@@ -360,7 +361,18 @@ function CasesList() {
 
       {PLAYBOOKS.length > 0 && (
         <>
-          {/* ── Project lifecycle timeline: cases from start to finish ────── */}
+          {/* ── How-to helper: how to use the hub in one line ─────────────── */}
+          <div className="flex items-start gap-2 rounded-xl border border-dashed border-border-light bg-surface-secondary/30 p-3">
+            <Info size={15} className="mt-px shrink-0 text-content-tertiary" aria-hidden="true" />
+            <p className="text-2xs leading-relaxed text-content-tertiary">
+              {t('cases.hub_howto', {
+                defaultValue:
+                  'New here? Pick where you are in the project, the kind of company you work for, and your role, and the list narrows to the cases that matter to you.',
+              })}
+            </p>
+          </div>
+
+          {/* ── Project lifecycle: cases from start to finish, as stage cards ─ */}
           <div>
             <div className="mb-2.5 flex items-center gap-2">
               <Flag size={14} className="text-content-tertiary" aria-hidden="true" />
@@ -373,70 +385,90 @@ function CasesList() {
                 })}
               </span>
             </div>
-            <div className="relative">
-              {/* connecting rail behind the stage nodes */}
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-12 top-9 h-0.5 rounded-full bg-gradient-to-r from-border-light via-border to-border-light"
-              />
-              <div
-                className="relative flex gap-2 overflow-x-auto pb-1"
-                role="group"
-                aria-label={t('cases.stage_selector.heading', { defaultValue: 'Project lifecycle' })}
-              >
-                {STAGE_META.map((s) => {
-                  const Icon = s.icon;
-                  const active = activeStage === s.id;
-                  const count = byCompanyRoleCategory.filter(
-                    (p) => stageByPlaybook.get(p.id) === s.id,
-                  ).length;
-                  const disabled = !availableStages.some((a) => a.id === s.id) && !active;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => handlePickStage(s.id)}
-                      aria-pressed={active}
-                      disabled={disabled}
+            {/* Eight stage cards, in lifecycle order, laid out as a responsive
+                grid (two rows of four on large screens) that mirrors the "My
+                company" card language below. Each card is a clickable stage
+                filter. */}
+            <div
+              className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4"
+              role="group"
+              aria-label={t('cases.stage_selector.heading', { defaultValue: 'Project lifecycle' })}
+            >
+              {STAGE_META.map((s) => {
+                const Icon = s.icon;
+                const active = activeStage === s.id;
+                const count = byCompanyRoleCategory.filter(
+                  (p) => stageByPlaybook.get(p.id) === s.id,
+                ).length;
+                const disabled = !availableStages.some((a) => a.id === s.id) && !active;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => handlePickStage(s.id)}
+                    aria-pressed={active}
+                    disabled={disabled}
+                    className={clsx(
+                      'group flex h-full flex-col gap-2 rounded-2xl border p-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 motion-reduce:transition-none',
+                      active
+                        ? clsx(s.tint.chip, 'shadow-sm')
+                        : 'border-border-light bg-surface-primary text-content-primary hover:border-oe-blue/30',
+                      disabled && 'cursor-not-allowed opacity-40',
+                    )}
+                  >
+                    {/* Top row: coloured stage icon tile + the stage number. */}
+                    <div className="flex items-start justify-between gap-2">
+                      <span
+                        className={clsx(
+                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
+                          s.tint.tile,
+                        )}
+                      >
+                        <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
+                      </span>
+                      <span
+                        className={clsx(
+                          'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold tabular-nums',
+                          active
+                            ? 'border border-current/25 bg-white/50 text-current dark:bg-black/20'
+                            : 'bg-surface-secondary text-content-secondary ring-1 ring-inset ring-border-light',
+                        )}
+                      >
+                        {s.num}
+                      </span>
+                    </div>
+                    {/* Full stage name. */}
+                    <span
                       className={clsx(
-                        'group flex min-w-[5.5rem] flex-1 flex-col items-center gap-1.5 rounded-2xl px-1.5 py-2 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
-                        active && 'bg-surface-secondary/40',
-                        disabled && 'cursor-not-allowed opacity-40',
+                        'text-xs font-semibold leading-tight',
+                        !active && 'text-content-primary',
                       )}
                     >
-                      <span
-                        className={clsx(
-                          'relative flex h-14 w-14 items-center justify-center rounded-full ring-1 ring-inset transition-transform',
-                          active
-                            ? clsx(s.tint.tile, 'scale-105 shadow-sm')
-                            : 'bg-surface-primary text-content-tertiary ring-border-light group-hover:ring-oe-blue/30 group-hover:text-content-secondary',
-                        )}
-                      >
-                        <Icon size={23} strokeWidth={1.8} />
-                        <span className="absolute -left-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-primary text-[10px] font-bold tabular-nums text-content-secondary ring-1 ring-border-light">
-                          {s.num}
-                        </span>
-                      </span>
-                      <span
-                        className={clsx(
-                          'text-xs font-semibold leading-tight',
-                          active ? s.tint.text : 'text-content-secondary',
-                        )}
-                      >
-                        {t(s.shortKey, { defaultValue: s.shortDefault })}
-                      </span>
-                      <span
-                        className={clsx(
-                          'rounded-full px-2 py-0.5 text-2xs font-medium tabular-nums',
-                          active ? s.tint.chip : 'bg-surface-secondary text-content-tertiary',
-                        )}
-                      >
-                        {t('cases.selector.count', { defaultValue: '{{count}} cases', count })}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                      {t(s.labelKey, { defaultValue: s.labelDefault })}
+                    </span>
+                    {/* One-line description of what happens in this stage. */}
+                    <span
+                      className={clsx(
+                        'text-2xs leading-relaxed',
+                        active ? 'opacity-80' : 'text-content-tertiary',
+                      )}
+                    >
+                      {t(s.descKey, { defaultValue: s.descDefault })}
+                    </span>
+                    {/* Case count, pinned to the bottom so cards stay aligned. */}
+                    <span
+                      className={clsx(
+                        'mt-auto inline-flex w-fit items-center rounded-full px-2 py-0.5 text-2xs font-medium tabular-nums',
+                        active
+                          ? 'border border-current/25 bg-white/50 text-current dark:bg-black/20'
+                          : 'bg-surface-secondary text-content-tertiary',
+                      )}
+                    >
+                      {t('cases.selector.count', { defaultValue: '{{count}} cases', count })}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             {activeStage !== 'all' && (
               <button
