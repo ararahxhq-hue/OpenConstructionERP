@@ -1,0 +1,563 @@
+"""Conceptual (ROM) estimate engine and persistence service.
+
+This module holds the elemental cost-per-m2 reference data and the pure,
+database-free estimator that turns a handful of inputs (building type, gross
+floor area, quality level, region) into a headline total, a six-element cost
+breakdown and an honest accuracy band. It is the day-one starting point of a
+project, before any detailed take-off or BOQ exists.
+
+Design (kept deliberately clear and simple for a worldwide user):
+
+- International by default. No hardcoded currency: base rates are expressed in a
+  neutral *reference basis* and adjusted by a data-driven regional cost factor
+  whose worldwide default is ``1`` (the ``global`` region). Areas may be entered
+  in metric or imperial units and are converted to canonical m2 before any
+  benchmark, so two projects measured in different unit systems compare exactly.
+- Explainable. Every total is returned with the elemental breakdown that built
+  it and a plain-language note, so a user can trust the number.
+- Honest about precision. A ROM figure is order-of-magnitude, so it always
+  carries an accuracy band. The band widens when no regional data is applied.
+
+The heavy lifting (Decimal-exact arithmetic, unit conversion, guards, cost per
+m2 of gross floor area) reuses the shared elemental primitives in
+:mod:`app.modules.costmodel.elemental` rather than re-implementing them.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.costmodel.elemental import (
+    ElementInput,
+    apply_regional_factor,
+    build_elemental_estimate,
+    to_canonical_quantity,
+)
+from app.modules.rom_estimate.models import RomEstimate
+from app.modules.rom_estimate.schemas import (
+    RomAccuracyBand,
+    RomBuildingTypeOption,
+    RomElementBreakdown,
+    RomElementOption,
+    RomEstimateRequest,
+    RomEstimateResult,
+    RomFactorOption,
+    RomReferenceResponse,
+)
+
+_CENTS = Decimal("0.01")
+
+
+def _round_money(value: Decimal) -> Decimal:
+    """Round a Decimal to 2 places (money precision), half-up."""
+    return value.quantize(_CENTS, rounding=ROUND_HALF_UP)
+
+
+# ── Elemental categories (canonical order, stable keys) ──────────────────────
+# The six-element split mirrors the elemental cost-planning method used in
+# early-stage estimating (substructure, superstructure, envelope, services,
+# finishes, external works). Keys are stable so the UI can translate labels.
+
+ELEMENT_LABELS: dict[str, str] = {
+    "substructure": "Substructure",
+    "superstructure": "Superstructure",
+    "envelope": "Envelope",
+    "services": "Building services (MEP)",
+    "finishes": "Finishes",
+    "externals": "External works",
+}
+ELEMENT_KEYS: tuple[str, ...] = tuple(ELEMENT_LABELS)
+
+
+# ── Reference data ───────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class BuildingTypeProfile:
+    """Reference profile for one building type.
+
+    ``base_rate_per_m2`` is the indicative cost per m2 of gross floor area at
+    standard quality on the worldwide (``global``) region, in the neutral
+    reference basis. ``shares`` splits that rate across the six elements and
+    always sums to 1. ``accuracy_low_pct`` / ``accuracy_high_pct`` are the
+    signed percentage bounds of the order-of-magnitude band for this type.
+    """
+
+    label: str
+    base_rate_per_m2: Decimal
+    shares: dict[str, Decimal]
+    accuracy_low_pct: Decimal
+    accuracy_high_pct: Decimal
+
+
+def _shares(sub: str, sup: str, env: str, serv: str, fin: str, ext: str) -> dict[str, Decimal]:
+    """Build an ordered element-share map from six decimal strings (sum = 1)."""
+    return {
+        "substructure": Decimal(sub),
+        "superstructure": Decimal(sup),
+        "envelope": Decimal(env),
+        "services": Decimal(serv),
+        "finishes": Decimal(fin),
+        "externals": Decimal(ext),
+    }
+
+
+# Indicative base rates (reference basis, cost per m2 of GFA) and elemental
+# splits per building type. The relative magnitudes reflect that services-heavy
+# types (healthcare, hospitality) cost more per m2 and carry more MEP, while
+# sheds (warehouse) are structure-dominated and cheap per m2.
+BUILDING_TYPES: dict[str, BuildingTypeProfile] = {
+    "residential_low": BuildingTypeProfile(
+        "Low-rise housing",
+        Decimal("1400"),
+        _shares("0.10", "0.24", "0.20", "0.18", "0.18", "0.10"),
+        Decimal("-20"),
+        Decimal("30"),
+    ),
+    "residential_multi": BuildingTypeProfile(
+        "Apartment building",
+        Decimal("1800"),
+        _shares("0.09", "0.26", "0.19", "0.21", "0.16", "0.09"),
+        Decimal("-22"),
+        Decimal("32"),
+    ),
+    "office": BuildingTypeProfile(
+        "Office building",
+        Decimal("2000"),
+        _shares("0.08", "0.22", "0.18", "0.30", "0.14", "0.08"),
+        Decimal("-25"),
+        Decimal("35"),
+    ),
+    "retail": BuildingTypeProfile(
+        "Retail / shop",
+        Decimal("1500"),
+        _shares("0.09", "0.20", "0.17", "0.28", "0.18", "0.08"),
+        Decimal("-25"),
+        Decimal("35"),
+    ),
+    "industrial": BuildingTypeProfile(
+        "Industrial / factory",
+        Decimal("900"),
+        _shares("0.12", "0.30", "0.22", "0.16", "0.08", "0.12"),
+        Decimal("-20"),
+        Decimal("30"),
+    ),
+    "warehouse": BuildingTypeProfile(
+        "Warehouse / logistics",
+        Decimal("700"),
+        _shares("0.14", "0.32", "0.22", "0.12", "0.06", "0.14"),
+        Decimal("-18"),
+        Decimal("28"),
+    ),
+    "education": BuildingTypeProfile(
+        "School / education",
+        Decimal("2100"),
+        _shares("0.09", "0.22", "0.18", "0.26", "0.17", "0.08"),
+        Decimal("-25"),
+        Decimal("38"),
+    ),
+    "healthcare": BuildingTypeProfile(
+        "Hospital / healthcare",
+        Decimal("3400"),
+        _shares("0.07", "0.18", "0.15", "0.38", "0.16", "0.06"),
+        Decimal("-30"),
+        Decimal("50"),
+    ),
+    "hospitality": BuildingTypeProfile(
+        "Hotel / hospitality",
+        Decimal("2600"),
+        _shares("0.07", "0.20", "0.16", "0.30", "0.21", "0.06"),
+        Decimal("-28"),
+        Decimal("45"),
+    ),
+    "civic": BuildingTypeProfile(
+        "Civic / cultural",
+        Decimal("2400"),
+        _shares("0.08", "0.22", "0.20", "0.26", "0.16", "0.08"),
+        Decimal("-30"),
+        Decimal("48"),
+    ),
+    "parking": BuildingTypeProfile(
+        "Car park",
+        Decimal("750"),
+        _shares("0.16", "0.40", "0.14", "0.10", "0.06", "0.14"),
+        Decimal("-18"),
+        Decimal("28"),
+    ),
+}
+
+
+@dataclass(frozen=True)
+class FactorOption:
+    """A named multiplier (quality level or regional cost factor)."""
+
+    label: str
+    factor: Decimal
+
+
+# Quality levels: economy through luxury, applied as a multiplier on the base
+# rate. Standard is the 1.0 reference.
+QUALITY_LEVELS: dict[str, FactorOption] = {
+    "economy": FactorOption("Economy", Decimal("0.80")),
+    "standard": FactorOption("Standard", Decimal("1.00")),
+    "premium": FactorOption("Premium", Decimal("1.28")),
+    "luxury": FactorOption("Luxury", Decimal("1.65")),
+}
+
+# Regional cost factors. Data-driven multipliers with a documented worldwide
+# default of 1 (``global``); there is no single country hardcoded as "the"
+# answer. Use ``global`` when the locality is unknown - the accuracy band then
+# widens to reflect the missing local data.
+REGIONS: dict[str, FactorOption] = {
+    "global": FactorOption("Global (worldwide default)", Decimal("1.00")),
+    "north_america": FactorOption("North America", Decimal("1.10")),
+    "western_europe": FactorOption("Western Europe", Decimal("1.15")),
+    "northern_europe": FactorOption("Northern Europe", Decimal("1.20")),
+    "southern_europe": FactorOption("Southern Europe", Decimal("0.92")),
+    "eastern_europe": FactorOption("Eastern Europe", Decimal("0.72")),
+    "middle_east": FactorOption("Middle East", Decimal("0.88")),
+    "east_asia": FactorOption("East Asia", Decimal("0.95")),
+    "southeast_asia": FactorOption("Southeast Asia", Decimal("0.60")),
+    "south_asia": FactorOption("South Asia", Decimal("0.48")),
+    "oceania": FactorOption("Oceania", Decimal("1.18")),
+    "latin_america": FactorOption("Latin America", Decimal("0.68")),
+    "africa": FactorOption("Africa", Decimal("0.62")),
+}
+
+# Estimate class metadata and the extra band widening applied when no regional
+# cost data is used (the estimate is left on the worldwide default).
+ESTIMATE_CLASS: str = "order_of_magnitude"
+ESTIMATE_CLASS_LABEL: str = "Order-of-magnitude (concept)"
+_GLOBAL_REGION_KEY: str = "global"
+_UNLOCALIZED_WIDEN_LOW: Decimal = Decimal("-8")
+_UNLOCALIZED_WIDEN_HIGH: Decimal = Decimal("12")
+_BAND_LOW_FLOOR: Decimal = Decimal("-60")
+_BAND_HIGH_CAP: Decimal = Decimal("150")
+
+REFERENCE_BASIS_NOTE: str = (
+    "Base rates are indicative order-of-magnitude figures in a neutral reference "
+    "basis, adjusted by a regional cost factor (worldwide default 1). Treat the "
+    "result as a starting point and refine it with a detailed take-off."
+)
+
+
+# ── Validation helpers (clear messages listing the valid options) ────────────
+
+
+def _resolve_building_type(key: str) -> BuildingTypeProfile:
+    profile = BUILDING_TYPES.get((key or "").strip().lower())
+    if profile is None:
+        known = ", ".join(sorted(BUILDING_TYPES))
+        raise ValueError(f"Unknown building type {key!r}. Choose one of: {known}.")
+    return profile
+
+
+def _resolve_quality(key: str) -> tuple[str, FactorOption]:
+    norm = (key or "").strip().lower()
+    option = QUALITY_LEVELS.get(norm)
+    if option is None:
+        known = ", ".join(QUALITY_LEVELS)
+        raise ValueError(f"Unknown quality level {key!r}. Choose one of: {known}.")
+    return norm, option
+
+
+def _resolve_region(key: str) -> tuple[str, FactorOption]:
+    norm = (key or "").strip().lower()
+    option = REGIONS.get(norm)
+    if option is None:
+        known = ", ".join(REGIONS)
+        raise ValueError(f"Unknown region {key!r}. Choose one of: {known}.")
+    return norm, option
+
+
+# ── Pure estimator ───────────────────────────────────────────────────────────
+
+
+def _reconcile_to_total(amounts: list[Decimal], total: Decimal) -> list[Decimal]:
+    """Nudge the largest element so the breakdown sums exactly to ``total``.
+
+    Rounding each element independently can leave a few cents of residue against
+    the headline total. Adding that residue to the largest line keeps the
+    breakdown internally consistent (it always sums to the total shown), which
+    is what a user expects when they read the lines.
+    """
+    if not amounts:
+        return amounts
+    residual = total - sum(amounts)
+    if residual == 0:
+        return amounts
+    largest_index = max(range(len(amounts)), key=lambda i: amounts[i])
+    adjusted = list(amounts)
+    adjusted[largest_index] = _round_money(adjusted[largest_index] + residual)
+    return adjusted
+
+
+def build_rom_estimate(request: RomEstimateRequest) -> RomEstimateResult:
+    """Build a conceptual (ROM) estimate from minimal input.
+
+    The total is ``base rate x quality factor x regional factor x gross floor
+    area`` (in canonical m2). It is split across the six elements by the
+    building type's characteristic shares, and returned with an
+    order-of-magnitude accuracy band.
+
+    Args:
+        request: The validated request (building type, GFA, quality, region,
+            optional unit and currency).
+
+    Returns:
+        A fully populated :class:`RomEstimateResult`.
+
+    Raises:
+        ValueError: When the building type, quality or region is unknown, the
+            unit is unsupported, or the gross floor area is not positive.
+    """
+    profile = _resolve_building_type(request.building_type)
+    building_key = request.building_type.strip().lower()
+    quality_key, quality = _resolve_quality(request.quality)
+    region_key, region = _resolve_region(request.region)
+
+    # Canonical m2 for the headline benchmark and a positive-area guard. The
+    # rates below are per m2, so the whole estimate is computed on the canonical
+    # metric area; a GFA entered in ft2 therefore yields the same cost per m2 and
+    # total as the identical area entered in m2.
+    gfa_canonical, canonical_unit = to_canonical_quantity(request.gross_floor_area, request.gfa_unit)
+    if gfa_canonical <= 0:
+        raise ValueError("Gross floor area must be greater than zero to build an estimate.")
+
+    # One elemental input per category; the quality factor is baked into the
+    # per-element rate, the regional factor is applied by the shared engine so
+    # the resulting notes explain it explicitly. Quantity is the canonical m2
+    # area so money is always (m2 x cost-per-m2), never (ft2 x cost-per-m2).
+    quality_base = profile.base_rate_per_m2 * quality.factor
+    elements: list[ElementInput] = [
+        ElementInput(
+            name=ELEMENT_LABELS[key],
+            quantity=gfa_canonical,
+            unit=canonical_unit,
+            unit_rate=quality_base * profile.shares[key],
+        )
+        for key in ELEMENT_KEYS
+    ]
+
+    estimate = build_elemental_estimate(
+        elements,
+        regional_factor=region.factor,
+        gross_floor_area=gfa_canonical,
+        gross_floor_area_unit=canonical_unit,
+        currency=request.currency,
+    )
+
+    # Region-applied amounts, reconciled so the breakdown sums to the total.
+    amounts = _reconcile_to_total([line.adjusted_total for line in estimate.elements], estimate.total)
+    breakdown = [
+        RomElementBreakdown(
+            key=key,
+            label=ELEMENT_LABELS[key],
+            cost_share_pct=_round_money(profile.shares[key] * Decimal("100")),
+            rate_per_m2=apply_regional_factor(quality_base * profile.shares[key], region.factor),
+            amount=amounts[index],
+        )
+        for index, key in enumerate(ELEMENT_KEYS)
+    ]
+
+    accuracy = _build_accuracy_band(profile, region_key, estimate.total)
+    cost_per_m2 = estimate.cost_per_gfa or Decimal("0")
+
+    notes = (
+        f"Order-of-magnitude estimate for a {profile.label.lower()} of "
+        f"{gfa_canonical} m2 at {quality.label.lower()} quality, {region.label}. "
+        f"Cost per m2 is {cost_per_m2}, giving a total of {estimate.total}. "
+        f"Realistic range {accuracy.low_amount} to {accuracy.high_amount} "
+        f"({accuracy.low_pct}% to +{accuracy.high_pct}%). Refine with a detailed take-off."
+    )
+
+    return RomEstimateResult(
+        building_type=building_key,
+        building_type_label=profile.label,
+        quality=quality_key,
+        quality_label=quality.label,
+        region=region_key,
+        region_label=region.label,
+        currency=request.currency,
+        gross_floor_area=request.gross_floor_area,
+        gfa_unit=request.gfa_unit,
+        gfa_canonical_m2=gfa_canonical,
+        quality_factor=quality.factor,
+        regional_factor=region.factor,
+        cost_per_m2=cost_per_m2,
+        subtotal_base=estimate.subtotal_base,
+        total=estimate.total,
+        accuracy=accuracy,
+        elements=breakdown,
+        notes=notes,
+    )
+
+
+def _build_accuracy_band(profile: BuildingTypeProfile, region_key: str, total: Decimal) -> RomAccuracyBand:
+    """Compute the accuracy band, widening it when no regional data is applied."""
+    low_pct = profile.accuracy_low_pct
+    high_pct = profile.accuracy_high_pct
+    localized = region_key != _GLOBAL_REGION_KEY
+    if not localized:
+        low_pct += _UNLOCALIZED_WIDEN_LOW
+        high_pct += _UNLOCALIZED_WIDEN_HIGH
+    low_pct = max(low_pct, _BAND_LOW_FLOOR)
+    high_pct = min(high_pct, _BAND_HIGH_CAP)
+
+    low_amount = _round_money(total * (Decimal("1") + low_pct / Decimal("100")))
+    high_amount = _round_money(total * (Decimal("1") + high_pct / Decimal("100")))
+
+    if localized:
+        note = (
+            "Order-of-magnitude accuracy. A regional cost factor was applied, so "
+            "the range reflects concept-stage uncertainty for this building type."
+        )
+    else:
+        note = (
+            "Order-of-magnitude accuracy, widened because no regional cost factor "
+            "was applied (region left at the worldwide default). Select a region "
+            "to narrow the range."
+        )
+
+    return RomAccuracyBand(
+        estimate_class=ESTIMATE_CLASS,
+        estimate_class_label=ESTIMATE_CLASS_LABEL,
+        low_pct=low_pct,
+        high_pct=high_pct,
+        low_amount=low_amount,
+        high_amount=high_amount,
+        localized=localized,
+        note=note,
+    )
+
+
+# ── Reference metadata ───────────────────────────────────────────────────────
+
+
+def build_reference() -> RomReferenceResponse:
+    """Return the full reference table for populating the UI form."""
+    return RomReferenceResponse(
+        building_types=[
+            RomBuildingTypeOption(
+                key=key,
+                label=profile.label,
+                base_rate_per_m2=profile.base_rate_per_m2,
+                accuracy_low_pct=profile.accuracy_low_pct,
+                accuracy_high_pct=profile.accuracy_high_pct,
+            )
+            for key, profile in BUILDING_TYPES.items()
+        ],
+        quality_levels=[
+            RomFactorOption(key=key, label=opt.label, factor=opt.factor) for key, opt in QUALITY_LEVELS.items()
+        ],
+        regions=[RomFactorOption(key=key, label=opt.label, factor=opt.factor) for key, opt in REGIONS.items()],
+        elements=[RomElementOption(key=key, label=label) for key, label in ELEMENT_LABELS.items()],
+        default_quality="standard",
+        default_region="global",
+        reference_basis_note=REFERENCE_BASIS_NOTE,
+    )
+
+
+# ── Persistence (map a result to a stored row, and the reverse) ──────────────
+
+
+def rom_result_to_row_kwargs(
+    result: RomEstimateResult,
+    *,
+    project_id: uuid.UUID,
+    name: str,
+    created_by: uuid.UUID | None,
+) -> dict[str, object]:
+    """Map a computed result to :class:`RomEstimate` column kwargs (pure).
+
+    Money and ratios are stored as strings (the platform Decimal-as-string
+    convention). The breakdown is stored as JSON so the saved estimate keeps a
+    faithful snapshot even if the reference rates later change.
+    """
+    return {
+        "project_id": project_id,
+        "name": (name or "").strip(),
+        "building_type": result.building_type,
+        "quality": result.quality,
+        "region": result.region,
+        "currency": result.currency,
+        "gross_floor_area": format(result.gross_floor_area, "f"),
+        "gfa_unit": result.gfa_unit,
+        "cost_per_m2": format(result.cost_per_m2, "f"),
+        "total_cost": format(result.total, "f"),
+        "estimate_class": result.accuracy.estimate_class,
+        "accuracy_low_pct": format(result.accuracy.low_pct, "f"),
+        "accuracy_high_pct": format(result.accuracy.high_pct, "f"),
+        "accuracy_low_amount": format(result.accuracy.low_amount, "f"),
+        "accuracy_high_amount": format(result.accuracy.high_amount, "f"),
+        "breakdown": [line.model_dump(mode="json") for line in result.elements],
+        "created_by": created_by,
+    }
+
+
+@dataclass
+class RomEstimateService:
+    """Session-bound persistence for saved conceptual estimates."""
+
+    session: AsyncSession
+    _computed: object = field(default=None, compare=False)
+
+    async def create_estimate(
+        self,
+        project_id: uuid.UUID,
+        request: RomEstimateRequest,
+        created_by: uuid.UUID | None,
+    ) -> RomEstimate:
+        """Compute a ROM estimate and persist it against a project.
+
+        Raises:
+            ValueError: When the request is invalid (propagated from the pure
+                estimator so the router can turn it into a 422).
+        """
+        result = build_rom_estimate(request)
+        row = RomEstimate(
+            **rom_result_to_row_kwargs(
+                result,
+                project_id=project_id,
+                name=request.name,
+                created_by=created_by,
+            )
+        )
+        self.session.add(row)
+        await self.session.flush()
+        await self.session.refresh(row)
+        return row
+
+    async def list_estimates(
+        self,
+        project_id: uuid.UUID,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[RomEstimate]:
+        """List a project's saved estimates, newest first."""
+        stmt = (
+            select(RomEstimate)
+            .where(RomEstimate.project_id == project_id)
+            .order_by(RomEstimate.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_estimate(self, estimate_id: uuid.UUID) -> RomEstimate | None:
+        """Fetch a single saved estimate by id (or ``None``)."""
+        return await self.session.get(RomEstimate, estimate_id)
+
+    async def delete_estimate(self, estimate_id: uuid.UUID) -> None:
+        """Delete a saved estimate."""
+        row = await self.session.get(RomEstimate, estimate_id)
+        if row is not None:
+            await self.session.delete(row)
+            await self.session.flush()
