@@ -5476,11 +5476,19 @@ async def get_cost_item_certainty_batch(
         classify_certainty,
     )
     from app.modules.costs.models import CostItemUsage
+    from app.modules.costs.service import price_freshness
 
-    # Only items that actually exist get a badge - resolve their ``source``
-    # in one pass so the band carries the correct provenance label.
-    item_rows = await session.execute(select(CostItem.id, CostItem.source).where(CostItem.id.in_(ordered_ids)))
-    source_by_id: dict[uuid.UUID, str] = {row[0]: (row[1] or "manual") for row in item_rows.all()}
+    # Only items that actually exist get a badge - resolve their ``source``,
+    # price date and rate in one pass so the band carries the correct
+    # provenance label and the price-freshness merge below has its inputs.
+    item_rows = await session.execute(
+        select(CostItem.id, CostItem.source, CostItem.price_as_of, CostItem.rate).where(CostItem.id.in_(ordered_ids))
+    )
+    source_by_id: dict[uuid.UUID, str] = {}
+    price_info_by_id: dict[uuid.UUID, tuple[object, object]] = {}
+    for row in item_rows.all():
+        source_by_id[row[0]] = row[1] or "manual"
+        price_info_by_id[row[0]] = (row[2], row[3])
 
     # Two grouped aggregates over the usage ledger - frequency + last use -
     # instead of one query per id. The composite index on
@@ -5514,18 +5522,19 @@ async def get_cost_item_certainty_batch(
                 last_used = last_used.replace(tzinfo=UTC)
             age_days = max(0, int((now - last_used).total_seconds() // 86400))
             last_used_iso = last_used
-        out.append(
-            CertaintyBadge.model_validate(
-                {
-                    "cost_item_id": item_id,
-                    "frequency": frequency,
-                    "age_days": age_days,
-                    "source": source_by_id[item_id],
-                    "confidence_badge": classify_certainty(frequency, age_days),
-                    "last_used_at": last_used_iso,
-                }
-            )
-        )
+        price_as_of, rate = price_info_by_id.get(item_id, (None, None))
+        badge_data: dict[str, object] = {
+            "cost_item_id": item_id,
+            "frequency": frequency,
+            "age_days": age_days,
+            "source": source_by_id[item_id],
+            "confidence_badge": classify_certainty(frequency, age_days),
+            "last_used_at": last_used_iso,
+        }
+        # Same freshness merge as the single-item endpoint so the list badge
+        # and the drill-down badge agree on the re-price-due state.
+        badge_data.update(price_freshness(price_as_of, rate))
+        out.append(CertaintyBadge.model_validate(badge_data))
     return out
 
 

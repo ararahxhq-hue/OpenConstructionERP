@@ -738,6 +738,36 @@ class CertaintyBadge(BaseModel):
         description="ISO-8601 timestamp of the most recent use; None when never used.",
     )
 
+    # ── Price-date freshness (merged from ``service.price_freshness``) ──────
+    # All optional so a rate that carries no ``price_as_of`` keeps the original
+    # usage-only badge shape. ``reprice_due`` and the band are computed purely
+    # from the price date and the horizon, never from usage frequency, so a
+    # heavily-used but long-unpriced rate is still flagged as stale.
+    price_as_of: date | None = Field(
+        default=None,
+        description="Day the rate's price was last set or verified; None when unknown.",
+    )
+    price_age_days: int | None = Field(
+        default=None,
+        description="Whole days since price_as_of; None when there is no price date.",
+    )
+    reprice_due: bool = Field(
+        default=False,
+        description="True when the price has aged at or past the staleness horizon.",
+    )
+    price_freshness_band: Literal["green", "yellow", "red"] | None = Field(
+        default=None,
+        description="Green/yellow/red by price age; None when there is no price date.",
+    )
+    staleness_horizon_days: int | None = Field(
+        default=None,
+        description="The re-price-due horizon in days that was applied.",
+    )
+    suggested_reprice_value: DecimalMoney | None = Field(
+        default=None,
+        description="Escalated one-click reprice value; set only when reprice_due.",
+    )
+
 
 class RecordUsageRequest(BaseModel):
     """Request body for ``POST /v1/costs/{id}/record-usage``.

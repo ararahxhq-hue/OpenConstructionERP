@@ -14209,6 +14209,7 @@ const resource = {
     "costs.certainty.age_months": "{{count}}mo ago",
     "costs.certainty.age_years": "{{count}}y ago",
     "costs.certainty.never_used": "never used",
+    "costs.certainty.reprice_due": "price may be out of date - reprice suggested",
     "costs.usage.unused": "Not used in any estimate yet",
     "costs.usage.used_count": "Used in {{count}} estimate position",
     "costs.usage.used_count_with_age": "Used in {{count}} estimate position, last {{age}}",
