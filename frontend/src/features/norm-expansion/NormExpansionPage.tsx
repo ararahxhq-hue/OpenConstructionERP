@@ -15,13 +15,26 @@
 
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, ChevronRight, ChevronDown, Clock, Cog, Boxes } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+  Clock,
+  Cog,
+  Boxes,
+  Coins,
+  AlertTriangle,
+  ArrowRight,
+} from 'lucide-react';
 import { Button, Card, Badge, EmptyState, RecoveryCard, SkeletonTable } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { getErrorMessage } from '@/shared/lib/api';
 import { fmtNumber } from '@/shared/lib/formatters';
 import { useToastStore } from '@/stores/useToastStore';
+import { laborRatesApi, type LaborRateTemplate } from '@/features/labor-rates/api';
 import {
   fetchNorms,
   createNorm,
@@ -30,9 +43,16 @@ import {
   deleteNormMaterial,
   expandWork,
   isValidQuantity,
+  buildBuildAssemblyPayload,
+  resourceBadge,
+  withCurrency,
   type ProductionNorm,
   type ExpansionResult,
+  type BuildAssemblyResult,
+  type PricedComponent,
+  type ResourceKind,
 } from './api';
+import { useBuildAssembly } from './useBuildAssembly';
 
 const INPUT_CLS =
   'w-full rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm ' +
@@ -223,6 +243,410 @@ function ExpansionResultView({ result }: { result: ExpansionResult }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Build priced assembly panel ───────────────────────────────────────── */
+
+function BuildAssemblyPanel({ norms }: { norms: ProductionNorm[] }) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [normId, setNormId] = useState('');
+  const [laborRateTemplateId, setLaborRateTemplateId] = useState('');
+  const [machineRateTemplateId, setMachineRateTemplateId] = useState('');
+  const [region, setRegion] = useState('');
+  const [applyWaste, setApplyWaste] = useState(true);
+  const [result, setResult] = useState<BuildAssemblyResult | null>(null);
+
+  // The equipment rate reuses the labour-rate templates (an all-in hourly
+  // rate); we read that list here but never mutate the labour-rates feature.
+  const templatesQuery = useQuery({
+    queryKey: ['labor-rates', 'templates'],
+    queryFn: laborRatesApi.listTemplates,
+  });
+  const templates: LaborRateTemplate[] = templatesQuery.data ?? [];
+  const noTemplates = !templatesQuery.isLoading && templates.length === 0;
+
+  const buildMut = useBuildAssembly();
+
+  const selectedNorm = useMemo(() => norms.find((n) => n.id === normId), [norms, normId]);
+  // A labour rate is required to actually price the labour hours, so the run is
+  // gated on it (the backend would otherwise leave labour unpriced and flagged).
+  const canBuild = !!selectedNorm && laborRateTemplateId !== '' && !buildMut.isPending;
+
+  const templateLabel = (tpl: LaborRateTemplate): string =>
+    tpl.all_in_rate ? `${tpl.name} · ${withCurrency(tpl.all_in_rate, tpl.currency)}` : tpl.name;
+
+  const run = () => {
+    if (!selectedNorm) return;
+    const body = buildBuildAssemblyPayload({
+      laborRateTemplateId,
+      machineRateTemplateId,
+      region,
+      applyWaste,
+    });
+    buildMut.mutate(
+      { normId: selectedNorm.id, body },
+      {
+        onSuccess: (data) => setResult(data),
+        onError: (err) => {
+          setResult(null);
+          addToast({
+            type: 'error',
+            title: t('normExpansion.build_failed', { defaultValue: 'Could not build assembly' }),
+            message: getErrorMessage(err),
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <Card padding="md">
+      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-content-primary">
+        <Coins size={15} className="text-oe-blue" />
+        {t('normExpansion.build_title', { defaultValue: 'Build priced assembly' })}
+      </h2>
+      <p className="mb-3 text-xs text-content-tertiary">
+        {t('normExpansion.build_help', {
+          defaultValue:
+            'Turn a norm into a saved, priced unit rate: labour priced from a labour rate, materials matched to cost items and grossed up for waste. You can then apply the assembly to a BOQ position.',
+        })}
+      </p>
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-content-secondary">
+              {t('normExpansion.build_norm', { defaultValue: 'Work item' })}
+            </label>
+            <select
+              className={INPUT_CLS}
+              value={normId}
+              onChange={(e) => {
+                setNormId(e.target.value);
+                setResult(null);
+              }}
+              aria-label={t('normExpansion.select_work_item', { defaultValue: 'Select a work item' })}
+              data-testid="norm-build-select"
+            >
+              <option value="">
+                {t('normExpansion.choose_work_item', { defaultValue: 'Choose a work item...' })}
+              </option>
+              {norms.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name ? `${n.name} (${n.unit})` : `${n.work_key} (${n.unit})`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-content-secondary">
+              {t('normExpansion.build_labor_rate', { defaultValue: 'Labour rate (required)' })}
+            </label>
+            <select
+              className={INPUT_CLS}
+              value={laborRateTemplateId}
+              onChange={(e) => setLaborRateTemplateId(e.target.value)}
+              aria-label={t('normExpansion.build_labor_rate', {
+                defaultValue: 'Labour rate (required)',
+              })}
+              data-testid="norm-build-labor"
+            >
+              <option value="">
+                {templatesQuery.isLoading
+                  ? t('normExpansion.loading', { defaultValue: 'Loading...' })
+                  : t('normExpansion.choose_labor_rate', { defaultValue: 'Choose a labour rate...' })}
+              </option>
+              {templates.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {templateLabel(tpl)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-content-secondary">
+              {t('normExpansion.build_machine_rate', { defaultValue: 'Machine rate (optional)' })}
+            </label>
+            <select
+              className={INPUT_CLS}
+              value={machineRateTemplateId}
+              onChange={(e) => setMachineRateTemplateId(e.target.value)}
+              aria-label={t('normExpansion.build_machine_rate', {
+                defaultValue: 'Machine rate (optional)',
+              })}
+              data-testid="norm-build-machine"
+            >
+              <option value="">
+                {t('normExpansion.build_machine_none', { defaultValue: 'None' })}
+              </option>
+              {templates.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {templateLabel(tpl)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_auto_auto]">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-content-secondary">
+              {t('normExpansion.build_region', { defaultValue: 'Region (optional)' })}
+            </label>
+            <input
+              className={INPUT_CLS}
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              placeholder={t('normExpansion.build_region_ph', { defaultValue: 'e.g. Berlin' })}
+              data-testid="norm-build-region"
+            />
+          </div>
+          <label className="flex h-9 cursor-pointer items-center gap-2 text-sm text-content-secondary">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border-light text-oe-blue focus:ring-oe-blue"
+              checked={applyWaste}
+              onChange={(e) => setApplyWaste(e.target.checked)}
+              data-testid="norm-build-waste"
+            />
+            {t('normExpansion.apply_waste', { defaultValue: 'Apply waste factors' })}
+          </label>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canBuild}
+            onClick={run}
+            data-testid="norm-build-run"
+          >
+            <Coins size={14} className="mr-1 shrink-0" />
+            {t('normExpansion.build_action', { defaultValue: 'Build priced assembly' })}
+          </Button>
+        </div>
+
+        {noTemplates && (
+          <p className="text-xs text-content-tertiary">
+            {t('normExpansion.build_no_templates', {
+              defaultValue: 'No labour-rate templates yet. Create one on the Labour Rates page first.',
+            })}{' '}
+            <Link to="/labor-rates" className="text-oe-blue-text underline hover:no-underline">
+              {t('normExpansion.build_open_labor_rates', { defaultValue: 'Open Labour Rates' })}
+            </Link>
+          </p>
+        )}
+      </div>
+
+      {result && <BuildAssemblyResultView result={result} />}
+    </Card>
+  );
+}
+
+function BuildAssemblyResultView({ result }: { result: BuildAssemblyResult }) {
+  const { t } = useTranslation();
+  const curSuffix = result.currency ? ` (${result.currency})` : '';
+  const hasUnpriced = result.unpriced.length > 0;
+  const hasUnmatched = result.waste_applied && result.waste_unmatched.length > 0;
+
+  const kindLabel = (kind: ResourceKind): string => {
+    switch (kind) {
+      case 'labor':
+        return t('normExpansion.res_labor', { defaultValue: 'Labour' });
+      case 'equipment':
+        return t('normExpansion.res_equipment', { defaultValue: 'Equipment' });
+      case 'material':
+        return t('normExpansion.res_material', { defaultValue: 'Material' });
+      default:
+        return t('normExpansion.res_other', { defaultValue: 'Other' });
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-3" data-testid="norm-build-result">
+      {/* Headline: saved assembly + built-up unit rate */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-light bg-surface-secondary/40 p-3">
+        <div className="min-w-0">
+          <div className="text-2xs uppercase tracking-wide text-content-tertiary">
+            {t('normExpansion.build_saved', { defaultValue: 'Saved as assembly' })}
+          </div>
+          <Link
+            to={`/assemblies/${result.id}`}
+            className="inline-flex items-center gap-1 text-sm font-semibold text-oe-blue-text hover:underline"
+            data-testid="norm-build-assembly-link"
+          >
+            {result.code}
+            <ArrowRight size={13} className="shrink-0" />
+          </Link>
+          <div className="text-2xs text-content-tertiary">
+            {t('normExpansion.build_apply_hint', {
+              defaultValue: 'Open the assembly to apply it to a BOQ position.',
+            })}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xs uppercase tracking-wide text-content-tertiary">
+            {t('normExpansion.build_unit_rate', { defaultValue: 'Unit rate' })}
+          </div>
+          <div
+            className="text-lg font-bold tabular-nums text-content-primary"
+            data-testid="norm-build-total-rate"
+          >
+            {withCurrency(result.total_rate, result.currency)}
+            <span className="ml-1 text-xs font-normal text-content-tertiary">/ {result.unit}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Flags: unpriced lines and materials with no waste factor */}
+      {hasUnpriced && (
+        <div className="flex items-start gap-2 rounded-lg border border-semantic-error/30 bg-semantic-error-bg/50 p-2.5 text-xs text-semantic-error">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            {t('normExpansion.build_unpriced', {
+              defaultValue:
+                '{{count}} line(s) could not be priced and need a rate: {{names}}',
+              count: result.unpriced.length,
+              names: result.unpriced.join(', '),
+            })}
+          </span>
+        </div>
+      )}
+      {hasUnmatched && (
+        <div className="flex items-start gap-2 rounded-lg border border-semantic-warning/30 bg-semantic-warning-bg/50 p-2.5 text-xs text-[#b45309]">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            {t('normExpansion.build_unmatched', {
+              defaultValue:
+                'No waste factor for: {{names}}. These materials were priced at their net quantity.',
+              names: result.waste_unmatched.join(', '),
+            })}
+          </span>
+        </div>
+      )}
+
+      {/* Priced build-up table (one row per component) */}
+      {result.components.length === 0 ? (
+        <p className="text-xs text-content-tertiary">
+          {t('normExpansion.build_no_lines', {
+            defaultValue: 'This norm has no labour, machine or material lines to price.',
+          })}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="border-b border-border-light text-left text-2xs uppercase tracking-wide text-content-tertiary">
+                <th className="py-2 pr-3 font-medium">
+                  {t('normExpansion.col_type', { defaultValue: 'Type' })}
+                </th>
+                <th className="py-2 pr-3 font-medium">
+                  {t('normExpansion.col_description', { defaultValue: 'Description' })}
+                </th>
+                <th className="py-2 pr-3 text-right font-medium">
+                  {t('normExpansion.col_net_qty', { defaultValue: 'Net qty' })}
+                </th>
+                <th className="py-2 pr-3 text-right font-medium">
+                  {t('normExpansion.col_waste', { defaultValue: 'Waste %' })}
+                </th>
+                <th className="py-2 pr-3 text-right font-medium">
+                  {t('normExpansion.col_gross_qty', { defaultValue: 'Gross qty' })}
+                </th>
+                <th className="py-2 pr-3 text-right font-medium">
+                  {t('normExpansion.col_unit_cost', { defaultValue: 'Unit cost' })}
+                  {curSuffix}
+                </th>
+                <th className="py-2 pr-3 text-right font-medium">
+                  {t('normExpansion.col_line_total', { defaultValue: 'Line total' })}
+                  {curSuffix}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.components.map((c, idx) => (
+                <BuildRow
+                  key={`${c.description}-${idx}`}
+                  component={c}
+                  wasteApplied={result.waste_applied}
+                  kindLabel={kindLabel}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BuildRow({
+  component: c,
+  wasteApplied,
+  kindLabel,
+}: {
+  component: PricedComponent;
+  wasteApplied: boolean;
+  kindLabel: (kind: ResourceKind) => string;
+}) {
+  const { t } = useTranslation();
+  const badge = resourceBadge(c.resource_type);
+  // Labour / equipment have no net-gross split, so fall back to the coefficient.
+  const netCell = c.net_qty ?? c.quantity;
+  const isMaterial = badge.kind === 'material';
+  const unmatched = wasteApplied && isMaterial && c.waste_matched === false;
+
+  return (
+    <tr
+      className={`border-b border-border-light/60 hover:bg-surface-secondary/40 ${
+        c.priced ? '' : 'bg-semantic-error-bg/40'
+      }`}
+    >
+      <td className="py-2 pr-3">
+        <span title={kindLabel(badge.kind)}>
+          <Badge variant={badge.variant} size="sm">
+            {badge.letter}
+          </Badge>
+        </span>
+      </td>
+      <td className="py-2 pr-3 text-content-primary">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span>{c.description}</span>
+          {!c.priced && (
+            <Badge variant="error" size="sm">
+              {t('normExpansion.badge_unpriced', { defaultValue: 'Unpriced' })}
+            </Badge>
+          )}
+          {unmatched && (
+            <Badge variant="warning" size="sm">
+              {t('normExpansion.badge_no_waste', { defaultValue: 'No waste factor' })}
+            </Badge>
+          )}
+        </div>
+        {!c.priced && c.unpriced_reason && (
+          <div className="text-2xs text-content-tertiary">{c.unpriced_reason}</div>
+        )}
+      </td>
+      <td className="py-2 pr-3 text-right tabular-nums text-content-secondary">
+        {netCell}
+        <span className="ml-1 text-2xs text-content-tertiary">{c.unit}</span>
+      </td>
+      <td className="py-2 pr-3 text-right tabular-nums text-content-secondary">
+        {c.waste_pct !== null ? `${c.waste_pct}%` : '-'}
+      </td>
+      <td className="py-2 pr-3 text-right tabular-nums text-content-secondary">
+        {c.gross_qty !== null ? (
+          <>
+            {c.gross_qty}
+            <span className="ml-1 text-2xs text-content-tertiary">{c.unit}</span>
+          </>
+        ) : (
+          '-'
+        )}
+      </td>
+      <td className="py-2 pr-3 text-right tabular-nums text-content-secondary">{c.unit_cost}</td>
+      <td className="py-2 pr-3 text-right tabular-nums font-medium text-content-primary">
+        {c.total}
+      </td>
+    </tr>
   );
 }
 
@@ -597,6 +1021,8 @@ export function NormExpansionPage() {
       ) : (
         <>
           <ExpandPanel norms={norms} />
+
+          <BuildAssemblyPanel norms={norms} />
 
           <Card padding="md">
             <h2 className="mb-3 text-sm font-semibold text-content-primary">
