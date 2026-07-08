@@ -9,12 +9,20 @@
 // mark-done / reset controls. Progress and the sample-project choice are owned
 // by useCasesStore and persist across reloads.
 
-import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowLeft, ArrowRight, Check, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronRight, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { Button, Badge } from '@/shared/ui';
 import { projectsApi, type Project } from '@/features/projects/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -39,6 +47,85 @@ import {
 /** Returns true for seeded sample projects (they carry `metadata.demo_id`). */
 function isDemoProject(p: Project): boolean {
   return Boolean((p.metadata as Record<string, unknown> | null)?.demo_id);
+}
+
+/** One entry of the action strip: a step plus its real 1-based number. */
+type StripItem = { step: PlaybookStep; n: number };
+
+/**
+ * Up to three steps that read as the case's action from start to finish: the
+ * first step, a middle step and the last step. Cases with three or fewer steps
+ * show every step in order. Each entry keeps its real 1-based number so the
+ * strip labels the sequence honestly.
+ */
+function actionStripSteps(steps: PlaybookStep[]): StripItem[] {
+  const total = steps.length;
+  if (total === 0) return [];
+  const indices =
+    total <= 3 ? Array.from(steps.keys()) : [0, Math.round((total - 1) / 2), total - 1];
+  const picked: StripItem[] = [];
+  const seen = new Set<number>();
+  for (const i of indices) {
+    if (seen.has(i)) continue;
+    seen.add(i);
+    const step = steps[i];
+    if (!step) continue;
+    picked.push({ step, n: i + 1 });
+  }
+  return picked;
+}
+
+/**
+ * The "what happens" strip: the case's action shown as one to three step scenes
+ * kept in a single horizontal row (evenly sized, arrowed as a sequence). When a
+ * case exposes fewer than three scenes it shows what it has. On screens too
+ * narrow to hold the row it scrolls sideways rather than wrapping, so the
+ * sequence never turns into a ragged grid.
+ */
+function CaseActionStrip({ steps }: { steps: StripItem[] }): ReactElement | null {
+  const { t } = useTranslation();
+  if (steps.length === 0) return null;
+  const heading = t('cases.what_happens', { defaultValue: 'What happens' });
+  return (
+    <section
+      aria-label={heading}
+      className="rounded-2xl border border-border-light bg-surface-primary p-4 shadow-xs sm:p-5"
+    >
+      <p className="mb-3 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+        {heading}
+      </p>
+      <div role="list" className="flex flex-nowrap items-start gap-2 overflow-x-auto pb-1 sm:gap-3">
+        {steps.map(({ step, n }, i) => {
+          const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
+          return (
+            <Fragment key={step.id}>
+              <div role="listitem" className="min-w-[7.5rem] max-w-[16rem] flex-1">
+                <StepScene icon={step.icon} title={stepTitle} className="h-24 w-full sm:h-28" />
+                <div className="mt-2 flex items-center justify-center gap-1.5 px-1">
+                  <span
+                    className="flex h-4 min-w-[1rem] shrink-0 items-center justify-center rounded-full bg-oe-blue/15 px-1 text-2xs font-bold text-oe-blue"
+                    aria-hidden="true"
+                  >
+                    {n}
+                  </span>
+                  <span className="min-w-0 truncate text-2xs font-medium text-content-secondary">
+                    {stepTitle}
+                  </span>
+                </div>
+              </div>
+              {i < steps.length - 1 && (
+                <ChevronRight
+                  size={16}
+                  className="mt-10 shrink-0 self-start text-content-tertiary sm:mt-12"
+                  aria-hidden="true"
+                />
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 export interface PlaybookRunnerProps {
@@ -167,6 +254,8 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const tint = tintFor(playbook.category);
   const cat = CATEGORY_BY_ID[playbook.category];
   const PlaybookIcon = iconFor(playbook.icon);
+  // Up to three step scenes (first / middle / last) shown as the action strip.
+  const stripSteps = useMemo(() => actionStripSteps(playbook.steps), [playbook.steps]);
   const currentStep = playbook.steps[currentIndex];
   const CurIcon = iconFor(currentStep?.icon);
   const curDone = currentStep ? isStepDone(progress, currentStep.id) : false;
@@ -234,6 +323,9 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           </Button>
         </div>
       </div>
+
+      {/* ── What happens: the case action as a single row of step scenes ─── */}
+      <CaseActionStrip steps={stripSteps} />
 
       {/* ── Work area: a compact step rail beside the focused step ───────── */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:items-start">

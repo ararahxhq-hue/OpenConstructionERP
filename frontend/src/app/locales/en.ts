@@ -4223,6 +4223,7 @@ const resource = {
     "cases.run_on_sample_option": "{{name}} (sample)",
     "cases.run_on_hint": "Pick a sample project to follow the steps on, or leave empty.",
     "cases.step_counter": "Step {{n}} of {{total}}",
+    "cases.what_happens": "What happens",
     "cases.prev_step": "Previous",
     "cases.next_step": "Next",
     "cases.step.what": "What you do",
