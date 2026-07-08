@@ -16,10 +16,12 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.modules.prefab import events as prefab_events
+from app.modules.prefab.costing import derive_cost
 from app.modules.prefab.guard import (
     STAGE_ORDER,
     PrefabStage,
@@ -37,6 +39,7 @@ from app.modules.prefab.schemas import (
     PrefabBoardResponse,
     PrefabStatsResponse,
     PrefabUnitCreate,
+    PrefabUnitLinkRequest,
     PrefabUnitResponse,
     PrefabUnitUpdate,
 )
@@ -182,6 +185,170 @@ class PrefabService:
         await self.unit_repo.delete(unit_id)
         logger.info("Prefab unit deleted: %s", unit_id)
 
+    # ── Cost link (BOQ position / assembly) + read-model enrichment ───────
+
+    async def set_link(
+        self,
+        unit_id: uuid.UUID,
+        data: PrefabUnitLinkRequest,
+    ) -> PrefabUnitResponse:
+        """Set or clear a unit's cost links to a BOQ position and/or assembly.
+
+        Only the fields present in the request are touched (an explicit ``null``
+        clears that link; an omitted field is left as-is). A non-null target is
+        validated to exist and to belong to the unit's project before it is
+        stored, so a link can never point across projects or at a missing row.
+        """
+        unit = await self.get_unit(unit_id)
+
+        fields: dict[str, Any] = data.model_dump(exclude_unset=True)
+        updates: dict[str, Any] = {}
+        if "boq_position_id" in fields:
+            await self._validate_boq_position(fields["boq_position_id"], unit.project_id)
+            updates["boq_position_id"] = fields["boq_position_id"]
+        if "assembly_id" in fields:
+            await self._validate_assembly(fields["assembly_id"], unit.project_id)
+            updates["assembly_id"] = fields["assembly_id"]
+
+        if updates:
+            await self.unit_repo.update_fields(unit_id, **updates)
+            await self.session.refresh(unit)
+            logger.info(
+                "Prefab unit link set: %s (%s)",
+                unit_id,
+                {k: str(v) if v is not None else None for k, v in updates.items()},
+            )
+
+        return await self.to_response(unit)
+
+    async def _validate_boq_position(
+        self,
+        position_id: uuid.UUID | None,
+        project_id: uuid.UUID,
+    ) -> None:
+        """Ensure a BOQ position exists and lives in the same project.
+
+        Clearing the link (``position_id is None``) needs no validation.
+        """
+        if position_id is None:
+            return
+        # Local imports keep the prefab module decoupled from the BOQ ORM at
+        # import time (mirrors how the BOQ router imports models inside handlers).
+        from app.modules.boq.models import BOQ, Position
+
+        row = (
+            await self.session.execute(
+                select(Position.id, BOQ.project_id)
+                .join(BOQ, Position.boq_id == BOQ.id)
+                .where(Position.id == position_id)
+            )
+        ).first()
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BOQ position not found",
+            )
+        if row[1] != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="BOQ position belongs to a different project",
+            )
+
+    async def _validate_assembly(
+        self,
+        assembly_id: uuid.UUID | None,
+        project_id: uuid.UUID,
+    ) -> None:
+        """Ensure an assembly exists and is usable by the unit's project.
+
+        Platform-wide templates (``project_id`` is ``None``) are allowed for any
+        project; a project-scoped assembly must match the unit's project.
+        Clearing the link (``assembly_id is None``) needs no validation.
+        """
+        if assembly_id is None:
+            return
+        from app.modules.assemblies.models import Assembly
+
+        assembly = await self.session.get(Assembly, assembly_id)
+        if assembly is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assembly not found",
+            )
+        if assembly.project_id is not None and assembly.project_id != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Assembly belongs to a different project",
+            )
+
+    async def _rate_maps(
+        self,
+        units: list[PrefabUnit],
+    ) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, str]]:
+        """Batch-load the linked rates for a set of units (avoids N+1).
+
+        Returns two maps keyed by id: BOQ position ``unit_rate`` and assembly
+        ``total_rate`` (both stored as strings).
+        """
+        pos_ids = {u.boq_position_id for u in units if u.boq_position_id is not None}
+        asm_ids = {u.assembly_id for u in units if u.assembly_id is not None}
+
+        boq_rates: dict[uuid.UUID, str] = {}
+        asm_rates: dict[uuid.UUID, str] = {}
+
+        if pos_ids:
+            from app.modules.boq.models import Position
+
+            rows = await self.session.execute(select(Position.id, Position.unit_rate).where(Position.id.in_(pos_ids)))
+            boq_rates = {row[0]: row[1] for row in rows.all()}
+
+        if asm_ids:
+            from app.modules.assemblies.models import Assembly
+
+            rows = await self.session.execute(select(Assembly.id, Assembly.total_rate).where(Assembly.id.in_(asm_ids)))
+            asm_rates = {row[0]: row[1] for row in rows.all()}
+
+        return boq_rates, asm_rates
+
+    @staticmethod
+    def _build_response(
+        unit: PrefabUnit,
+        boq_rates: dict[uuid.UUID, str],
+        asm_rates: dict[uuid.UUID, str],
+    ) -> PrefabUnitResponse:
+        """Build a unit response, filling the derived cost view from the maps.
+
+        A BOQ position rate takes precedence over an assembly rate; if the
+        preferred link no longer resolves (e.g. the position was deleted) the
+        other link is used as a fallback so the cost view degrades gracefully.
+        """
+        rate: str | None = None
+        source: str | None = None
+        if unit.boq_position_id is not None and unit.boq_position_id in boq_rates:
+            rate = boq_rates[unit.boq_position_id]
+            source = "boq_position"
+        elif unit.assembly_id is not None and unit.assembly_id in asm_rates:
+            rate = asm_rates[unit.assembly_id]
+            source = "assembly"
+
+        cost_basis, fraction, earned_value = derive_cost(rate, unit.status)
+
+        resp = PrefabUnitResponse.model_validate(unit)
+        resp.cost_basis = cost_basis
+        resp.cost_source = source
+        resp.completed_fraction = fraction
+        resp.earned_value = earned_value
+        return resp
+
+    async def to_responses(self, units: list[PrefabUnit]) -> list[PrefabUnitResponse]:
+        """Serialise units to responses with their derived cost view (batched)."""
+        boq_rates, asm_rates = await self._rate_maps(units)
+        return [self._build_response(u, boq_rates, asm_rates) for u in units]
+
+    async def to_response(self, unit: PrefabUnit) -> PrefabUnitResponse:
+        """Serialise a single unit to a response with its derived cost view."""
+        return (await self.to_responses([unit]))[0]
+
     # ── Stage advance (ordered state machine + QA gate) ───────────────────
 
     async def advance_stage(
@@ -286,12 +453,12 @@ class PrefabService:
             limit=_BOARD_UNIT_CAP,
         )
 
+        responses = await self.to_responses(units)
         buckets: dict[str, list[PrefabUnitResponse]] = {stage: [] for stage in STAGE_ORDER}
-        for unit in units:
-            resp = PrefabUnitResponse.model_validate(unit)
+        for resp in responses:
             # An unknown/legacy status still shows up under its own key so it is
             # never silently dropped from the board.
-            buckets.setdefault(unit.status, []).append(resp)
+            buckets.setdefault(resp.status, []).append(resp)
 
         columns = [
             PrefabBoardColumn(stage=stage, count=len(buckets[stage]), units=buckets[stage]) for stage in STAGE_ORDER

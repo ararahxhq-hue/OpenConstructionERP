@@ -93,6 +93,31 @@ def next_stage(current: str) -> str | None:
     return STAGE_ORDER[idx + 1]
 
 
+def stage_completion_fraction(stage: str) -> float:
+    """Return how far through the production lifecycle ``stage`` sits, in ``0..1``.
+
+    Linear over the ordered stages: ``design`` is ``0.0`` (nothing produced yet)
+    and ``installed`` is ``1.0`` (fully done), with the intermediate stages
+    spaced evenly (``qa`` = ``0.5`` in the seven-stage lifecycle). Used as the
+    earned-value multiplier for a unit linked to a BOQ position or assembly - a
+    simple, explainable progress proxy rather than a claimed-percent field.
+
+    An unknown stage yields ``0.0`` rather than raising, so this is safe on
+    arbitrary data.
+
+    Args:
+        stage: The unit's current production stage (case-insensitive).
+
+    Returns:
+        A progress fraction in the inclusive range ``0.0`` to ``1.0``.
+    """
+    idx = stage_index(stage)
+    last = len(STAGE_ORDER) - 1
+    if idx < 0 or last <= 0:
+        return 0.0
+    return idx / last
+
+
 class PrefabStageMachine:
     """Linear, forward-only production stage machine with a QA gate.
 

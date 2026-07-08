@@ -11,6 +11,7 @@ Mounted at ``/api/v1/prefab``.
     POST   /units                        - create a unit
     GET    /units/{unit_id}              - get a single unit
     PATCH  /units/{unit_id}              - update a unit (never its status)
+    PATCH  /units/{unit_id}/link         - set/clear the BOQ position / assembly link
     DELETE /units/{unit_id}              - delete a unit
     POST   /units/{unit_id}/advance      - advance the unit's production stage
     GET    /units/{unit_id}/events       - production-stage audit timeline
@@ -41,6 +42,7 @@ from app.modules.prefab.schemas import (
     PrefabStagesResponse,
     PrefabStatsResponse,
     PrefabUnitCreate,
+    PrefabUnitLinkRequest,
     PrefabUnitResponse,
     PrefabUnitUpdate,
     ProductionEventResponse,
@@ -121,14 +123,15 @@ async def list_units(
 ) -> list[PrefabUnitResponse]:
     """List prefab units for a project, optionally filtered by status / type."""
     await verify_project_access(project_id, user_id, session)
-    units, _ = await _service(session).list_units(
+    service = _service(session)
+    units, _ = await service.list_units(
         project_id,
         offset=offset,
         limit=limit,
         status=unit_status,
         unit_type=unit_type,
     )
-    return [PrefabUnitResponse.model_validate(u) for u in units]
+    return await service.to_responses(units)
 
 
 # ── Unit create ────────────────────────────────────────────────────────────
@@ -142,9 +145,10 @@ async def create_unit(
 ) -> PrefabUnitResponse:
     """Create a new off-site unit."""
     await verify_project_access(data.project_id, user_id, session)
-    unit = await _service(session).create_unit(data, user_id=user_id)
+    service = _service(session)
+    unit = await service.create_unit(data, user_id=user_id)
     await session.commit()
-    return PrefabUnitResponse.model_validate(unit)
+    return await service.to_response(unit)
 
 
 # ── Unit get ───────────────────────────────────────────────────────────────
@@ -160,7 +164,7 @@ async def get_unit(
     service = _service(session)
     unit = await service.get_unit(unit_id)
     await verify_project_access(unit.project_id, user_id, session)
-    return PrefabUnitResponse.model_validate(unit)
+    return await service.to_response(unit)
 
 
 # ── Unit update ────────────────────────────────────────────────────────────
@@ -179,7 +183,31 @@ async def update_unit(
     await verify_project_access(existing.project_id, user_id, session)
     unit = await service.update_unit(unit_id, data)
     await session.commit()
-    return PrefabUnitResponse.model_validate(unit)
+    return await service.to_response(unit)
+
+
+# ── Unit cost link (BOQ position / assembly) ───────────────────────────────
+
+
+@router.patch("/units/{unit_id}/link", response_model=PrefabUnitResponse, dependencies=[_WRITE])
+async def link_unit(
+    unit_id: uuid.UUID,
+    data: PrefabUnitLinkRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> PrefabUnitResponse:
+    """Set or clear a unit's cost links to a BOQ position and/or an assembly.
+
+    The response carries the derived cost view (cost basis, source, production
+    progress and a simple earned-value hint) so off-site production reflects
+    real cost and earned value.
+    """
+    service = _service(session)
+    existing = await service.get_unit(unit_id)
+    await verify_project_access(existing.project_id, user_id, session)
+    response = await service.set_link(unit_id, data)
+    await session.commit()
+    return response
 
 
 # ── Unit delete ────────────────────────────────────────────────────────────
@@ -220,7 +248,7 @@ async def advance_stage(
     await verify_project_access(existing.project_id, user_id, session)
     unit = await service.advance_stage(unit_id, data, user_id=user_id)
     await session.commit()
-    return PrefabUnitResponse.model_validate(unit)
+    return await service.to_response(unit)
 
 
 # ── Production-event timeline ──────────────────────────────────────────────

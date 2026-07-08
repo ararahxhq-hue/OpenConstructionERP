@@ -15,6 +15,9 @@ import {
   ShieldCheck,
   Clock,
   CheckCircle2,
+  Coins,
+  Link2,
+  Unlink,
 } from 'lucide-react';
 import {
   Button,
@@ -40,6 +43,10 @@ import {
   createPrefabUnit,
   advancePrefabUnit,
   deletePrefabUnit,
+  linkPrefabUnit,
+  fetchProjectBoqs,
+  fetchBoqPositions,
+  fetchProjectAssemblies,
   nextStage,
   STAGE_ORDER,
   POST_QA_STAGES,
@@ -49,6 +56,7 @@ import {
   type PrefabUnitType,
   type PrefabBoardColumn,
   type CreatePrefabUnitPayload,
+  type LinkPrefabUnitPayload,
 } from './api';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -356,24 +364,267 @@ const UnitCard = React.memo(function UnitCard({
           </span>
         )}
       </div>
+      {unit.cost_basis != null && (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-2xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+          <Coins size={11} className="shrink-0" />
+          <span className="tabular-nums">{unit.cost_basis}</span>
+          {unit.earned_value != null && (
+            <span className="text-emerald-600/70 dark:text-emerald-400/70">
+              {t('prefab.earned_short', { defaultValue: 'earned {{value}}', value: unit.earned_value })}
+            </span>
+          )}
+        </div>
+      )}
     </button>
   );
 });
+
+/* ── Cost Link Section (link a unit to a BOQ position / assembly) ───────── */
+
+function LinkCostSection({
+  unit,
+  projectId,
+  onLink,
+  isLinking,
+}: {
+  unit: PrefabUnit;
+  projectId: string;
+  onLink: (payload: LinkPrefabUnitPayload) => void;
+  isLinking: boolean;
+}) {
+  const { t } = useTranslation();
+  const isLinked = unit.cost_basis != null || unit.boq_position_id != null || unit.assembly_id != null;
+  const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useState<'boq' | 'assembly'>('boq');
+  const [boqId, setBoqId] = useState('');
+  const [positionId, setPositionId] = useState('');
+  const [assemblyId, setAssemblyId] = useState('');
+
+  const { data: boqs = [] } = useQuery({
+    queryKey: ['prefab-link-boqs', projectId],
+    queryFn: () => fetchProjectBoqs(projectId),
+    enabled: editing && mode === 'boq' && !!projectId,
+  });
+  const { data: positions = [], isLoading: positionsLoading } = useQuery({
+    queryKey: ['prefab-link-positions', boqId],
+    queryFn: () => fetchBoqPositions(boqId),
+    enabled: editing && mode === 'boq' && !!boqId,
+  });
+  const { data: assemblies = [] } = useQuery({
+    queryKey: ['prefab-link-assemblies', projectId],
+    queryFn: () => fetchProjectAssemblies(projectId),
+    enabled: editing && mode === 'assembly' && !!projectId,
+  });
+
+  // Collapse the editor once a link change lands (the unit prop updates).
+  useEffect(() => {
+    setEditing(false);
+  }, [unit.boq_position_id, unit.assembly_id]);
+
+  const pct = Math.round((unit.completed_fraction ?? 0) * 100);
+  const sourceLabel =
+    unit.cost_source === 'assembly'
+      ? t('prefab.cost_from_assembly', { defaultValue: 'from assembly' })
+      : t('prefab.cost_from_boq', { defaultValue: 'from BOQ position' });
+
+  const canLink = mode === 'boq' ? !!positionId : !!assemblyId;
+  const applyLink = () => {
+    if (mode === 'boq' && positionId) onLink({ boq_position_id: positionId });
+    else if (mode === 'assembly' && assemblyId) onLink({ assembly_id: assemblyId });
+  };
+
+  return (
+    <div className="rounded-lg border border-border-light bg-surface-secondary/40 p-3">
+      <p className="text-2xs uppercase tracking-wide text-content-tertiary mb-2 inline-flex items-center gap-1">
+        <Coins size={12} className="shrink-0" />
+        {t('prefab.cost_link', { defaultValue: 'Cost link' })}
+      </p>
+
+      {/* Current cost view */}
+      {isLinked && unit.cost_basis != null ? (
+        <div className="mb-3 space-y-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xs text-content-tertiary">
+              {t('prefab.cost_basis', { defaultValue: 'Cost basis' })}
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-content-primary">
+              {unit.cost_basis}
+              <span className="ml-1 text-2xs font-normal text-content-tertiary">{sourceLabel}</span>
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xs text-content-tertiary">
+              {t('prefab.earned_value', { defaultValue: 'Earned value' })}
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
+              {unit.earned_value ?? '-'}
+              <span className="ml-1 text-2xs font-normal text-content-tertiary">({pct}%)</span>
+            </span>
+          </div>
+          {/* Progress bar - earned vs basis */}
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-all"
+              style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={() => {
+                setEditing((v) => !v);
+                setMode(unit.cost_source === 'assembly' ? 'assembly' : 'boq');
+              }}
+              className="text-2xs font-medium text-oe-blue hover:underline"
+            >
+              {t('prefab.change_link', { defaultValue: 'Change' })}
+            </button>
+            <button
+              onClick={() => onLink({ boq_position_id: null, assembly_id: null })}
+              disabled={isLinking}
+              className="inline-flex items-center gap-1 text-2xs font-medium text-semantic-error hover:underline disabled:opacity-50"
+            >
+              <Unlink size={11} className="shrink-0" />
+              {t('prefab.unlink', { defaultValue: 'Unlink' })}
+            </button>
+          </div>
+        </div>
+      ) : (
+        !editing && (
+          <p className="mb-2 text-xs text-content-tertiary">
+            {t('prefab.not_linked_hint', {
+              defaultValue:
+                'Not linked to any cost. Link a BOQ position or assembly to reflect real cost and earned value.',
+            })}
+          </p>
+        )
+      )}
+
+      {/* Link editor */}
+      {editing ? (
+        <div className="space-y-2 rounded-md border border-border-light bg-surface-primary/60 p-2">
+          <div className="flex gap-1">
+            <button
+              onClick={() => setMode('boq')}
+              className={clsx(
+                'flex-1 rounded-md px-2 py-1 text-2xs font-medium transition-colors',
+                mode === 'boq'
+                  ? 'bg-oe-blue text-white'
+                  : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary',
+              )}
+            >
+              {t('prefab.link_boq_tab', { defaultValue: 'BOQ position' })}
+            </button>
+            <button
+              onClick={() => setMode('assembly')}
+              className={clsx(
+                'flex-1 rounded-md px-2 py-1 text-2xs font-medium transition-colors',
+                mode === 'assembly'
+                  ? 'bg-oe-blue text-white'
+                  : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary',
+              )}
+            >
+              {t('prefab.link_assembly_tab', { defaultValue: 'Assembly' })}
+            </button>
+          </div>
+
+          {mode === 'boq' ? (
+            <>
+              <select
+                value={boqId}
+                onChange={(e) => {
+                  setBoqId(e.target.value);
+                  setPositionId('');
+                }}
+                className={inputCls + ' h-9 appearance-none text-xs'}
+              >
+                <option value="">{t('prefab.pick_boq', { defaultValue: 'Select a BOQ...' })}</option>
+                {boqs.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              {boqId && (
+                <select
+                  value={positionId}
+                  onChange={(e) => setPositionId(e.target.value)}
+                  disabled={positionsLoading}
+                  className={inputCls + ' h-9 appearance-none text-xs'}
+                >
+                  <option value="">
+                    {positionsLoading
+                      ? t('common.loading', { defaultValue: 'Loading...' })
+                      : t('prefab.pick_position', { defaultValue: 'Select a position...' })}
+                  </option>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.ordinal} - {p.description.slice(0, 48)} ({p.unit_rate}/{p.unit})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
+          ) : (
+            <select
+              value={assemblyId}
+              onChange={(e) => setAssemblyId(e.target.value)}
+              className={inputCls + ' h-9 appearance-none text-xs'}
+            >
+              <option value="">
+                {t('prefab.pick_assembly', { defaultValue: 'Select an assembly...' })}
+              </option>
+              {assemblies.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {a.name.slice(0, 48)} ({a.total_rate}/{a.unit})
+                </option>
+              ))}
+            </select>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            {isLinked && (
+              <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                {t('common.cancel', { defaultValue: 'Cancel' })}
+              </Button>
+            )}
+            <Button variant="primary" size="sm" onClick={applyLink} disabled={!canLink || isLinking}>
+              <Link2 size={13} className="mr-1 shrink-0" />
+              {t('prefab.link_action', { defaultValue: 'Link' })}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        !isLinked && (
+          <Button variant="secondary" size="sm" onClick={() => setEditing(true)} className="w-full">
+            <Link2 size={13} className="mr-1.5 shrink-0" />
+            {t('prefab.link_to_cost', { defaultValue: 'Link to BOQ / assembly' })}
+          </Button>
+        )
+      )}
+    </div>
+  );
+}
 
 /* ── Unit Detail Drawer (timeline + advance control) ───────────────────── */
 
 function UnitDetailDrawer({
   unit,
+  projectId,
   onClose,
   onAdvance,
   onDelete,
+  onLink,
   isAdvancing,
+  isLinking,
 }: {
   unit: PrefabUnit;
+  projectId: string;
   onClose: () => void;
   onAdvance: (note: string) => void;
   onDelete: () => void;
+  onLink: (payload: LinkPrefabUnitPayload) => void;
   isAdvancing: boolean;
+  isLinking: boolean;
 }) {
   const { t } = useTranslation();
   const [note, setNote] = useState('');
@@ -481,6 +732,14 @@ function UnitDetailDrawer({
               </span>
             </div>
           )}
+
+          {/* Cost link (BOQ position / assembly) */}
+          <LinkCostSection
+            unit={unit}
+            projectId={projectId}
+            onLink={onLink}
+            isLinking={isLinking}
+          />
 
           {/* Advance control */}
           <div className="rounded-lg border border-border-light bg-surface-secondary/40 p-3">
@@ -688,6 +947,29 @@ export function PrefabPage() {
       addToast({
         type: 'error',
         title: t('prefab.delete_failed', { defaultValue: 'Could not delete unit' }),
+        message: e.message,
+      });
+    },
+  });
+
+  const linkMut = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: LinkPrefabUnitPayload }) =>
+      linkPrefabUnit(id, payload),
+    onSuccess: (updated) => {
+      invalidate();
+      setSelected(updated);
+      addToast({
+        type: 'success',
+        title:
+          updated.cost_basis != null
+            ? t('prefab.linked', { defaultValue: 'Cost link updated' })
+            : t('prefab.unlinked', { defaultValue: 'Cost link removed' }),
+      });
+    },
+    onError: (e: Error) => {
+      addToast({
+        type: 'error',
+        title: t('prefab.link_failed', { defaultValue: 'Could not update cost link' }),
         message: e.message,
       });
     },
@@ -930,10 +1212,13 @@ export function PrefabPage() {
       {selected && (
         <UnitDetailDrawer
           unit={selected}
+          projectId={projectId}
           onClose={() => setSelected(null)}
           onAdvance={(note) => advanceMut.mutate({ id: selected.id, note })}
           onDelete={() => handleDelete(selected)}
+          onLink={(payload) => linkMut.mutate({ id: selected.id, payload })}
           isAdvancing={advanceMut.isPending}
+          isLinking={linkMut.isPending}
         />
       )}
 

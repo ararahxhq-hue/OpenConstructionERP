@@ -40,6 +40,17 @@ export interface PrefabUnit {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /* ── Spine 4: cost link + derived cost view ─────────────────────────── */
+  boq_position_id: string | null;
+  assembly_id: string | null;
+  /** Linked cost basis (BOQ unit_rate or assembly total_rate). Decimal string. */
+  cost_basis: string | null;
+  /** Which link drove the basis: 'boq_position' | 'assembly' | null. */
+  cost_source: 'boq_position' | 'assembly' | null;
+  /** Production progress 0..1 from the stage machine. */
+  completed_fraction: number | null;
+  /** Simple earned value: cost_basis * completed_fraction. Decimal string. */
+  earned_value: string | null;
 }
 
 export interface ProductionEvent {
@@ -107,6 +118,31 @@ export interface AdvanceStagePayload {
   note?: string;
 }
 
+export interface LinkPrefabUnitPayload {
+  /** UUID to set the BOQ position link, null to clear it, omit to leave as-is. */
+  boq_position_id?: string | null;
+  /** UUID to set the assembly link, null to clear it, omit to leave as-is. */
+  assembly_id?: string | null;
+}
+
+/** A BOQ position option for the link picker (subset of the BOQ read model). */
+export interface BoqPositionOption {
+  id: string;
+  ordinal: string;
+  description: string;
+  unit: string;
+  unit_rate: string;
+}
+
+/** An assembly option for the link picker (subset of the assembly read model). */
+export interface AssemblyOption {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  total_rate: number;
+}
+
 export interface PrefabUnitFilters {
   project_id: string;
   status?: PrefabStage | '';
@@ -149,6 +185,55 @@ export async function advancePrefabUnit(
   data: AdvanceStagePayload,
 ): Promise<PrefabUnit> {
   return apiPost<PrefabUnit>(`/v1/prefab/units/${id}/advance/`, data);
+}
+
+export async function linkPrefabUnit(
+  id: string,
+  data: LinkPrefabUnitPayload,
+): Promise<PrefabUnit> {
+  return apiPatch<PrefabUnit>(`/v1/prefab/units/${id}/link`, data);
+}
+
+/* ── Link pickers: BOQ positions + assemblies for the current project ───── */
+
+interface BoqListItem {
+  id: string;
+  name: string;
+}
+
+/** List the project's BOQs so a user can choose which one to pull a position from. */
+export async function fetchProjectBoqs(projectId: string): Promise<BoqListItem[]> {
+  return apiGet<BoqListItem[]>(`/v1/boq/boqs/?project_id=${encodeURIComponent(projectId)}`);
+}
+
+/** Fetch a BOQ's positions (the flat line items) for the link picker. */
+export async function fetchBoqPositions(boqId: string): Promise<BoqPositionOption[]> {
+  const boq = await apiGet<{ positions?: BoqPositionOption[] }>(`/v1/boq/boqs/${boqId}`);
+  const positions = boq.positions ?? [];
+  // Drop section headers (they carry no unit) - only priceable lines are useful.
+  return positions
+    .filter((p) => Boolean(p.unit))
+    .map((p) => ({
+      id: p.id,
+      ordinal: p.ordinal,
+      description: p.description,
+      unit: p.unit,
+      unit_rate: String(p.unit_rate ?? '0'),
+    }));
+}
+
+/** List assemblies usable by the project (project-scoped + platform templates). */
+export async function fetchProjectAssemblies(projectId: string): Promise<AssemblyOption[]> {
+  const res = await apiGet<{ items?: AssemblyOption[] }>(
+    `/v1/assemblies/?project_id=${encodeURIComponent(projectId)}&limit=200`,
+  );
+  return (res.items ?? []).map((a) => ({
+    id: a.id,
+    code: a.code,
+    name: a.name,
+    unit: a.unit,
+    total_rate: Number(a.total_rate ?? 0),
+  }));
 }
 
 export async function fetchUnitEvents(id: string): Promise<ProductionEvent[]> {

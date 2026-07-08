@@ -59,7 +59,13 @@ class PrefabUnitUpdate(BaseModel):
 
 
 class PrefabUnitResponse(BaseModel):
-    """Off-site unit returned from the API."""
+    """Off-site unit returned from the API.
+
+    Beyond the stored fields, the read model surfaces a derived cost view when
+    the unit is linked to a BOQ position and/or an assembly (Spine 4). Money is
+    always a Decimal serialised as a string so large currency values round-trip
+    exactly and stay locale-neutral.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,6 +81,36 @@ class PrefabUnitResponse(BaseModel):
     created_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    # ── Spine 4: optional cost links + derived cost view ─────────────────
+    boq_position_id: UUID | None = None
+    assembly_id: UUID | None = None
+    # The linked cost basis: the BOQ position's ``unit_rate`` (preferred) or the
+    # assembly's ``total_rate``. ``None`` when the unit is not linked.
+    cost_basis: str | None = None
+    # Which link drove ``cost_basis``: "boq_position" | "assembly" | None.
+    cost_source: str | None = None
+    # Production progress in 0..1 from the stage machine (design=0, installed=1).
+    completed_fraction: float | None = None
+    # Simple earned value: ``cost_basis * completed_fraction`` (Decimal string).
+    earned_value: str | None = None
+
+
+# ── Unit Cost Link ────────────────────────────────────────────────────────
+
+
+class PrefabUnitLinkRequest(BaseModel):
+    """Set or clear a unit's cost links to a BOQ position and/or an assembly.
+
+    Send a UUID to set a link, or an explicit ``null`` to clear it. Omit a field
+    entirely to leave that link untouched, so one link can change without
+    disturbing the other. An empty body is a harmless no-op.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    boq_position_id: UUID | None = None
+    assembly_id: UUID | None = None
 
 
 # ── Advance Stage ─────────────────────────────────────────────────────────

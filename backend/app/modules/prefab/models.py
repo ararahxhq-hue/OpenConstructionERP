@@ -49,6 +49,16 @@ class PrefabUnit(Base):
     # Links back to canonical BIM elements this unit was fabricated from.
     # Nullable JSON list of element ids; follows the codebase JSON-list idiom.
     bim_element_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # ── Spine 4: optional cost links (additive, nullable) ────────────────
+    # A unit may reflect the cost of a specific BOQ position and/or an
+    # assembly recipe, so off-site production maps onto real cost and earned
+    # value. Both are plain indexed GUIDs with NO ForeignKey - the same
+    # cross-module-reference convention used elsewhere (e.g.
+    # Position.cost_line_id, carbon element links) so the prefab module stays
+    # decoupled from the BOQ / assemblies ORM. The linked rate is read at
+    # serialisation time; nothing is cached on the unit.
+    boq_position_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    assembly_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
