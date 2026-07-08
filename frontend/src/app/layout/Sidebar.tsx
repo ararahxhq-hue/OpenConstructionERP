@@ -276,11 +276,6 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.cost_explorer', to: '/cost-explorer', icon: Compass },
       { labelKey: 'nav.assemblies', to: '/assemblies', icon: Layers },
       { labelKey: 'nav.benchmarks', to: '/benchmarks', icon: BarChart3, moduleKey: 'cost-benchmark', advancedOnly: true },
-      { labelKey: 'nav.price_index', to: '/price-index', icon: TrendingUp, advancedOnly: true },
-      { labelKey: 'nav.labor_rates', to: '/labor-rates', icon: HardHat, advancedOnly: true },
-      { labelKey: 'nav.norm_expansion', to: '/norm-expansion', icon: ListChecks, advancedOnly: true },
-      { labelKey: 'nav.waste_factors', to: '/waste-factors', icon: Ruler, advancedOnly: true },
-      { labelKey: 'nav.resource_summary', to: '/resource-summary', icon: Package, advancedOnly: true },
     ],
   },
   // ── 5. REALITY CAPTURE & 3D ─────────────────────────────────────────
@@ -321,7 +316,6 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal },
       { labelKey: 'nav.eir_matrix', to: '/requirements/matrix', icon: FileCheck, advancedOnly: true },
-      { labelKey: 'nav.prefab', to: '/prefab', icon: Factory, advancedOnly: true },
     ],
   },
   // ── 7. SCHEDULING ──────────────────────────────────────────────────
@@ -503,6 +497,10 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.resources', to: '/resources', icon: Users },
       { labelKey: 'nav.payroll', to: '/payroll', icon: Wallet, advancedOnly: true },
       { labelKey: 'nav.assets', to: '/assets', icon: Package },
+      // Off-site / prefab production sits with resources (it is a production
+      // resource surface). Moved out of Model Coordination while it is being
+      // wired to BOQ/assembly/BIM; see grp_rate_buildup note on the beta cohort.
+      { labelKey: 'nav.prefab', to: '/prefab', icon: Factory, advancedOnly: true },
     ],
   },
   // ── 13. QUALITY ────────────────────────────────────────────────────
@@ -641,6 +639,30 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.ai_advisor', to: '/advisor', icon: MessageSquare },
       { labelKey: 'nav.erp_chat', to: '/chat', icon: MessageSquare },
       { labelKey: 'nav.pipelines', to: '/pipelines', icon: GitBranch, moduleKey: 'pipelines', advancedOnly: true },
+    ],
+  },
+  // ── 20b. RATE BUILD-UP (beta, in development) ──────────────────────
+  // The unit-rate build-up cohort: production norms (resource demand per
+  // quantity), all-in labour rates, material waste factors, price escalation,
+  // and the resource statement they feed. These compute correctly today but
+  // stand apart from the BOQ / assembly cost spine, so they are parked low
+  // and badged beta. As each is wired to write into the position resource
+  // split (`metadata_["resources"]`) / assembly components, it graduates back
+  // up next to Cost Data. Ordered as the build-up actually flows: norm ->
+  // rate -> waste -> escalation -> summary.
+  {
+    id: 'grp_rate_buildup',
+    labelKey: 'sidebar.group.rate_buildup',
+    defaultLabel: 'Rate Build-up',
+    defaultOpen: false,
+    hideInSimple: true,
+    separator: true,
+    items: [
+      { labelKey: 'nav.norm_expansion', to: '/norm-expansion', icon: ListChecks, advancedOnly: true },
+      { labelKey: 'nav.labor_rates', to: '/labor-rates', icon: HardHat, advancedOnly: true },
+      { labelKey: 'nav.waste_factors', to: '/waste-factors', icon: Ruler, advancedOnly: true },
+      { labelKey: 'nav.price_index', to: '/price-index', icon: TrendingUp, advancedOnly: true },
+      { labelKey: 'nav.resource_summary', to: '/resource-summary', icon: Package, advancedOnly: true },
     ],
   },
   // ── REGIONAL EXCHANGE (setup-only, dynamic) ────────────────────────
