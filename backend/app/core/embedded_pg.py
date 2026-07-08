@@ -620,7 +620,10 @@ def shutdown() -> None:
         return
     try:
         _server.cleanup()
-        logger.info("embedded PostgreSQL stopped")
+        # Routine stop: keep it at debug so a shutdown that happens BECAUSE
+        # startup failed cannot add log noise on top of the real cause. Genuine
+        # cleanup errors below still log with a traceback.
+        logger.debug("embedded PostgreSQL stopped")
     except Exception:  # noqa: BLE001
         logger.debug("embedded PostgreSQL cleanup failed", exc_info=True)
     finally:
