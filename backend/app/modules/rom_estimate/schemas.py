@@ -66,10 +66,41 @@ class RomEstimateRequest(BaseModel):
     gfa_unit: str = Field(default="m2", max_length=20, description="Unit of 'gross_floor_area', e.g. m2 or ft2.")
     currency: str = Field(default="", max_length=10, description="Optional ISO currency label carried to the result.")
     name: str = Field(default="", max_length=255, description="Optional label used when the estimate is saved.")
+    base_rate_per_m2_override: Decimal | None = Field(
+        default=None,
+        description=(
+            "Optional base cost per m2, expressed in 'currency', that replaces the "
+            "neutral reference basis so the headline total is anchored to the "
+            "estimator's own rate. Quality and regional factors still apply on top. "
+            "A missing or non-positive value keeps the building-type reference basis."
+        ),
+    )
 
-    @field_serializer("gross_floor_area", when_used="json")
-    def _ser_qty(self, v: Decimal) -> str | None:
+    @field_serializer("gross_floor_area", "base_rate_per_m2_override", when_used="json")
+    def _ser_qty(self, v: Decimal | None) -> str | None:
         return _serialise_money(v)
+
+
+class RomCreateBoqRequest(RomEstimateRequest):
+    """Input to save a ROM estimate as the project baseline and seed a BOQ from it.
+
+    Inherits every estimate input (building type, gross floor area, quality,
+    region, unit, currency and the optional base-rate override) and adds the
+    name for the bill of quantities that is created. The estimate is persisted
+    as the conceptual baseline and a provisional BOQ is generated with one
+    elemental section and one concept-rate line item per element.
+    """
+
+    boq_name: str = Field(default="", max_length=255, description="Optional name for the BOQ that is created.")
+
+
+class RomCreateBoqResponse(BaseModel):
+    """Result of seeding a provisional BOQ from a conceptual (ROM) estimate."""
+
+    boq_id: str = Field(description="Id of the newly created bill of quantities.")
+    estimate_id: str = Field(default="", description="Id of the conceptual baseline estimate that was saved.")
+    sections_created: int = Field(description="Number of elemental sections created in the BOQ.")
+    positions_created: int = Field(description="Number of provisional concept-rate positions created.")
 
 
 # ── Result parts ─────────────────────────────────────────────────────────────

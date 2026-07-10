@@ -46,6 +46,7 @@ import {
   HelpCircle,
   Route,
   AlertOctagon,
+  CircleDot,
   FileCheck,
   Mail,
   Send,
@@ -324,6 +325,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.coordination_hub', to: '/coordination', icon: LayoutDashboard, badge: 'BETA' },
       { labelKey: 'nav.bim_federations', to: '/bim/federations', icon: Layers },
       { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar, badge: 'BETA' },
+      { labelKey: 'nav.model_issues', to: '/bcf', icon: MessageSquare, badge: 'BETA' },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal },
       { labelKey: 'nav.eir_matrix', to: '/requirements/matrix', icon: FileCheck, advancedOnly: true, badge: 'BETA' },
     ],
@@ -536,6 +538,7 @@ const navGroups: NavGroup[] = [
     defaultOpen: true,
     hideInSimple: true,
     items: [
+      { labelKey: 'nav.issues', to: '/issues', icon: CircleDot },
       { labelKey: 'validation.title', to: '/validation', icon: ShieldCheck, moduleKey: 'validation' },
       { labelKey: 'inspections.title', to: '/inspections', icon: ClipboardCheck },
       { labelKey: 'construction_control.title', to: '/construction-control', icon: ClipboardList },
@@ -673,6 +676,29 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.architecture_map', to: '/architecture', icon: GitBranch, advancedOnly: true, adminOnly: true },
     ],
   },
+  // ── 19b. RATE BUILD-UP ─────────────────────────────────────────────
+  // The unit-rate build-up cohort: production norms (resource demand per
+  // quantity), all-in labour rates, material waste factors, price escalation,
+  // and the resource statement they feed. Sits right above the AI surfaces
+  // because rate build-up is core estimating work. Still badged beta per item
+  // until each is wired into the position resource split
+  // (`metadata_["resources"]`) / assembly components. Ordered as the build-up
+  // actually flows: norm -> rate -> waste -> escalation -> summary.
+  {
+    id: 'grp_rate_buildup',
+    labelKey: 'sidebar.group.rate_buildup',
+    defaultLabel: 'Rate Build-up',
+    defaultOpen: true,
+    hideInSimple: true,
+    separator: true,
+    items: [
+      { labelKey: 'nav.norm_expansion', to: '/norm-expansion', icon: ListChecks, advancedOnly: true },
+      { labelKey: 'nav.labor_rates', to: '/labor-rates', icon: HardHat, advancedOnly: true },
+      { labelKey: 'nav.waste_factors', to: '/waste-factors', icon: Ruler, advancedOnly: true },
+      { labelKey: 'nav.price_index', to: '/price-index', icon: TrendingUp, advancedOnly: true },
+      { labelKey: 'nav.resource_summary', to: '/resource-summary', icon: Package, advancedOnly: true },
+    ],
+  },
   // ── 20. AUTOMATION & AI ────────────────────────────────────────────
   // AI agents, advisor, ERP chat, and the pipeline builder (listed
   // statically — its manifest group `ai` no longer matches any group id,
@@ -705,30 +731,6 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
       { labelKey: 'nav.ai_estimator', to: '/ai-estimator', icon: Wand2, badge: 'BETA' },
       { labelKey: 'nav.estimate_copilot', to: '/estimate-copilot', icon: Bot, badge: 'BETA' },
-    ],
-  },
-  // ── 20b. RATE BUILD-UP (beta, in development) ──────────────────────
-  // The unit-rate build-up cohort: production norms (resource demand per
-  // quantity), all-in labour rates, material waste factors, price escalation,
-  // and the resource statement they feed. These compute correctly today but
-  // stand apart from the BOQ / assembly cost spine, so they are parked low
-  // and badged beta. As each is wired to write into the position resource
-  // split (`metadata_["resources"]`) / assembly components, it graduates back
-  // up next to Cost Data. Ordered as the build-up actually flows: norm ->
-  // rate -> waste -> escalation -> summary.
-  {
-    id: 'grp_rate_buildup',
-    labelKey: 'sidebar.group.rate_buildup',
-    defaultLabel: 'Rate Build-up',
-    defaultOpen: false,
-    hideInSimple: true,
-    separator: true,
-    items: [
-      { labelKey: 'nav.norm_expansion', to: '/norm-expansion', icon: ListChecks, advancedOnly: true },
-      { labelKey: 'nav.labor_rates', to: '/labor-rates', icon: HardHat, advancedOnly: true },
-      { labelKey: 'nav.waste_factors', to: '/waste-factors', icon: Ruler, advancedOnly: true },
-      { labelKey: 'nav.price_index', to: '/price-index', icon: TrendingUp, advancedOnly: true },
-      { labelKey: 'nav.resource_summary', to: '/resource-summary', icon: Package, advancedOnly: true },
     ],
   },
   // ── REGIONAL EXCHANGE (setup-only, dynamic) ────────────────────────

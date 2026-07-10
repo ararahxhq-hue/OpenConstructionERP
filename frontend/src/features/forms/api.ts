@@ -146,12 +146,25 @@ export interface SubmissionCreatePayload {
   title?: string | null;
   location?: string | null;
   answers?: AnswerMap;
+  /**
+   * Free-form metadata frozen onto the submission at create time. Used to
+   * record what the submission is attached to (e.g. a site issue), so the
+   * link is discoverable from the submission later. The backend accepts and
+   * stores this verbatim (forms.SubmissionCreate.metadata).
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface SubmissionUpdatePayload {
   title?: string | null;
   location?: string | null;
   answers?: AnswerMap;
+  /**
+   * Metadata patch. The backend deep-merges this into the existing metadata
+   * (forms.service.merge_metadata) rather than replacing it, so partial
+   * updates are safe.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** One validation issue returned in a 422 detail payload. */

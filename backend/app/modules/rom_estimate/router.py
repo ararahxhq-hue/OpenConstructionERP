@@ -7,6 +7,8 @@ Endpoints:
                                                    (stateless, no persistence)
     GET    /projects/{project_id}/estimates/    - list a project's saved estimates
     POST   /projects/{project_id}/estimates/    - compute and save an estimate
+    POST   /projects/{project_id}/estimates/create-boq/ - save the estimate as the
+                                                   baseline and seed a provisional BOQ
     DELETE /projects/{project_id}/estimates/{estimate_id} - delete a saved estimate
 """
 
@@ -17,6 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.rom_estimate.models import RomEstimate
 from app.modules.rom_estimate.schemas import (
+    RomCreateBoqRequest,
+    RomCreateBoqResponse,
     RomElementBreakdown,
     RomEstimateRecord,
     RomEstimateRequest,
@@ -175,6 +179,38 @@ async def create_estimate(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return _row_to_record(row)
+
+
+@router.post(
+    "/projects/{project_id}/estimates/create-boq/",
+    response_model=RomCreateBoqResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RequirePermission("rom_estimate.write"))],
+)
+async def create_boq_from_rom(
+    project_id: uuid.UUID,
+    request: RomCreateBoqRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: RomEstimateService = Depends(_get_service),
+) -> RomCreateBoqResponse:
+    """Save the conceptual estimate as the baseline and seed a provisional BOQ.
+
+    The concept-to-detailed handoff: the estimate is persisted as the project
+    baseline (so the reconciliation goes live) and a draft BOQ is generated with
+    one elemental section and one concept-rate line item per element, ready to
+    refine with a detailed take-off. Invalid input (unknown building type,
+    quality or region, unsupported unit, non-positive area) becomes a 422.
+    """
+    await verify_project_access(project_id, user_id, session)
+    try:
+        created_by = uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        created_by = None
+    try:
+        return await service.create_boq_from_rom(project_id, request, created_by)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.delete(

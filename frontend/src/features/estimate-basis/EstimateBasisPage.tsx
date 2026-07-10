@@ -13,6 +13,7 @@ import { PageHeader } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { EstimateBasisPanel } from './EstimateBasisPanel';
+import { HowBasisWorks } from './HowBasisWorks';
 
 export function EstimateBasisPage() {
   const { t } = useTranslation();
@@ -20,7 +21,7 @@ export function EstimateBasisPage() {
   const activeBOQId = useProjectContextStore((s) => s.activeBOQId);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 animate-fade-in">
       <PageHeader
         srTitle={t('estimate_basis.title', { defaultValue: 'Basis of Estimate' })}
         subtitle={t('estimate_basis.subtitle', {
@@ -28,6 +29,7 @@ export function EstimateBasisPage() {
             'Draft the inclusions, exclusions, assumptions and pricing basis behind the estimate, so a reviewer can see what the number does and does not cover.',
         })}
       />
+      <HowBasisWorks />
       {activeProjectId ? (
         <EstimateBasisPanel projectId={activeProjectId} boqId={activeBOQId} />
       ) : (

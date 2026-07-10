@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
@@ -26,6 +27,7 @@ import {
   Inbox,
   Building2,
   Library,
+  Download,
 } from 'lucide-react';
 import { Button, Badge, Card, CardHeader, EmptyState, ErrorState, Input, PageHeader } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
@@ -49,6 +51,7 @@ import {
   formatFactor,
   factorDirection,
   escalatePreview,
+  downloadEscalatePreviewCsv,
   listCostRegions,
   listCostCategories,
   isValidIsoDate,
@@ -988,6 +991,8 @@ function withCurrency(value: string, currency: string): string {
 
 function EscalateResults({ result }: { result: EscalatePreviewResponse }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const setActiveProject = useProjectContextStore((s) => s.setActiveProject);
 
   if (result.item_count === 0) {
     return (
@@ -1002,39 +1007,71 @@ function EscalateResults({ result }: { result: EscalatePreviewResponse }) {
   }
 
   const skipped = result.item_count - result.escalatable_count;
+  // Deep-link target for the "Open estimate" exit: only in project scope, and
+  // only when the response actually carries the project id (const so the
+  // truthiness narrowing below holds inside the click handler).
+  const projectId = result.scope === 'project' ? result.project_id : null;
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        {result.scope === 'project' && result.project_name && (
-          <Badge variant="blue" size="sm">
-            {t('price_index.escalate_scope_project_badge', {
-              defaultValue: 'rates used in {{project}}',
-              project: result.project_name,
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {result.scope === 'project' && result.project_name && (
+            <Badge variant="blue" size="sm">
+              {t('price_index.escalate_scope_project_badge', {
+                defaultValue: 'rates used in {{project}}',
+                project: result.project_name,
+              })}
+            </Badge>
+          )}
+          <Badge variant="success" size="sm">
+            {t('price_index.escalate_count_ok', {
+              defaultValue: '{{count}} escalatable',
+              count: result.escalatable_count,
             })}
           </Badge>
-        )}
-        <Badge variant="success" size="sm">
-          {t('price_index.escalate_count_ok', {
-            defaultValue: '{{count}} escalatable',
-            count: result.escalatable_count,
-          })}
-        </Badge>
-        {skipped > 0 && (
-          <Badge variant="neutral" size="sm">
-            {t('price_index.escalate_count_skipped', {
-              defaultValue: '{{count}} left as-is',
-              count: skipped,
+          {skipped > 0 && (
+            <Badge variant="neutral" size="sm">
+              {t('price_index.escalate_count_skipped', {
+                defaultValue: '{{count}} left as-is',
+                count: skipped,
+              })}
+            </Badge>
+          )}
+          <span className="text-content-tertiary">
+            {t('price_index.escalate_summary_to', {
+              defaultValue: 'to {{period}} using {{series}}',
+              period: result.target_period,
+              series: result.series_name,
             })}
-          </Badge>
-        )}
-        <span className="text-content-tertiary">
-          {t('price_index.escalate_summary_to', {
-            defaultValue: 'to {{period}} using {{series}}',
-            period: result.target_period,
-            series: result.series_name,
-          })}
-        </span>
+          </span>
+        </div>
+
+        {/* Give the read-only result an exit: export the exact rates as CSV,
+            and in project scope jump straight to that project's estimate. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {projectId && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<ArrowRight className="h-4 w-4" />}
+              onClick={() => {
+                setActiveProject(projectId, result.project_name ?? '');
+                navigate(`/boq?project=${encodeURIComponent(projectId)}`);
+              }}
+            >
+              {t('price_index.escalate_open_estimate', { defaultValue: 'Open estimate' })}
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Download className="h-4 w-4" />}
+            onClick={() => downloadEscalatePreviewCsv(result)}
+          >
+            {t('price_index.escalate_export_csv', { defaultValue: 'Export escalated rates (CSV)' })}
+          </Button>
+        </div>
       </div>
 
       {result.project_fallback && (

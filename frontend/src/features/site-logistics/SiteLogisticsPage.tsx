@@ -18,6 +18,13 @@ import {
   MapPin,
   CheckCircle2,
   LogIn,
+  Pencil,
+  Download,
+  Printer,
+  AlertTriangle,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import {
   Button,
@@ -41,8 +48,10 @@ import {
   fetchDeliveries,
   fetchSiteLogisticsStats,
   createGate,
+  updateGate,
   deleteGate,
   createLaydownZone,
+  updateLaydownZone,
   deleteLaydownZone,
   createDelivery,
   updateDelivery,
@@ -54,6 +63,9 @@ import {
   type DeliveryBooking,
   type DeliveryStatus,
   type CreateDeliveryPayload,
+  type UpdateDeliveryPayload,
+  type UpdateGatePayload,
+  type UpdateLaydownZonePayload,
 } from './api';
 
 /* ── Constants & helpers ───────────────────────────────────────────────── */
@@ -132,6 +144,74 @@ function toLocalInput(d: Date): string {
   )}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * Turn a stored ISO timestamp back into the value a ``datetime-local`` input
+ * expects (``YYYY-MM-DDTHH:mm``). Delivery times are stored as the wall-clock
+ * the user booked and shown in UTC (see {@link fmtTime}), so read the UTC parts
+ * here as well, otherwise an editor in another timezone would see the window
+ * shifted when they open the edit form.
+ */
+function isoToInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(
+    d.getUTCDate(),
+  )}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
+/** Minutes since midnight (UTC) for a stored ISO timestamp. */
+function isoMinutesUTC(iso: string): number {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 0;
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+/** Minutes since midnight for a stored ``HH:mm`` gate time, 0 when unparsable. */
+function hhmmToMinutes(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm ?? '');
+  if (!m) return 0;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** Format minutes since midnight as a padded ``HH:mm`` axis label. */
+function fmtHourLabel(totalMin: number): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(totalMin / 60))}:${pad(totalMin % 60)}`;
+}
+
+/** Today's calendar date as the ``YYYY-MM-DD`` a ``date`` input expects. */
+function todayInput(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Shift a ``YYYY-MM-DD`` date string by whole days, staying in that format. */
+function shiftDay(day: string, deltaDays: number): string {
+  const base = day ? new Date(`${day}T00:00:00Z`) : new Date();
+  if (Number.isNaN(base.getTime())) return day;
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${base.getUTCFullYear()}-${pad(base.getUTCMonth() + 1)}-${pad(
+    base.getUTCDate(),
+  )}`;
+}
+
+/** Wrap a value as a quote-escaped CSV cell so commas and quotes stay safe. */
+function csvCell(value: string): string {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+/** Escape a value for safe interpolation into the print window's HTML. */
+function escHtml(value: string): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function normalizeRole(role: string | null | undefined): string {
   const r = (role ?? 'viewer').trim().toLowerCase();
   const aliases: Record<string, string> = {
@@ -181,22 +261,47 @@ function defaultForm(): DeliveryFormState {
   };
 }
 
+/** Seed the delivery form from an existing booking for the edit flow. */
+function formFromDelivery(d: DeliveryBooking): DeliveryFormState {
+  return {
+    gate_id: d.gate_id ?? '',
+    supplier_name: d.supplier_name ?? '',
+    contact_name: d.contact_name ?? '',
+    contact_phone: d.contact_phone ?? '',
+    vehicle_type: d.vehicle_type ?? '',
+    materials_desc: d.materials_desc ?? '',
+    window_start: isoToInput(d.window_start),
+    window_end: isoToInput(d.window_end),
+    po_ref: d.po_ref ?? '',
+    notes: d.notes ?? '',
+  };
+}
+
 function BookDeliveryModal({
   gates,
+  initial,
   onClose,
   onSubmit,
   isPending,
   errorMessage,
 }: {
   gates: Gate[];
+  /** When present the modal edits this booking instead of creating a new one. */
+  initial?: DeliveryBooking | null;
   onClose: () => void;
   onSubmit: (form: DeliveryFormState) => void;
   isPending: boolean;
   errorMessage?: string | null;
 }) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<DeliveryFormState>(defaultForm);
+  const isEdit = !!initial;
+  const [form, setForm] = useState<DeliveryFormState>(() =>
+    initial ? formFromDelivery(initial) : defaultForm(),
+  );
   const [touched, setTouched] = useState(false);
+  const title = isEdit
+    ? t('siteLogistics.edit_delivery', { defaultValue: 'Edit delivery' })
+    : t('siteLogistics.book_delivery', { defaultValue: 'Book delivery' });
 
   const set = <K extends keyof DeliveryFormState>(key: K, value: DeliveryFormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -220,12 +325,10 @@ function BookDeliveryModal({
       <div
         className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto"
         role="dialog"
-        aria-label={t('siteLogistics.book_delivery', { defaultValue: 'Book delivery' })}
+        aria-label={title}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
-          <h2 className="text-lg font-semibold text-content-primary">
-            {t('siteLogistics.book_delivery', { defaultValue: 'Book delivery' })}
-          </h2>
+          <h2 className="text-lg font-semibold text-content-primary">{title}</h2>
           <button
             onClick={onClose}
             aria-label={t('common.close', { defaultValue: 'Close' })}
@@ -423,10 +526,16 @@ function BookDeliveryModal({
           <Button variant="primary" onClick={submit} disabled={isPending || !canSubmit}>
             {isPending ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent mr-2 shrink-0" />
+            ) : isEdit ? (
+              <Check size={16} className="mr-1.5 shrink-0" />
             ) : (
               <Truck size={16} className="mr-1.5 shrink-0" />
             )}
-            <span>{t('siteLogistics.book_delivery', { defaultValue: 'Book delivery' })}</span>
+            <span>
+              {isEdit
+                ? t('siteLogistics.save_changes', { defaultValue: 'Save changes' })
+                : t('siteLogistics.book_delivery', { defaultValue: 'Book delivery' })}
+            </span>
           </Button>
         </div>
       </div>
@@ -446,6 +555,7 @@ function DeliveryRow({
   onApprove,
   onReject,
   onAdvance,
+  onEdit,
   onDelete,
 }: {
   delivery: DeliveryBooking;
@@ -457,6 +567,7 @@ function DeliveryRow({
   onApprove: (d: DeliveryBooking) => void;
   onReject: (d: DeliveryBooking) => void;
   onAdvance: (d: DeliveryBooking, status: DeliveryStatus) => void;
+  onEdit: (d: DeliveryBooking) => void;
   onDelete: (d: DeliveryBooking) => void;
 }) {
   const { t } = useTranslation();
@@ -467,7 +578,7 @@ function DeliveryRow({
       {/* Time window */}
       <div className="flex items-center gap-1.5 w-32 shrink-0 font-mono text-sm text-content-secondary tabular-nums">
         <Clock size={13} className="text-content-tertiary shrink-0" />
-        {fmtTime(delivery.window_start)}–{fmtTime(delivery.window_end)}
+        {fmtTime(delivery.window_start)}-{fmtTime(delivery.window_end)}
       </div>
 
       {/* Supplier + materials */}
@@ -540,6 +651,17 @@ function DeliveryRow({
             {t('siteLogistics.action_mark_completed', { defaultValue: 'Mark completed' })}
           </Button>
         )}
+        {canEdit && (
+          <button
+            onClick={() => onEdit(delivery)}
+            disabled={busy}
+            aria-label={t('siteLogistics.action_edit', { defaultValue: 'Edit delivery' })}
+            title={t('siteLogistics.action_edit', { defaultValue: 'Edit delivery' })}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors disabled:opacity-40"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
         {canDelete && (
           <button
             onClick={() => onDelete(delivery)}
@@ -561,10 +683,12 @@ function DeliveryBoard({
   projectId,
   gates,
   onBook,
+  onEdit,
 }: {
   projectId: string;
   gates: Gate[];
   onBook: () => void;
+  onEdit: (d: DeliveryBooking) => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -799,6 +923,7 @@ function DeliveryBoard({
                     onApprove={(x) => decisionMut.mutate({ action: 'approve', id: x.id })}
                     onReject={(x) => decisionMut.mutate({ action: 'reject', id: x.id })}
                     onAdvance={(x, status) => advanceMut.mutate({ id: x.id, status })}
+                    onEdit={onEdit}
                     onDelete={(x) => deleteMut.mutate(x.id)}
                   />
                 ))}
@@ -851,6 +976,22 @@ function GatesPanel({ projectId }: { projectId: string }) {
       addToast({
         type: 'error',
         title: t('siteLogistics.gate_add_failed', { defaultValue: 'Could not add gate' }),
+        message: getErrorMessage(e),
+      });
+    },
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateGatePayload }) => updateGate(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['site-logistics-gates'] });
+      qc.invalidateQueries({ queryKey: ['site-logistics-stats'] });
+      addToast({ type: 'success', title: t('siteLogistics.gate_updated', { defaultValue: 'Gate updated' }) });
+    },
+    onError: (e: unknown) => {
+      addToast({
+        type: 'error',
+        title: t('siteLogistics.gate_update_failed', { defaultValue: 'Could not update gate' }),
         message: getErrorMessage(e),
       });
     },
@@ -953,9 +1094,12 @@ function GatesPanel({ projectId }: { projectId: string }) {
             <GateCard
               key={g.id}
               gate={g}
+              canEdit={canEdit}
               canDelete={canDelete}
+              onSave={(data) => updateMut.mutateAsync({ id: g.id, data })}
               onDelete={() => deleteMut.mutate(g.id)}
               busy={deleteMut.isPending}
+              savePending={updateMut.isPending}
             />
           ))}
         </div>
@@ -966,16 +1110,38 @@ function GatesPanel({ projectId }: { projectId: string }) {
 
 function GateCard({
   gate,
+  canEdit,
   canDelete,
+  onSave,
   onDelete,
   busy,
+  savePending,
 }: {
   gate: Gate;
+  canEdit: boolean;
   canDelete: boolean;
+  onSave: (data: UpdateGatePayload) => Promise<unknown>;
   onDelete: () => void;
   busy: boolean;
+  savePending: boolean;
 }) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <GateEditForm
+        gate={gate}
+        pending={savePending}
+        onCancel={() => setEditing(false)}
+        onSubmit={async (data) => {
+          await onSave(data);
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
   return (
     <Card padding="none" className="p-4 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
@@ -983,20 +1149,33 @@ function GateCard({
           <DoorOpen size={16} className="text-oe-blue shrink-0" />
           <span className="text-sm font-semibold text-content-primary truncate">{gate.name}</span>
         </div>
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            disabled={busy}
-            aria-label={t('common.delete', { defaultValue: 'Delete' })}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-semantic-error/10 hover:text-semantic-error transition-colors disabled:opacity-40"
-          >
-            <Trash2 size={13} />
-          </button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {canEdit && (
+            <button
+              onClick={() => setEditing(true)}
+              disabled={busy}
+              aria-label={t('siteLogistics.edit_gate', { defaultValue: 'Edit gate' })}
+              title={t('siteLogistics.edit_gate', { defaultValue: 'Edit gate' })}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors disabled:opacity-40"
+            >
+              <Pencil size={13} />
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={onDelete}
+              disabled={busy}
+              aria-label={t('common.delete', { defaultValue: 'Delete' })}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-semantic-error/10 hover:text-semantic-error transition-colors disabled:opacity-40"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-1.5 text-xs text-content-secondary">
         <Clock size={12} className="text-content-tertiary" />
-        {gate.open_time} – {gate.close_time}
+        {gate.open_time} - {gate.close_time}
       </div>
       <div className="text-xs text-content-tertiary">
         {t('siteLogistics.capacity_slots', {
@@ -1005,6 +1184,114 @@ function GateCard({
         })}
       </div>
       {gate.notes && <p className="text-2xs text-content-tertiary">{gate.notes}</p>}
+    </Card>
+  );
+}
+
+function GateEditForm({
+  gate,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  gate: Gate;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (data: UpdateGatePayload) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(gate.name);
+  const [openTime, setOpenTime] = useState(gate.open_time);
+  const [closeTime, setCloseTime] = useState(gate.close_time);
+  const [capacity, setCapacity] = useState(gate.capacity_per_slot);
+  const [notes, setNotes] = useState(gate.notes ?? '');
+
+  const nameError = name.trim().length === 0;
+  const hoursError = !!openTime && !!closeTime && closeTime <= openTime;
+  const canSave = !nameError && !hoursError && !pending;
+
+  const submit = async () => {
+    if (!canSave) return;
+    try {
+      await onSubmit({
+        name: name.trim(),
+        open_time: openTime,
+        close_time: closeTime,
+        capacity_per_slot: capacity,
+        notes: notes.trim(),
+      });
+    } catch {
+      /* the panel surfaces the error toast; stay in edit mode so the user can retry */
+    }
+  };
+
+  return (
+    <Card padding="none" className="p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-content-primary">
+        <Pencil size={14} className="text-oe-blue shrink-0" />
+        {t('siteLogistics.edit_gate', { defaultValue: 'Edit gate' })}
+      </div>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t('siteLogistics.gate_name_placeholder', { defaultValue: 'Gate name' })}
+        aria-label={t('siteLogistics.gate_name', { defaultValue: 'Gate name' })}
+        className={clsx(inputCls, nameError && 'border-semantic-error')}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex items-center gap-1.5 text-xs text-content-tertiary">
+          <span className="shrink-0">{t('siteLogistics.open', { defaultValue: 'Open' })}</span>
+          <input
+            type="time"
+            value={openTime}
+            onChange={(e) => setOpenTime(e.target.value)}
+            className={inputCls}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-content-tertiary">
+          <span className="shrink-0">{t('siteLogistics.close', { defaultValue: 'Close' })}</span>
+          <input
+            type="time"
+            value={closeTime}
+            onChange={(e) => setCloseTime(e.target.value)}
+            className={inputCls}
+          />
+        </label>
+      </div>
+      <label className="flex items-center gap-1.5 text-xs text-content-tertiary">
+        <span className="shrink-0">{t('siteLogistics.slots', { defaultValue: 'Slots' })}</span>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={capacity}
+          onChange={(e) => setCapacity(Math.max(1, Number(e.target.value) || 1))}
+          className={inputCls}
+        />
+      </label>
+      <input
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder={t('siteLogistics.gate_notes_placeholder', { defaultValue: 'Notes (optional)' })}
+        aria-label={t('siteLogistics.field_notes', { defaultValue: 'Notes' })}
+        className={inputCls}
+      />
+      {hoursError && (
+        <p className="text-xs text-semantic-error">
+          {t('siteLogistics.gate_hours_error', {
+            defaultValue: 'Closing time must be after opening time',
+          })}
+        </p>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={pending}>
+          {t('common.cancel', { defaultValue: 'Cancel' })}
+        </Button>
+        <Button variant="primary" size="sm" onClick={submit} disabled={!canSave}>
+          <Check size={13} className="mr-1" />
+          {t('common.save', { defaultValue: 'Save' })}
+        </Button>
+      </div>
     </Card>
   );
 }
@@ -1049,6 +1336,25 @@ function LaydownPanel({ projectId }: { projectId: string }) {
       addToast({
         type: 'error',
         title: t('siteLogistics.zone_add_failed', { defaultValue: 'Could not add zone' }),
+        message: getErrorMessage(e),
+      });
+    },
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateLaydownZonePayload }) =>
+      updateLaydownZone(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['site-logistics-zones'] });
+      addToast({
+        type: 'success',
+        title: t('siteLogistics.zone_updated', { defaultValue: 'Laydown zone updated' }),
+      });
+    },
+    onError: (e: unknown) => {
+      addToast({
+        type: 'error',
+        title: t('siteLogistics.zone_update_failed', { defaultValue: 'Could not update zone' }),
         message: getErrorMessage(e),
       });
     },
@@ -1131,9 +1437,12 @@ function LaydownPanel({ projectId }: { projectId: string }) {
             <LaydownCard
               key={z.id}
               zone={z}
+              canEdit={canEdit}
               canDelete={canDelete}
+              onSave={(data) => updateMut.mutateAsync({ id: z.id, data })}
               onDelete={() => deleteMut.mutate(z.id)}
               busy={deleteMut.isPending}
+              savePending={updateMut.isPending}
             />
           ))}
         </div>
@@ -1144,16 +1453,38 @@ function LaydownPanel({ projectId }: { projectId: string }) {
 
 function LaydownCard({
   zone,
+  canEdit,
   canDelete,
+  onSave,
   onDelete,
   busy,
+  savePending,
 }: {
   zone: LaydownZone;
+  canEdit: boolean;
   canDelete: boolean;
+  onSave: (data: UpdateLaydownZonePayload) => Promise<unknown>;
   onDelete: () => void;
   busy: boolean;
+  savePending: boolean;
 }) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <LaydownEditForm
+        zone={zone}
+        pending={savePending}
+        onCancel={() => setEditing(false)}
+        onSubmit={async (data) => {
+          await onSave(data);
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
   return (
     <Card padding="none" className="p-4 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
@@ -1161,16 +1492,29 @@ function LaydownCard({
           <MapPin size={16} className="text-emerald-600 shrink-0" />
           <span className="text-sm font-semibold text-content-primary truncate">{zone.name}</span>
         </div>
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            disabled={busy}
-            aria-label={t('common.delete', { defaultValue: 'Delete' })}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-semantic-error/10 hover:text-semantic-error transition-colors disabled:opacity-40"
-          >
-            <Trash2 size={13} />
-          </button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {canEdit && (
+            <button
+              onClick={() => setEditing(true)}
+              disabled={busy}
+              aria-label={t('siteLogistics.edit_zone', { defaultValue: 'Edit zone' })}
+              title={t('siteLogistics.edit_zone', { defaultValue: 'Edit zone' })}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors disabled:opacity-40"
+            >
+              <Pencil size={13} />
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={onDelete}
+              disabled={busy}
+              aria-label={t('common.delete', { defaultValue: 'Delete' })}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-semantic-error/10 hover:text-semantic-error transition-colors disabled:opacity-40"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
       {zone.capacity_desc && (
         <div className="text-xs text-content-secondary">
@@ -1182,9 +1526,572 @@ function LaydownCard({
   );
 }
 
+function LaydownEditForm({
+  zone,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  zone: LaydownZone;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (data: UpdateLaydownZonePayload) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(zone.name);
+  const [capacityDesc, setCapacityDesc] = useState(zone.capacity_desc ?? '');
+  const [usageNote, setUsageNote] = useState(zone.usage_note ?? '');
+
+  const nameError = name.trim().length === 0;
+  const canSave = !nameError && !pending;
+
+  const submit = async () => {
+    if (!canSave) return;
+    try {
+      await onSubmit({
+        name: name.trim(),
+        capacity_desc: capacityDesc.trim(),
+        usage_note: usageNote.trim(),
+      });
+    } catch {
+      /* the panel surfaces the error toast; stay in edit mode so the user can retry */
+    }
+  };
+
+  return (
+    <Card padding="none" className="p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-content-primary">
+        <Pencil size={14} className="text-emerald-600 shrink-0" />
+        {t('siteLogistics.edit_zone', { defaultValue: 'Edit zone' })}
+      </div>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t('siteLogistics.zone_name_placeholder', { defaultValue: 'Zone name' })}
+        aria-label={t('siteLogistics.zone_name', { defaultValue: 'Zone name' })}
+        className={clsx(inputCls, nameError && 'border-semantic-error')}
+      />
+      <input
+        value={capacityDesc}
+        onChange={(e) => setCapacityDesc(e.target.value)}
+        placeholder={t('siteLogistics.zone_capacity_placeholder', {
+          defaultValue: 'Capacity e.g. 200 m2 / 40 t',
+        })}
+        aria-label={t('siteLogistics.zone_capacity', { defaultValue: 'Capacity' })}
+        className={inputCls}
+      />
+      <input
+        value={usageNote}
+        onChange={(e) => setUsageNote(e.target.value)}
+        placeholder={t('siteLogistics.zone_usage_placeholder', {
+          defaultValue: 'Usage note e.g. rebar only',
+        })}
+        aria-label={t('siteLogistics.zone_usage', { defaultValue: 'Usage note' })}
+        className={inputCls}
+      />
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={pending}>
+          {t('common.cancel', { defaultValue: 'Cancel' })}
+        </Button>
+        <Button variant="primary" size="sm" onClick={submit} disabled={!canSave}>
+          <Check size={13} className="mr-1" />
+          {t('common.save', { defaultValue: 'Save' })}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Gate timeline (per-day marshal view) ──────────────────────────────── */
+
+const HOUR_PX = 56; // vertical pixels for one hour on the timeline axis
+const TIMELINE_FALLBACK_START = 6 * 60; // sensible working-day window when no
+const TIMELINE_FALLBACK_END = 20 * 60; // gate hours or deliveries anchor the axis
+
+interface LaidOutDelivery {
+  delivery: DeliveryBooking;
+  startMin: number;
+  endMin: number;
+  lane: number;
+  lanes: number;
+}
+
+/**
+ * Pack a gate's deliveries into lanes so overlapping windows sit side by side
+ * instead of hiding one another. ``laneCount`` is the peak concurrency, so a
+ * value above the gate's capacity means the gate is over-booked at some moment.
+ */
+function packLanes(items: DeliveryBooking[]): { laid: LaidOutDelivery[]; laneCount: number } {
+  const sorted = [...items].sort(
+    (a, b) => isoMinutesUTC(a.window_start) - isoMinutesUTC(b.window_start),
+  );
+  const laneEnds: number[] = [];
+  const laid: LaidOutDelivery[] = [];
+  for (const d of sorted) {
+    const startMin = isoMinutesUTC(d.window_start);
+    let endMin = isoMinutesUTC(d.window_end);
+    if (endMin <= startMin) endMin = startMin + 15; // guard zero or malformed windows
+    let lane = laneEnds.findIndex((end) => end <= startMin);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(endMin);
+    } else {
+      laneEnds[lane] = endMin;
+    }
+    laid.push({ delivery: d, startMin, endMin, lane, lanes: 1 });
+  }
+  const laneCount = Math.max(1, laneEnds.length);
+  for (const item of laid) item.lanes = laneCount;
+  return { laid, laneCount };
+}
+
+function OccupancyChip({
+  count,
+  capacity,
+  over,
+}: {
+  count: number;
+  capacity: number | null;
+  over: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-2xs font-semibold tabular-nums shrink-0',
+        over
+          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+          : 'bg-surface-secondary text-content-secondary',
+      )}
+      title={
+        capacity != null
+          ? t('siteLogistics.occupancy_hint', {
+              defaultValue: '{{count}} booked against {{capacity}} per slot',
+              count,
+              capacity,
+            })
+          : t('siteLogistics.occupancy_hint_nogate', {
+              defaultValue: '{{count}} booked with no gate assigned',
+              count,
+            })
+      }
+    >
+      {capacity != null ? `${count}/${capacity}` : count}
+      {over && <AlertTriangle size={10} className="shrink-0" />}
+    </span>
+  );
+}
+
+interface TimelineColumn {
+  gate: Gate | null;
+  items: DeliveryBooking[];
+}
+
+function GateTimeline({
+  projectId,
+  gates,
+  onBook,
+  onEdit,
+}: {
+  projectId: string;
+  gates: Gate[];
+  onBook: () => void;
+  onEdit: (d: DeliveryBooking) => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const role = normalizeRole(useAuthStore((s) => s.userRole));
+  const canEdit = role === 'editor' || role === 'manager' || role === 'admin';
+
+  const [day, setDay] = useState<string>(() => todayInput());
+
+  const {
+    data: deliveries = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    // Same key shape as the board so an invalidation refreshes both surfaces.
+    queryKey: ['site-logistics-deliveries', projectId, day, '', ''],
+    queryFn: () => fetchDeliveries(projectId, { day: day || undefined }),
+    enabled: !!projectId && !!day,
+  });
+
+  // Rejected bookings are cancelled, so they never occupy a slot on the board.
+  const active = useMemo(() => deliveries.filter((d) => d.status !== 'rejected'), [deliveries]);
+  const sortedActive = useMemo(
+    () => [...active].sort((a, b) => a.window_start.localeCompare(b.window_start)),
+    [active],
+  );
+
+  const gateName = (id: string | null): string =>
+    id
+      ? (gates.find((g) => g.id === id)?.name ?? '')
+      : t('siteLogistics.gate_none', { defaultValue: 'No gate' });
+
+  const columns = useMemo<TimelineColumn[]>(() => {
+    const cols: TimelineColumn[] = gates.map((g) => ({
+      gate: g,
+      items: active.filter((d) => d.gate_id === g.id),
+    }));
+    const unassigned = active.filter((d) => !d.gate_id);
+    if (unassigned.length) cols.push({ gate: null, items: unassigned });
+    return cols;
+  }, [gates, active]);
+
+  const range = useMemo(() => {
+    let start = TIMELINE_FALLBACK_START;
+    let end = TIMELINE_FALLBACK_END;
+    const opens = gates.map((g) => hhmmToMinutes(g.open_time)).filter((n) => n > 0);
+    const closes = gates.map((g) => hhmmToMinutes(g.close_time)).filter((n) => n > 0);
+    if (opens.length) start = Math.min(...opens);
+    if (closes.length) end = Math.max(...closes);
+    // Expand so a delivery booked outside gate hours is never clipped away.
+    for (const d of active) {
+      start = Math.min(start, isoMinutesUTC(d.window_start));
+      end = Math.max(end, isoMinutesUTC(d.window_end));
+    }
+    start = Math.max(0, Math.floor(start / 60) * 60);
+    end = Math.min(24 * 60, Math.ceil(end / 60) * 60);
+    if (end - start < 60) end = Math.min(24 * 60, start + 60);
+    return { start, end };
+  }, [gates, active]);
+
+  const hours = useMemo(() => {
+    const out: number[] = [];
+    for (let m = range.start; m <= range.end; m += 60) out.push(m);
+    return out;
+  }, [range]);
+
+  const totalHeight = ((range.end - range.start) / 60) * HOUR_PX;
+
+  const exportCsv = () => {
+    if (!sortedActive.length) return;
+    const headers = [
+      t('siteLogistics.col_date', { defaultValue: 'Date' }),
+      t('siteLogistics.col_start', { defaultValue: 'Start' }),
+      t('siteLogistics.col_end', { defaultValue: 'End' }),
+      t('siteLogistics.field_gate', { defaultValue: 'Gate' }),
+      t('siteLogistics.field_supplier', { defaultValue: 'Supplier' }),
+      t('siteLogistics.field_vehicle', { defaultValue: 'Vehicle type' }),
+      t('siteLogistics.field_materials', { defaultValue: 'Materials' }),
+      t('siteLogistics.col_status', { defaultValue: 'Status' }),
+      t('siteLogistics.field_contact_name', { defaultValue: 'Contact name' }),
+      t('siteLogistics.field_contact_phone', { defaultValue: 'Contact phone' }),
+      t('siteLogistics.field_po', { defaultValue: 'PO reference' }),
+      t('siteLogistics.field_notes', { defaultValue: 'Notes' }),
+    ];
+    const rows = sortedActive.map((d) =>
+      [
+        csvCell(day),
+        csvCell(fmtTime(d.window_start)),
+        csvCell(fmtTime(d.window_end)),
+        csvCell(gateName(d.gate_id)),
+        csvCell(d.supplier_name),
+        csvCell(d.vehicle_type ?? ''),
+        csvCell(d.materials_desc ?? ''),
+        csvCell(t(`siteLogistics.status_${d.status}`, { defaultValue: d.status })),
+        csvCell(d.contact_name ?? ''),
+        csvCell(d.contact_phone ?? ''),
+        csvCell(d.po_ref ?? ''),
+        csvCell(d.notes ?? ''),
+      ].join(','),
+    );
+    const csv = [headers.map(csvCell).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `site-logistics_${day}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printDay = () => {
+    if (!sortedActive.length) return;
+    const title = t('siteLogistics.print_title', { defaultValue: 'Delivery schedule' });
+    const head = [
+      t('siteLogistics.col_start', { defaultValue: 'Start' }),
+      t('siteLogistics.col_end', { defaultValue: 'End' }),
+      t('siteLogistics.field_gate', { defaultValue: 'Gate' }),
+      t('siteLogistics.field_supplier', { defaultValue: 'Supplier' }),
+      t('siteLogistics.field_vehicle', { defaultValue: 'Vehicle type' }),
+      t('siteLogistics.field_materials', { defaultValue: 'Materials' }),
+      t('siteLogistics.col_status', { defaultValue: 'Status' }),
+      t('siteLogistics.field_contact_name', { defaultValue: 'Contact name' }),
+      t('siteLogistics.field_contact_phone', { defaultValue: 'Contact phone' }),
+    ];
+    const headHtml = head.map((h) => `<th>${escHtml(h)}</th>`).join('');
+    const rowsHtml = sortedActive
+      .map((d) => {
+        const cells = [
+          fmtTime(d.window_start),
+          fmtTime(d.window_end),
+          gateName(d.gate_id),
+          d.supplier_name,
+          d.vehicle_type ?? '',
+          d.materials_desc ?? '',
+          t(`siteLogistics.status_${d.status}`, { defaultValue: d.status }),
+          d.contact_name ?? '',
+          d.contact_phone ?? '',
+        ];
+        return `<tr>${cells.map((c) => `<td>${escHtml(c)}</td>`).join('')}</tr>`;
+      })
+      .join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(
+      `${title} ${day}`,
+    )}</title><style>body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 16px;color:#555;font-size:13px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f4f6}@media print{@page{margin:14mm}}</style></head><body><h1>${escHtml(
+      title,
+    )}</h1><p>${escHtml(day)}</p><table><thead><tr>${headHtml}</tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`;
+    const w = window.open('', '_blank', 'width=1024,height=720');
+    if (!w) {
+      addToast({
+        type: 'info',
+        title: t('siteLogistics.print_blocked', {
+          defaultValue: 'Allow pop-ups to print the schedule',
+        }),
+      });
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Day navigation + export actions */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDay((d) => shiftDay(d, -1))}
+            aria-label={t('siteLogistics.prev_day', { defaultValue: 'Previous day' })}
+          >
+            <ChevronLeft size={16} />
+          </Button>
+          <div className="relative">
+            <Calendar
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary pointer-events-none"
+            />
+            <input
+              type="date"
+              value={day}
+              onChange={(e) => setDay(e.target.value || todayInput())}
+              className={inputCls + ' pl-9 w-auto'}
+              aria-label={t('siteLogistics.filter_day', { defaultValue: 'Filter by day' })}
+            />
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDay((d) => shiftDay(d, 1))}
+            aria-label={t('siteLogistics.next_day', { defaultValue: 'Next day' })}
+          >
+            <ChevronRight size={16} />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setDay(todayInput())}>
+            {t('siteLogistics.today', { defaultValue: 'Today' })}
+          </Button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="sm" onClick={exportCsv} disabled={!sortedActive.length}>
+            <Download size={14} className="mr-1" />
+            {t('siteLogistics.export_csv', { defaultValue: 'Export CSV' })}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={printDay} disabled={!sortedActive.length}>
+            <Printer size={14} className="mr-1" />
+            {t('siteLogistics.print', { defaultValue: 'Print' })}
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <SkeletonTable rows={6} columns={4} />
+      ) : isError ? (
+        <RecoveryCard error={error} onRetry={() => refetch()} />
+      ) : columns.length === 0 ? (
+        <EmptyState
+          icon={<CalendarClock size={28} strokeWidth={1.5} />}
+          title={t('siteLogistics.timeline_empty_title', {
+            defaultValue: 'Nothing to show for this day',
+          })}
+          description={t('siteLogistics.timeline_empty_hint', {
+            defaultValue:
+              'Add a gate and book deliveries to see the day laid out gate by gate, hour by hour.',
+          })}
+          action={{
+            label: t('siteLogistics.book_delivery', { defaultValue: 'Book delivery' }),
+            onClick: onBook,
+          }}
+        />
+      ) : (
+        <>
+          <Card padding="none" className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <div className="flex min-w-max">
+                {/* Hour gutter */}
+                <div className="shrink-0 w-14 border-r border-border-light">
+                  <div className="h-10 border-b border-border-light" />
+                  <div className="relative" style={{ height: totalHeight }}>
+                    {hours.map((h) => (
+                      <div
+                        key={h}
+                        className="absolute left-0 right-0 flex justify-end pr-1.5 -translate-y-1/2 text-2xs tabular-nums text-content-tertiary"
+                        style={{ top: ((h - range.start) / 60) * HOUR_PX }}
+                      >
+                        {fmtHourLabel(h)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Gate columns */}
+                {columns.map((col) => {
+                  const { laid, laneCount } = packLanes(col.items);
+                  const capacity = col.gate?.capacity_per_slot ?? null;
+                  const overCapacity = !!col.gate && capacity != null && laneCount > capacity;
+                  const openMin = col.gate ? hhmmToMinutes(col.gate.open_time) : 0;
+                  const closeMin = col.gate ? hhmmToMinutes(col.gate.close_time) : 0;
+                  const closedBands: { top: number; height: number }[] = [];
+                  if (col.gate) {
+                    if (openMin > range.start) {
+                      closedBands.push({
+                        top: 0,
+                        height: ((openMin - range.start) / 60) * HOUR_PX,
+                      });
+                    }
+                    if (closeMin > range.start && closeMin < range.end) {
+                      closedBands.push({
+                        top: ((closeMin - range.start) / 60) * HOUR_PX,
+                        height: ((range.end - closeMin) / 60) * HOUR_PX,
+                      });
+                    }
+                  }
+                  return (
+                    <div
+                      key={col.gate?.id ?? 'unassigned'}
+                      className="shrink-0 w-44 border-r border-border-light last:border-r-0"
+                    >
+                      <div className="h-10 flex items-center justify-between gap-1 px-2 border-b border-border-light bg-surface-secondary/40">
+                        <div className="flex items-center gap-1 min-w-0">
+                          {col.gate ? (
+                            <DoorOpen size={12} className="text-oe-blue shrink-0" />
+                          ) : (
+                            <Truck size={12} className="text-content-tertiary shrink-0" />
+                          )}
+                          <span className="text-xs font-semibold text-content-primary truncate">
+                            {col.gate
+                              ? col.gate.name
+                              : t('siteLogistics.gate_none', { defaultValue: 'No gate' })}
+                          </span>
+                        </div>
+                        <OccupancyChip
+                          count={col.items.length}
+                          capacity={capacity}
+                          over={overCapacity}
+                        />
+                      </div>
+                      <div className="relative bg-surface-primary" style={{ height: totalHeight }}>
+                        {/* Closed-hours shading (before opening / after closing) */}
+                        {closedBands.map((b, i) => (
+                          <div
+                            key={`band-${i}`}
+                            className="absolute left-0 right-0 bg-surface-secondary/50"
+                            style={{ top: b.top, height: Math.max(0, b.height) }}
+                          />
+                        ))}
+                        {/* Hour gridlines */}
+                        {hours.map((h) => (
+                          <div
+                            key={h}
+                            className="absolute left-0 right-0 border-t border-border-light/60"
+                            style={{ top: ((h - range.start) / 60) * HOUR_PX }}
+                          />
+                        ))}
+                        {/* Delivery blocks */}
+                        {laid.map(({ delivery, startMin, endMin, lane, lanes }) => {
+                          const top = ((startMin - range.start) / 60) * HOUR_PX;
+                          const height = Math.max(22, ((endMin - startMin) / 60) * HOUR_PX);
+                          const widthPct = 100 / lanes;
+                          const cfg = STATUS_CONFIG[delivery.status] ?? STATUS_CONFIG.requested;
+                          return (
+                            <button
+                              key={delivery.id}
+                              type="button"
+                              onClick={() => {
+                                if (canEdit) onEdit(delivery);
+                              }}
+                              disabled={!canEdit}
+                              title={`${fmtTime(delivery.window_start)}-${fmtTime(
+                                delivery.window_end,
+                              )}  ${delivery.supplier_name}`}
+                              className={clsx(
+                                'absolute rounded-md border border-black/5 px-1.5 py-1 text-left overflow-hidden',
+                                cfg.cls,
+                                canEdit
+                                  ? 'cursor-pointer hover:shadow-md hover:ring-1 hover:ring-oe-blue/40 transition-shadow'
+                                  : 'cursor-default',
+                              )}
+                              style={{
+                                top,
+                                height,
+                                left: `calc(${lane * widthPct}% + 2px)`,
+                                width: `calc(${widthPct}% - 4px)`,
+                              }}
+                            >
+                              <span className="block text-2xs font-mono tabular-nums leading-tight opacity-80">
+                                {fmtTime(delivery.window_start)}
+                              </span>
+                              <span className="block text-2xs font-semibold leading-tight truncate">
+                                {delivery.supplier_name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+
+          {/* Legend + empty-day hint */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-2xs text-content-tertiary">
+            <span className="inline-flex items-center gap-1">
+              <AlertTriangle size={11} className="text-amber-600" />
+              {t('siteLogistics.timeline_legend_over', {
+                defaultValue: 'Amber occupancy means the gate is over capacity at some point',
+              })}
+            </span>
+            {(['requested', 'approved', 'arrived', 'completed'] as DeliveryStatus[]).map((s) => (
+              <span key={s} className="inline-flex items-center gap-1">
+                <span className={clsx('h-2.5 w-2.5 rounded-sm', STATUS_CONFIG[s].cls)} />
+                {t(`siteLogistics.status_${s}`, { defaultValue: STATUS_CONFIG[s].label })}
+              </span>
+            ))}
+          </div>
+          {active.length === 0 && (
+            <p className="text-xs text-content-tertiary">
+              {t('siteLogistics.timeline_no_day', {
+                defaultValue: 'No deliveries booked for this day. Use the arrows to check another day.',
+              })}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Main page ─────────────────────────────────────────────────────────── */
 
-type TabKey = 'deliveries' | 'gates' | 'laydown';
+type TabKey = 'deliveries' | 'timeline' | 'gates' | 'laydown';
 
 export function SiteLogisticsPage() {
   const { t } = useTranslation();
@@ -1194,6 +2101,9 @@ export function SiteLogisticsPage() {
 
   const [tab, setTab] = useState<TabKey>('deliveries');
   const [showBook, setShowBook] = useState(false);
+  // The delivery being edited (shared by the board and the gate timeline so a
+  // marshal can fix a booking from whichever view they are looking at).
+  const [editing, setEditing] = useState<DeliveryBooking | null>(null);
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -1255,11 +2165,59 @@ export function SiteLogisticsPage() {
     });
   };
 
+  const editMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateDeliveryPayload }) =>
+      updateDelivery(id, data),
+    onSuccess: (updated) => {
+      setEditing(null);
+      qc.invalidateQueries({ queryKey: ['site-logistics-deliveries'] });
+      qc.invalidateQueries({ queryKey: ['site-logistics-stats'] });
+      addToast({
+        type: 'success',
+        title: t('siteLogistics.delivery_updated', { defaultValue: 'Delivery updated' }),
+        message: updated?.supplier_name,
+      });
+    },
+    onError: (e: unknown) => {
+      addToast({
+        type: 'error',
+        title: t('siteLogistics.update_failed', { defaultValue: 'Could not update delivery' }),
+        message: getErrorMessage(e),
+      });
+    },
+  });
+
+  // Editing sends every editable field (empty strings clear an optional field),
+  // and leaves status untouched so a re-timed booking keeps its approval state.
+  const handleEditSubmit = (form: DeliveryFormState) => {
+    if (!editing) return;
+    editMut.mutate({
+      id: editing.id,
+      data: {
+        gate_id: form.gate_id || null,
+        supplier_name: form.supplier_name.trim(),
+        contact_name: form.contact_name.trim(),
+        contact_phone: form.contact_phone.trim(),
+        vehicle_type: form.vehicle_type.trim(),
+        materials_desc: form.materials_desc.trim(),
+        window_start: form.window_start,
+        window_end: form.window_end,
+        po_ref: form.po_ref.trim(),
+        notes: form.notes.trim(),
+      },
+    });
+  };
+
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     {
       key: 'deliveries',
       label: t('siteLogistics.tab_deliveries', { defaultValue: 'Deliveries' }),
       icon: <Truck size={14} />,
+    },
+    {
+      key: 'timeline',
+      label: t('siteLogistics.tab_timeline', { defaultValue: 'Gate timeline' }),
+      icon: <CalendarClock size={14} />,
     },
     {
       key: 'gates',
@@ -1388,7 +2346,19 @@ export function SiteLogisticsPage() {
       {!projectId ? (
         <RequiresProject>{null}</RequiresProject>
       ) : tab === 'deliveries' ? (
-        <DeliveryBoard projectId={projectId} gates={gates} onBook={() => setShowBook(true)} />
+        <DeliveryBoard
+          projectId={projectId}
+          gates={gates}
+          onBook={() => setShowBook(true)}
+          onEdit={setEditing}
+        />
+      ) : tab === 'timeline' ? (
+        <GateTimeline
+          projectId={projectId}
+          gates={gates}
+          onBook={() => setShowBook(true)}
+          onEdit={setEditing}
+        />
       ) : tab === 'gates' ? (
         <GatesPanel projectId={projectId} />
       ) : (
@@ -1406,6 +2376,21 @@ export function SiteLogisticsPage() {
           onSubmit={handleBook}
           isPending={bookMut.isPending}
           errorMessage={bookMut.error ? getErrorMessage(bookMut.error) : null}
+        />
+      )}
+
+      {/* Edit delivery modal (reuses the booking form, prefilled) */}
+      {editing && projectId && (
+        <BookDeliveryModal
+          gates={gates}
+          initial={editing}
+          onClose={() => {
+            editMut.reset();
+            setEditing(null);
+          }}
+          onSubmit={handleEditSubmit}
+          isPending={editMut.isPending}
+          errorMessage={editMut.error ? getErrorMessage(editMut.error) : null}
         />
       )}
     </div>

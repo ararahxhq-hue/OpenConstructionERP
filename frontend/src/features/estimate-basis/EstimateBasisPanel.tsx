@@ -6,17 +6,21 @@
 // coverage check), lets the estimator edit and toggle each line, and exports the
 // result as Markdown to attach to a proposal.
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  ClipboardList,
   Download,
   FileText,
   Loader2,
   Plus,
   RefreshCw,
   Save,
+  Send,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, EmptyState, ErrorState } from '@/shared/ui';
@@ -83,6 +87,7 @@ const CATEGORY_OF: Record<CategoryKey, QualificationCategory> = {
 export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: EstimateBasisPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -229,6 +234,17 @@ export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: Est
     return <ErrorState title={getErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} />;
   }
 
+  // Initial fetch: show a loader so the panel is never a bare header with
+  // disabled buttons while the document list is still on the wire.
+  if (listQuery.isLoading && !hasDocuments) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border-light px-3 py-4 text-sm text-content-tertiary">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        {t('estimateBasis.loadingList', { defaultValue: 'Loading basis of estimate...' })}
+      </div>
+    );
+  }
+
   if (!hasDocuments && !generating && !listQuery.isLoading) {
     return (
       <EmptyState
@@ -289,6 +305,13 @@ export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: Est
             {t('estimateBasis.export', { defaultValue: 'Export' })}
           </Button>
           <Button
+            variant="secondary"
+            onClick={() => navigate('/tendering')}
+            icon={<Send className="h-4 w-4" aria-hidden />}
+          >
+            {t('estimateBasis.openTendering', { defaultValue: 'Open Tendering' })}
+          </Button>
+          <Button
             onClick={() => saveMutation.mutate()}
             disabled={!dirty || saveMutation.isPending}
             icon={
@@ -309,11 +332,16 @@ export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: Est
       )}
       {saveMutation.isError && <ErrorState title={getErrorMessage(saveMutation.error)} />}
 
-      {docQuery.isLoading && (
+      {(docQuery.isLoading || (generating && !draft)) && (
         <div className="flex items-center gap-2 rounded-lg border border-border-light px-3 py-4 text-sm text-content-tertiary">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          {t('estimateBasis.loading', { defaultValue: 'Loading basis of estimate...' })}
+          {generating
+            ? t('estimateBasis.drafting', { defaultValue: 'Drafting basis of estimate...' })
+            : t('estimateBasis.loading', { defaultValue: 'Loading basis of estimate...' })}
         </div>
+      )}
+      {docQuery.isError && (
+        <ErrorState title={getErrorMessage(docQuery.error)} onRetry={() => docQuery.refetch()} />
       )}
 
       {loaded && draft && (
@@ -325,7 +353,7 @@ export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: Est
             className="w-full rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm font-medium text-content-primary"
           />
 
-          <CoverageStrip coverage={loaded.coverage} currency={currency} />
+          <CoverageStrip coverage={loaded.coverage} currency={currency} boqId={boqId} />
 
           {CATEGORY_KEYS.map((key) => (
             <Section
@@ -341,7 +369,6 @@ export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: Est
               onAdd={() => addItem(key)}
               addLabel={t('estimateBasis.addLine', { defaultValue: 'Add line' })}
               emptyLabel={t('estimateBasis.sectionEmpty', { defaultValue: 'No lines yet.' })}
-              disabledHint={t('estimateBasis.disabledHint', { defaultValue: 'Excluded from export' })}
             />
           ))}
 
@@ -384,8 +411,22 @@ export function EstimateBasisPanel({ projectId, boqId, currency, baseDate }: Est
 
 // ── Coverage strip ───────────────────────────────────────────────────────────
 
-function CoverageStrip({ coverage, currency }: { coverage: CoverageSummary; currency?: string }) {
+function CoverageStrip({
+  coverage,
+  currency,
+  boqId,
+}: {
+  coverage: CoverageSummary;
+  currency?: string;
+  boqId?: string | null;
+}) {
   const { t } = useTranslation();
+  // A coverage gap should be one click from where it gets fixed: the bill of
+  // quantities. Deep-link to the scoped BOQ when we have its id, else the list.
+  const boqHref = boqId ? `/boq/${boqId}` : '/boq';
+  const openBoqTitle = t('estimateBasis.coverage.openBoq', {
+    defaultValue: 'Open in the bill of quantities',
+  });
   const flags = useMemo(() => {
     const parts: string[] = [];
     if (coverage.zero_rate_positions > 0)
@@ -430,14 +471,16 @@ function CoverageStrip({ coverage, currency }: { coverage: CoverageSummary; curr
           {coverage.present_trades.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {coverage.present_trades.map((tr) => (
-                <span
+                <Link
                   key={tr.code}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary px-2 py-0.5 text-xs text-content-secondary"
+                  to={boqHref}
+                  title={openBoqTitle}
+                  className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary px-2 py-0.5 text-xs text-content-secondary transition-colors hover:border-oe-blue hover:bg-oe-blue-subtle hover:text-oe-blue-text"
                 >
                   <span className="font-medium text-content-primary">{tr.label}</span>
                   <span className="text-content-tertiary">· {tr.position_count}</span>
                   <span className="tabular-nums">· {formatCurrency(tr.total, currency)}</span>
-                </span>
+                </Link>
               ))}
             </div>
           ) : (
@@ -455,22 +498,57 @@ function CoverageStrip({ coverage, currency }: { coverage: CoverageSummary; curr
             </div>
             <div className="flex flex-wrap gap-1.5">
               {coverage.absent_trades.map((tr) => (
-                <span
+                <Link
                   key={tr.code}
-                  className="rounded-full border border-semantic-warning/30 bg-semantic-warning/10 px-2 py-0.5 text-xs text-content-secondary"
+                  to={boqHref}
+                  title={openBoqTitle}
+                  className="rounded-full border border-semantic-warning/30 bg-semantic-warning/10 px-2 py-0.5 text-xs text-content-secondary transition-colors hover:border-semantic-warning hover:bg-semantic-warning/20"
                 >
                   {tr.label}
-                </span>
+                </Link>
               ))}
             </div>
           </div>
         )}
 
         {flags.length > 0 && (
-          <div className="text-xs text-content-tertiary">
-            {t('estimateBasis.coverage.flags', { defaultValue: 'Flags' })}: {flags.join('  ·  ')}
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-content-tertiary">
+            <span>{t('estimateBasis.coverage.flags', { defaultValue: 'Flags' })}:</span>
+            {flags.map((f, i) => (
+              <Fragment key={f}>
+                {i > 0 && (
+                  <span aria-hidden className="text-content-quaternary">
+                    ·
+                  </span>
+                )}
+                <Link
+                  to={boqHref}
+                  title={openBoqTitle}
+                  className="rounded text-oe-blue-text underline-offset-2 hover:underline"
+                >
+                  {f}
+                </Link>
+              </Fragment>
+            ))}
           </div>
         )}
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border-light pt-3 text-xs">
+          <Link
+            to={boqHref}
+            className="inline-flex items-center gap-1 font-medium text-oe-blue-text hover:underline"
+          >
+            <ClipboardList className="h-3.5 w-3.5" aria-hidden />
+            {openBoqTitle}
+          </Link>
+          <Link
+            to="/validation"
+            className="inline-flex items-center gap-1 font-medium text-oe-blue-text hover:underline"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+            {t('estimateBasis.coverage.reviewValidation', { defaultValue: 'Review in Validation' })}
+          </Link>
+        </div>
       </CardContent>
     </Card>
   );
@@ -487,7 +565,6 @@ interface SectionProps {
   onAdd: () => void;
   addLabel: string;
   emptyLabel: string;
-  disabledHint: string;
 }
 
 function Section({
@@ -499,8 +576,8 @@ function Section({
   onAdd,
   addLabel,
   emptyLabel,
-  disabledHint,
 }: SectionProps) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardHeader
@@ -524,12 +601,15 @@ function Section({
               checked={it.enabled}
               onChange={() => onToggle(it.id)}
               className="mt-2 h-4 w-4 shrink-0 rounded border-border-light"
-              aria-label={disabledHint}
+              aria-label={t('estimateBasis.includeLine', {
+                defaultValue: 'Include this line in the export',
+              })}
             />
             <textarea
               value={it.text}
               onChange={(e) => onText(it.id, e.target.value)}
               rows={1}
+              aria-label={t('estimateBasis.lineText', { defaultValue: 'Line text' })}
               className={`min-h-[2.25rem] flex-1 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-sm text-content-primary ${
                 it.enabled ? '' : 'text-content-tertiary line-through'
               }`}
@@ -542,8 +622,8 @@ function Section({
             <button
               type="button"
               onClick={() => onRemove(it.id)}
-              className="mt-1.5 shrink-0 rounded p-1 text-content-tertiary hover:text-semantic-danger"
-              aria-label="remove"
+              className="mt-1.5 shrink-0 rounded p-1 text-content-tertiary hover:text-semantic-error"
+              aria-label={t('estimateBasis.removeLine', { defaultValue: 'Remove line' })}
             >
               <Trash2 className="h-4 w-4" aria-hidden />
             </button>

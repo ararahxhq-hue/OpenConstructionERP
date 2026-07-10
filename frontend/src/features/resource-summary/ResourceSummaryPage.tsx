@@ -11,9 +11,10 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { LucideIcon } from 'lucide-react';
-import { Boxes, Download, HardHat, Layers, Package, ShoppingCart, Truck, Users, Wrench } from 'lucide-react';
+import { Boxes, Download, FilePlus, HardHat, Layers, Package, ShoppingCart, Truck, Users, Wrench } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, PageHeader, SkeletonTable, StatCard, TabBar, tabIds } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { QuantityDisplay } from '@/shared/ui/QuantityDisplay';
@@ -314,6 +315,7 @@ interface BuyListViewProps {
 
 function BuyListView({ query }: BuyListViewProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const data = query.data;
   const currency = data?.currency?.trim() || undefined;
 
@@ -350,6 +352,22 @@ function BuyListView({ query }: BuyListViewProps) {
     );
   }
 
+  // F4 interop: hand the buy-list to Procurement as a pre-filled draft PO.
+  // Only description / unit / quantity travel; the buyer picks a supplier and
+  // negotiates rates in the existing PO-create flow. Quantities are the exact
+  // Decimal strings the backend served - passed through verbatim, never float.
+  const handleCreateDraftPo = () => {
+    navigate('/procurement', {
+      state: {
+        buyList: data.items.map((item) => ({
+          description: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+        })),
+      },
+    });
+  };
+
   return (
     <>
       <Card padding="sm">
@@ -363,9 +381,19 @@ function BuyListView({ query }: BuyListViewProps) {
               {t('resourceSummary.buyList.itemCount', { defaultValue: '{{count}} materials', count: data.item_count })}
             </span>
           </div>
-          <span className="font-semibold tabular-nums text-content-primary">
-            <MoneyDisplay amount={data.total_cost} currency={currency} />
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="font-semibold tabular-nums text-content-primary">
+              <MoneyDisplay amount={data.total_cost} currency={currency} />
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<FilePlus size={14} />}
+              onClick={handleCreateDraftPo}
+            >
+              {t('resourceSummary.buyList.createDraftPo', { defaultValue: 'Create draft PO' })}
+            </Button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

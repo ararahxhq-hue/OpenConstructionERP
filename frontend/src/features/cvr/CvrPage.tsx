@@ -12,7 +12,7 @@
  * We never do arithmetic that assumes a JS number on a wire value.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
@@ -27,8 +27,17 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Plus, Trash2, Lock, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, RecoveryCard, SkeletonTable } from '@/shared/ui';
+import { Plus, Trash2, Lock, TrendingUp, TrendingDown, AlertTriangle, Pencil, Download } from 'lucide-react';
+import {
+  Button,
+  Card,
+  Badge,
+  EmptyState,
+  RecoveryCard,
+  SkeletonTable,
+  ConfirmDialog,
+  SideDrawer,
+} from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
@@ -43,15 +52,22 @@ import {
   fetchCvrSummary,
   fetchCvrLines,
   createCvrLine,
+  updateCvrLine,
   deleteCvrLine,
   fetchCashflowSeries,
+  fetchCashflowPoints,
   createCashflowPoint,
+  updateCashflowPoint,
+  deleteCashflowPoint,
   fetchPaymentApplications,
   createPaymentApplication,
+  updatePaymentApplication,
+  deletePaymentApplication,
   type CvrReport,
   type CvrLine,
   type CvrSummary,
   type CashflowSeries,
+  type CashflowPoint,
   type PaymentApplication,
   type PaymentApplicationStatus,
 } from './api';
@@ -84,6 +100,9 @@ const PAYAPP_STATUS_TONE: Record<PaymentApplicationStatus, string> = {
   certified: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   paid: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
 };
+
+/** Payment-application lifecycle in order: draft -> submitted -> certified -> paid. */
+const PAYAPP_STATUSES: PaymentApplicationStatus[] = ['draft', 'submitted', 'certified', 'paid'];
 
 /* ── Summary strip ─────────────────────────────────────────────────────── */
 
@@ -221,12 +240,14 @@ function LinesTable({
   currency,
   canEdit,
   onDelete,
+  onEdit,
 }: {
   lines: CvrLine[];
   summary: CvrSummary | undefined;
   currency: string;
   canEdit: boolean;
   onDelete: (lineId: string) => void;
+  onEdit: (line: CvrLine) => void;
 }) {
   const { t } = useTranslation();
 
@@ -281,14 +302,24 @@ function LinesTable({
                 </td>
                 {canEdit && (
                   <td className="py-2 pl-1 text-right">
-                    <button
-                      type="button"
-                      onClick={() => onDelete(line.id)}
-                      className="rounded p-1 text-content-tertiary hover:bg-red-50 hover:text-semantic-error dark:hover:bg-red-900/20"
-                      aria-label={t('cvr.delete_line', { defaultValue: 'Delete cost head' })}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onEdit(line)}
+                        className="rounded p-1 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary"
+                        aria-label={t('cvr.edit_line', { defaultValue: 'Edit cost head' })}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(line.id)}
+                        className="rounded p-1 text-content-tertiary hover:bg-red-50 hover:text-semantic-error dark:hover:bg-red-900/20"
+                        aria-label={t('cvr.delete_line', { defaultValue: 'Delete cost head' })}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 )}
               </tr>
@@ -415,6 +446,8 @@ export function CvrPage() {
   const [showNewReport, setShowNewReport] = useState(false);
   const [newPeriod, setNewPeriod] = useState(currentPeriod());
   const [newCurrency, setNewCurrency] = useState('');
+  // Cost head being edited in the side drawer (null = drawer closed).
+  const [editLine, setEditLine] = useState<CvrLine | null>(null);
 
   // Reports
   const {
@@ -461,10 +494,16 @@ export function CvrPage() {
     enabled: !!selectedReportId,
   });
 
-  // Cashflow (project-scoped)
+  // Cashflow (project-scoped): the cumulative S-curve series for the chart, plus
+  // the raw individual points (each with an id) so they can be edited / removed.
   const { data: cashflow } = useQuery({
     queryKey: ['cvr-cashflow-series', projectId],
     queryFn: () => fetchCashflowSeries(projectId),
+    enabled: !!projectId,
+  });
+  const { data: cashPoints = [] } = useQuery({
+    queryKey: ['cvr-cashflow-points', projectId],
+    queryFn: () => fetchCashflowPoints(projectId),
     enabled: !!projectId,
   });
 
@@ -480,6 +519,13 @@ export function CvrPage() {
     qc.invalidateQueries({ queryKey: ['cvr-summary', selectedReportId] });
     qc.invalidateQueries({ queryKey: ['cvr-lines', selectedReportId] });
     qc.invalidateQueries({ queryKey: ['cvr-reports', projectId] });
+  };
+
+  // Cashflow edits touch both the aggregated series (the chart) and the raw
+  // point list (the editable table), so refresh both together.
+  const invalidateCashflow = () => {
+    qc.invalidateQueries({ queryKey: ['cvr-cashflow-series', projectId] });
+    qc.invalidateQueries({ queryKey: ['cvr-cashflow-points', projectId] });
   };
 
   // Mutations
@@ -524,6 +570,66 @@ export function CvrPage() {
     onError: (err) =>
       addToast({ type: 'error', title: t('cvr.line_delete_failed', { defaultValue: 'Could not delete cost head' }), message: getErrorMessage(err) }),
   });
+
+  // Client-side CSV of the cost-head table + a totals row. Money is emitted as
+  // the raw Decimal-as-string the wire carries (precise, re-importable); we never
+  // round it or do float math here. Single-currency per report is guaranteed by
+  // the backend, so the currency lives in the file name, not a repeated column.
+  const handleExportCsv = useCallback(() => {
+    if (lines.length === 0) return;
+    const esc = (s: string) => `"${(s ?? '').replace(/"/g, '""')}"`;
+    const headers = [
+      t('cvr.col_code', { defaultValue: 'Code' }),
+      t('cvr.col_description', { defaultValue: 'Description' }),
+      t('cvr.col_cost_to_date', { defaultValue: 'Cost to date' }),
+      t('cvr.col_value_to_date', { defaultValue: 'Value to date' }),
+      t('cvr.col_accruals', { defaultValue: 'Accruals' }),
+      t('cvr.col_forecast_cost', { defaultValue: 'Forecast cost' }),
+      t('cvr.col_forecast_value', { defaultValue: 'Forecast value' }),
+      t('cvr.col_margin', { defaultValue: 'Margin to date' }),
+      t('cvr.col_forecast_margin', { defaultValue: 'Forecast margin' }),
+      t('cvr.col_flags', { defaultValue: 'Flags' }),
+    ];
+    const rows = lines.map((l) =>
+      [
+        esc(l.cost_code),
+        esc(l.description),
+        l.cost_to_date,
+        l.value_to_date,
+        l.accruals,
+        l.forecast_cost,
+        l.forecast_value,
+        l.margin_to_date,
+        l.forecast_margin,
+        esc(l.flags.join('; ')),
+      ].join(','),
+    );
+    if (summary) {
+      rows.push(
+        [
+          esc(t('cvr.totals', { defaultValue: 'Totals' })),
+          esc(''),
+          summary.total_cost_to_date,
+          summary.total_value_to_date,
+          summary.total_accruals,
+          summary.total_forecast_cost,
+          summary.total_forecast_value,
+          summary.margin_to_date,
+          summary.forecast_margin,
+          esc(''),
+        ].join(','),
+      );
+    }
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const period = selectedReport?.period ?? 'export';
+    a.download = reportCurrency ? `cvr_${period}_${reportCurrency}.csv` : `cvr_${period}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [lines, summary, selectedReport, reportCurrency, t]);
 
   if (!projectId) {
     return <RequiresProject>{null}</RequiresProject>;
@@ -648,15 +754,27 @@ export function CvrPage() {
 
           {/* CVR table */}
           <Card padding="md">
-            <h2 className="mb-3 text-sm font-semibold text-content-primary">
-              {t('cvr.cost_heads', { defaultValue: 'Cost heads' })}
-            </h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-content-primary">
+                {t('cvr.cost_heads', { defaultValue: 'Cost heads' })}
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleExportCsv}
+                disabled={lines.length === 0}
+              >
+                <Download size={14} className="mr-1 shrink-0" />
+                {t('cvr.export_csv', { defaultValue: 'Export CSV' })}
+              </Button>
+            </div>
             <LinesTable
               lines={lines}
               summary={summary}
               currency={reportCurrency}
               canEdit={canEdit}
               onDelete={(id) => deleteLineMut.mutate(id)}
+              onEdit={(line) => setEditLine(line)}
             />
             {selectedReportId && (
               <div className="mt-3">
@@ -681,7 +799,8 @@ export function CvrPage() {
           )}
         </div>
         {cashflow ? <CashflowChart series={cashflow} /> : <SkeletonTable rows={3} columns={3} />}
-        <CashflowPointForm projectId={projectId} defaultCurrency={reportCurrency} onAdded={() => qc.invalidateQueries({ queryKey: ['cvr-cashflow-series', projectId] })} />
+        <CashflowPointsTable points={cashPoints} onChanged={invalidateCashflow} />
+        <CashflowPointForm projectId={projectId} defaultCurrency={reportCurrency} onAdded={invalidateCashflow} />
       </Card>
 
       {/* Payment applications (project-scoped) */}
@@ -696,7 +815,119 @@ export function CvrPage() {
           onChanged={() => qc.invalidateQueries({ queryKey: ['cvr-payapps', projectId] })}
         />
       </Card>
+
+      {/* Row-level cost head editor (opens from the pencil icon in the table) */}
+      {editLine && (
+        <EditLineDrawer
+          line={editLine}
+          currency={reportCurrency}
+          onClose={() => setEditLine(null)}
+          onSaved={invalidateReport}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── Edit cost head (line) drawer ──────────────────────────────────────── */
+
+function EditLineDrawer({
+  line,
+  currency,
+  onClose,
+  onSaved,
+}: {
+  line: CvrLine;
+  currency: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [form, setForm] = useState({
+    cost_code: line.cost_code,
+    description: line.description,
+    cost_to_date: line.cost_to_date,
+    value_to_date: line.value_to_date,
+    accruals: line.accruals,
+    forecast_cost: line.forecast_cost,
+    forecast_value: line.forecast_value,
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateCvrLine(line.id, {
+        cost_code: form.cost_code,
+        description: form.description,
+        cost_to_date: form.cost_to_date || '0',
+        value_to_date: form.value_to_date || '0',
+        accruals: form.accruals || '0',
+        forecast_cost: form.forecast_cost || '0',
+        forecast_value: form.forecast_value || '0',
+      }),
+    onSuccess: () => {
+      onSaved();
+      onClose();
+      addToast({ type: 'success', title: t('cvr.line_updated', { defaultValue: 'Cost head updated' }) });
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('cvr.line_update_failed', { defaultValue: 'Could not update cost head' }), message: getErrorMessage(err) }),
+  });
+
+  const set = (key: keyof typeof form, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  // Live margin preview so the estimator sees the effect before saving. This is
+  // a display-only coercion via toNum (never wire arithmetic on the raw string).
+  const marginPreview = toNum(form.value_to_date) - toNum(form.cost_to_date);
+  const marginPositive = marginPreview >= 0;
+
+  const field = (label: string, key: keyof typeof form, decimal = false) => (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-content-secondary">{label}</label>
+      <input
+        className={INPUT_CLS}
+        inputMode={decimal ? 'decimal' : undefined}
+        value={form[key]}
+        onChange={(e) => set(key, e.target.value)}
+      />
+    </div>
+  );
+
+  return (
+    <SideDrawer
+      open
+      onClose={onClose}
+      busy={mutation.isPending}
+      backdropCloses={false}
+      title={t('cvr.edit_line', { defaultValue: 'Edit cost head' })}
+      subtitle={line.cost_code || line.description || undefined}
+    >
+      <div className="space-y-4 p-5">
+        {field(t('cvr.col_code', { defaultValue: 'Code' }), 'cost_code')}
+        {field(t('cvr.col_description', { defaultValue: 'Description' }), 'description')}
+        <div className="grid grid-cols-2 gap-3">
+          {field(t('cvr.col_cost_to_date', { defaultValue: 'Cost to date' }), 'cost_to_date', true)}
+          {field(t('cvr.col_value_to_date', { defaultValue: 'Value to date' }), 'value_to_date', true)}
+          {field(t('cvr.col_accruals', { defaultValue: 'Accruals' }), 'accruals', true)}
+          {field(t('cvr.col_forecast_cost', { defaultValue: 'Forecast cost' }), 'forecast_cost', true)}
+          {field(t('cvr.col_forecast_value', { defaultValue: 'Forecast value' }), 'forecast_value', true)}
+        </div>
+        <div className="flex items-center justify-between rounded-lg bg-surface-secondary/50 px-3 py-2 text-sm">
+          <span className="text-content-secondary">{t('cvr.margin_to_date', { defaultValue: 'Margin to date' })}</span>
+          <span className={'font-semibold tabular-nums ' + (marginPositive ? 'text-semantic-success' : 'text-semantic-error')}>
+            {formatCurrency(marginPreview, currency)}
+          </span>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" size="sm" disabled={mutation.isPending} onClick={onClose}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button variant="primary" size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+            {t('common.save', { defaultValue: 'Save' })}
+          </Button>
+        </div>
+      </div>
+    </SideDrawer>
   );
 }
 
@@ -749,6 +980,165 @@ function CashflowPointForm({
   );
 }
 
+/* ── Recorded cashflow points (inline edit + delete) ───────────────────── */
+
+function CashflowPointsTable({
+  points,
+  onChanged,
+}: {
+  points: CashflowPoint[];
+  onChanged: () => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ cash_in: string; cash_out: string }>({ cash_in: '', cash_out: '' });
+  const [deleteTarget, setDeleteTarget] = useState<CashflowPoint | null>(null);
+
+  const updateMut = useMutation({
+    mutationFn: (vars: { id: string; cash_in: string; cash_out: string }) =>
+      updateCashflowPoint(vars.id, { cash_in: vars.cash_in || '0', cash_out: vars.cash_out || '0' }),
+    onSuccess: () => {
+      setEditId(null);
+      onChanged();
+      addToast({ type: 'success', title: t('cvr.cash_point_updated', { defaultValue: 'Cashflow point updated' }) });
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('cvr.cash_point_update_failed', { defaultValue: 'Could not update cashflow point' }), message: getErrorMessage(err) }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteCashflowPoint(id),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      onChanged();
+      addToast({ type: 'success', title: t('cvr.cash_point_deleted', { defaultValue: 'Cashflow point deleted' }) });
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('cvr.cash_point_delete_failed', { defaultValue: 'Could not delete cashflow point' }), message: getErrorMessage(err) }),
+  });
+
+  if (points.length === 0) return null;
+
+  const startEdit = (p: CashflowPoint) => {
+    setEditId(p.id);
+    setDraft({ cash_in: p.cash_in, cash_out: p.cash_out });
+  };
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 text-2xs font-medium uppercase tracking-wide text-content-tertiary">
+        {t('cvr.cashflow_points', { defaultValue: 'Recorded points' })}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead>
+            <tr className="border-b border-border-light text-left text-2xs uppercase tracking-wide text-content-tertiary">
+              <th className="py-2 pr-3 font-medium">{t('cvr.col_period', { defaultValue: 'Period' })}</th>
+              <th className="py-2 pr-3 text-right font-medium">{t('cvr.cash_in', { defaultValue: 'Cash in' })}</th>
+              <th className="py-2 pr-3 text-right font-medium">{t('cvr.cash_out', { defaultValue: 'Cash out' })}</th>
+              <th className="py-2 pr-3 text-right font-medium">{t('cvr.point_net', { defaultValue: 'Net' })}</th>
+              <th className="py-2 pl-1" />
+            </tr>
+          </thead>
+          <tbody>
+            {points.map((p) => {
+              const editing = editId === p.id;
+              const netPreview = editing
+                ? toNum(draft.cash_in) - toNum(draft.cash_out)
+                : toNum(p.net);
+              return (
+                <tr key={p.id} className="border-b border-border-light/60">
+                  <td className="py-2 pr-3 text-content-secondary">{p.period}</td>
+                  {editing ? (
+                    <>
+                      <td className="py-1 pr-3">
+                        <input
+                          className={INPUT_CLS + ' text-right'}
+                          inputMode="decimal"
+                          value={draft.cash_in}
+                          onChange={(e) => setDraft((d) => ({ ...d, cash_in: e.target.value }))}
+                          aria-label={t('cvr.cash_in', { defaultValue: 'Cash in' })}
+                        />
+                      </td>
+                      <td className="py-1 pr-3">
+                        <input
+                          className={INPUT_CLS + ' text-right'}
+                          inputMode="decimal"
+                          value={draft.cash_out}
+                          onChange={(e) => setDraft((d) => ({ ...d, cash_out: e.target.value }))}
+                          aria-label={t('cvr.cash_out', { defaultValue: 'Cash out' })}
+                        />
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-2 pr-3 text-right tabular-nums text-semantic-success">{formatCurrency(p.cash_in, p.currency)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-semantic-error">{formatCurrency(p.cash_out, p.currency)}</td>
+                    </>
+                  )}
+                  <td className={'py-2 pr-3 text-right font-semibold tabular-nums ' + (netPreview >= 0 ? 'text-content-primary' : 'text-semantic-error')}>
+                    {formatCurrency(netPreview, p.currency)}
+                  </td>
+                  <td className="py-2 pl-1 text-right">
+                    {editing ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={updateMut.isPending}
+                          onClick={() => updateMut.mutate({ id: p.id, cash_in: draft.cash_in, cash_out: draft.cash_out })}
+                        >
+                          {t('common.save', { defaultValue: 'Save' })}
+                        </Button>
+                        <Button variant="ghost" size="sm" disabled={updateMut.isPending} onClick={() => setEditId(null)}>
+                          {t('common.cancel', { defaultValue: 'Cancel' })}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(p)}
+                          className="rounded p-1 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary"
+                          aria-label={t('cvr.edit_point', { defaultValue: 'Edit cashflow point' })}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(p)}
+                          className="rounded p-1 text-content-tertiary hover:bg-red-50 hover:text-semantic-error dark:hover:bg-red-900/20"
+                          aria-label={t('cvr.delete_point', { defaultValue: 'Delete cashflow point' })}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={t('cvr.delete_point_title', { defaultValue: 'Delete cashflow point' })}
+        message={t('cvr.delete_point_msg', {
+          defaultValue: 'This removes the recorded cash in and cash out for this period from the S-curve.',
+        })}
+        loading={deleteMut.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) deleteMut.mutate(deleteTarget.id);
+        }}
+      />
+    </div>
+  );
+}
+
 /* ── Payment applications ──────────────────────────────────────────────── */
 
 function PaymentApplicationsSection({
@@ -768,6 +1158,8 @@ function PaymentApplicationsSection({
   const [number, setNumber] = useState('');
   const [gross, setGross] = useState('');
   const [retention, setRetention] = useState('');
+
+  const [deleteTarget, setDeleteTarget] = useState<PaymentApplication | null>(null);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -790,8 +1182,34 @@ function PaymentApplicationsSection({
       addToast({ type: 'error', title: t('cvr.payapp_failed', { defaultValue: 'Could not add payment application' }), message: getErrorMessage(err) }),
   });
 
+  // Advance / correct an application's status along draft -> submitted ->
+  // certified -> paid. net_value is recomputed server-side, nothing else changes.
+  const statusMut = useMutation({
+    mutationFn: (vars: { id: string; status: PaymentApplicationStatus }) =>
+      updatePaymentApplication(vars.id, { status: vars.status }),
+    onSuccess: () => {
+      onChanged();
+      addToast({ type: 'success', title: t('cvr.payapp_status_updated', { defaultValue: 'Status updated' }) });
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('cvr.payapp_update_failed', { defaultValue: 'Could not update application' }), message: getErrorMessage(err) }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deletePaymentApplication(id),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      onChanged();
+      addToast({ type: 'success', title: t('cvr.payapp_deleted', { defaultValue: 'Payment application deleted' }) });
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('cvr.payapp_delete_failed', { defaultValue: 'Could not delete application' }), message: getErrorMessage(err) }),
+  });
+
   return (
     <div className="space-y-3">
+      {applications.length > 0 && <PayappRollup applications={applications} />}
+
       {applications.length === 0 ? (
         <EmptyState
           title={t('cvr.no_payapps', { defaultValue: 'No payment applications yet' })}
@@ -801,7 +1219,7 @@ function PaymentApplicationsSection({
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
+          <table className="w-full min-w-[620px] text-sm">
             <thead>
               <tr className="border-b border-border-light text-left text-2xs uppercase tracking-wide text-content-tertiary">
                 <th className="py-2 pr-3 font-medium">{t('cvr.col_application', { defaultValue: 'Application' })}</th>
@@ -810,6 +1228,7 @@ function PaymentApplicationsSection({
                 <th className="py-2 pr-3 text-right font-medium">{t('cvr.col_retention', { defaultValue: 'Retention' })}</th>
                 <th className="py-2 pr-3 text-right font-medium">{t('cvr.col_net', { defaultValue: 'Net due' })}</th>
                 <th className="py-2 pr-3 font-medium">{t('cvr.col_status', { defaultValue: 'Status' })}</th>
+                <th className="py-2 pl-1" />
               </tr>
             </thead>
             <tbody>
@@ -821,9 +1240,33 @@ function PaymentApplicationsSection({
                   <td className="py-2 pr-3 text-right tabular-nums text-content-tertiary">{formatCurrency(app.retention, app.currency)}</td>
                   <td className="py-2 pr-3 text-right font-semibold tabular-nums text-content-primary">{formatCurrency(app.net_value, app.currency)}</td>
                   <td className="py-2 pr-3">
-                    <span className={'inline-flex rounded-full px-2 py-0.5 text-2xs font-semibold ' + PAYAPP_STATUS_TONE[app.status]}>
-                      {t(`cvr.payapp_status_${app.status}`, { defaultValue: app.status })}
-                    </span>
+                    <select
+                      value={app.status}
+                      disabled={statusMut.isPending}
+                      onChange={(e) => statusMut.mutate({ id: app.id, status: e.target.value as PaymentApplicationStatus })}
+                      aria-label={t('cvr.payapp_status_label', { defaultValue: 'Payment application status' })}
+                      className={
+                        'cursor-pointer rounded-full border-0 px-2 py-1 text-2xs font-semibold ' +
+                        'focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50 ' +
+                        PAYAPP_STATUS_TONE[app.status]
+                      }
+                    >
+                      {PAYAPP_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {t(`cvr.payapp_status_${s}`, { defaultValue: s })}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-2 pl-1 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(app)}
+                      className="rounded p-1 text-content-tertiary hover:bg-red-50 hover:text-semantic-error dark:hover:bg-red-900/20"
+                      aria-label={t('cvr.delete_payapp', { defaultValue: 'Delete payment application' })}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -842,6 +1285,100 @@ function PaymentApplicationsSection({
           {t('cvr.add', { defaultValue: 'Add' })}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={t('cvr.delete_payapp_title', { defaultValue: 'Delete payment application' })}
+        message={t('cvr.delete_payapp_msg', {
+          defaultValue: 'This removes the interim application and its figures. This cannot be undone.',
+        })}
+        loading={deleteMut.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) deleteMut.mutate(deleteTarget.id);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ── Payment applications roll-up strip ────────────────────────────────── */
+
+/** One small figure tile inside the payapp roll-up (matches SummaryStrip). */
+function RollupTile({
+  label,
+  value,
+  sub,
+  emphasize,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <Card padding="sm">
+      <div className="text-2xs uppercase tracking-wide text-content-tertiary">{label}</div>
+      <div className={'mt-1 text-base font-bold tabular-nums ' + (emphasize ? 'text-content-primary' : 'text-content-secondary')}>
+        {value}
+      </div>
+      {sub && <div className="mt-0.5 text-2xs text-content-tertiary">{sub}</div>}
+    </Card>
+  );
+}
+
+/**
+ * Gross / retention / net-due and net-vs-certified totals from the already
+ * loaded applications. Grouped by currency so figures in different currencies
+ * are never blended into one total; each toNum coercion is display-only.
+ * "Certified" counts net due once an application reaches certified or paid.
+ */
+function PayappRollup({ applications }: { applications: PaymentApplication[] }) {
+  const { t } = useTranslation();
+
+  const groups = useMemo(() => {
+    const map = new Map<
+      string,
+      { currency: string; gross: number; retention: number; net: number; certified: number }
+    >();
+    for (const a of applications) {
+      const cur = (a.currency || '').toUpperCase();
+      const g = map.get(cur) ?? { currency: cur, gross: 0, retention: 0, net: 0, certified: 0 };
+      g.gross += toNum(a.gross_value);
+      g.retention += toNum(a.retention);
+      g.net += toNum(a.net_value);
+      if (a.status === 'certified' || a.status === 'paid') g.certified += toNum(a.net_value);
+      map.set(cur, g);
+    }
+    return Array.from(map.values());
+  }, [applications]);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => {
+        const awaiting = g.net - g.certified;
+        return (
+          <div key={g.currency || 'na'} className="space-y-2">
+            {groups.length > 1 && (
+              <div className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                {g.currency || t('cvr.currency', { defaultValue: 'Currency' })}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <RollupTile label={t('cvr.rollup_gross', { defaultValue: 'Gross applied' })} value={formatCurrency(g.gross, g.currency)} />
+              <RollupTile label={t('cvr.rollup_retention', { defaultValue: 'Retention held' })} value={formatCurrency(g.retention, g.currency)} />
+              <RollupTile label={t('cvr.rollup_net_due', { defaultValue: 'Net due' })} value={formatCurrency(g.net, g.currency)} emphasize />
+              <RollupTile
+                label={t('cvr.rollup_certified', { defaultValue: 'Certified' })}
+                value={formatCurrency(g.certified, g.currency)}
+                sub={`${t('cvr.rollup_awaiting', { defaultValue: 'Awaiting' })}: ${formatCurrency(awaiting, g.currency)}`}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.9.0] - 2026-07-10
+
+This release turns site issue management into one connected workflow, from a defect spotted on a drawing or in the 3D model through to its documented closure, and it deepens another wave of delivery modules.
+
+A punch list item now carries site photos, taken straight from a phone camera or uploaded, shown as a thumbnail gallery you can add to and prune. Instead of typing pin coordinates you place the pin visually on the drawing sheet, and every open item shows as a numbered pin over the page. The full status path, from open through assigned, in progress, resolved and verified to closed, is a closure stepper on the item so nothing is marked done without the trail behind it.
+
+Issues can now be raised on the 3D model. You open the model-issues register, file a coordination topic with a priority, an assignee and a due date, attach a captured viewpoint and snapshot, and discuss it in a comment thread, all held in the open BIM Collaboration Format so a topic and its viewpoint export and import as a standard file for any other tool in the coordination chain. A drawing markup is no longer only an annotation: give it a priority and a due date and convert it into a tracked issue in one click, so a cloud drawn on a plan becomes a photographed, assignable, closable item.
+
+Checklists join up with issues. A compact inspection or handover checklist can be filled in against an issue, and a failed check offers to raise the issue for you, so the fault and its evidence stay together. From the field shell a site worker can raise a defect with a photo even with no signal, and it syncs when the connection returns. A new Issues hub gathers every open item across drawings, punch lists, non-conformances, model coordination and clashes into one list, showing who owns each one and what is overdue, with a link back to where it lives.
+
+Alongside the issue work, several delivery modules were deepened. Site logistics gains a gate timeline that lays deliveries out hour by hour per gate and packs overlapping bookings into visible lanes, with per-gate occupancy against capacity and a day schedule you can export or print. Cost value reconciliation, management of change, off-site and prefabrication, systems commissioning and ESG site performance each surface more of their data with clearer views and export. The guided Cases process strip is more compact, with a small picture and a prominent numbered title so it reads as an ordered process.
+
+This release also fixes the PDF takeoff viewer, which now fills the available height through a flexible layout instead of fixed height constants, and adds a way to enter a linear measurement line width in real world units rather than pixels. A Files bug report raised from the in app menu is resolved. The community reporters who filed these are credited on the About page.
+
 ## [10.8.0] - 2026-07-08
 
 This release connects the estimating tools introduced in the last version into one working chain, from a resource-built rate through to a single defensible estimate total.

@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 
 /**
  * Conceptual (ROM) estimate API client and types.
@@ -50,6 +50,12 @@ export interface RomEstimateRequest {
   gfa_unit?: string;
   currency?: string;
   name?: string;
+  /**
+   * Optional base cost per m2 (in `currency`) that overrides the neutral
+   * reference basis so the total is anchored to the estimator's real rate.
+   * Sent as a Decimal string; omit or leave blank to keep the reference basis.
+   */
+  base_rate_per_m2_override?: string | number;
 }
 
 /** One elemental line of the breakdown. Money fields are Decimal strings. */
@@ -129,6 +135,51 @@ export interface RomReconciliation {
   conceptual_created_at: string | null;
 }
 
+/**
+ * A conceptual (ROM) estimate persisted against a project. Every monetary /
+ * ratio field is a Decimal-encoded STRING - render via the money helpers, never
+ * `parseFloat` for display.
+ */
+export interface RomEstimateRecord {
+  id: string;
+  project_id: string;
+  name: string;
+  building_type: string;
+  building_type_label: string;
+  quality: string;
+  region: string;
+  currency: string;
+  gross_floor_area: string;
+  gfa_unit: string;
+  cost_per_m2: string;
+  total: string;
+  estimate_class: string;
+  accuracy_low_pct: string;
+  accuracy_high_pct: string;
+  accuracy_low_amount: string;
+  accuracy_high_amount: string;
+  elements: RomElementBreakdown[];
+  created_at: string | null;
+  created_by: string | null;
+}
+
+/**
+ * Input to save a ROM estimate as the project baseline and seed a BOQ from it.
+ * Carries every estimate field (so the concept can be saved and priced) plus
+ * the name for the created bill of quantities.
+ */
+export interface RomCreateBoqRequest extends RomEstimateRequest {
+  boq_name?: string;
+}
+
+/** Result of seeding a provisional BOQ from a conceptual (ROM) estimate. */
+export interface RomCreateBoqResponse {
+  boq_id: string;
+  estimate_id?: string;
+  sections_created: number;
+  positions_created: number;
+}
+
 export const romEstimateApi = {
   /** Reference table for the form (building types, quality levels, regions, elements). */
   reference: () => apiGet<RomReference>('/v1/rom-estimate/reference/'),
@@ -139,5 +190,27 @@ export const romEstimateApi = {
   reconciliation: (projectId: string) =>
     apiGet<RomReconciliation>(
       `/v1/rom-estimate/projects/${encodeURIComponent(projectId)}/reconciliation/`,
+    ),
+  /** Compute and SAVE a conceptual estimate as the project baseline. */
+  create: (projectId: string, body: RomEstimateRequest) =>
+    apiPost<RomEstimateRecord, RomEstimateRequest>(
+      `/v1/rom-estimate/projects/${encodeURIComponent(projectId)}/estimates/`,
+      body,
+    ),
+  /** List a project's saved conceptual estimates (newest first). */
+  list: (projectId: string) =>
+    apiGet<RomEstimateRecord[]>(
+      `/v1/rom-estimate/projects/${encodeURIComponent(projectId)}/estimates/`,
+    ),
+  /** Delete a saved conceptual estimate. */
+  delete: (projectId: string, estimateId: string) =>
+    apiDelete<void>(
+      `/v1/rom-estimate/projects/${encodeURIComponent(projectId)}/estimates/${encodeURIComponent(estimateId)}`,
+    ),
+  /** Save the estimate as the baseline and seed a provisional BOQ from it. */
+  createBoq: (projectId: string, body: RomCreateBoqRequest) =>
+    apiPost<RomCreateBoqResponse, RomCreateBoqRequest>(
+      `/v1/rom-estimate/projects/${encodeURIComponent(projectId)}/estimates/create-boq/`,
+      body,
     ),
 };

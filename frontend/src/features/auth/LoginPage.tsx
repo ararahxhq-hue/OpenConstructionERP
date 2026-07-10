@@ -858,7 +858,7 @@ export function LoginPage() {
           {/* Demo Access - shown only when the server confirms demo accounts
               exist (SEED_DEMO on). Production installs hide it entirely. */}
           {demoEnabled === true && (
-          <div className="mt-3 animate-stagger-in" style={{ animationDelay: '500ms' }}>
+          <div className="relative mt-3 animate-stagger-in" style={{ animationDelay: '500ms' }}>
             <div className="login-glass-pro relative rounded-2xl overflow-hidden">
               <div
                 aria-hidden
@@ -879,30 +879,6 @@ export function LoginPage() {
                   <span>{t('auth.try_demo', { defaultValue: 'Try demo (no signup)' })}</span>
                   <ChevronDown size={14} className={`text-oe-blue/70 transition-transform duration-200 ${demoOpen ? 'rotate-180' : ''}`} />
                 </button>
-                {/* Info affordance: the demo sign-in is optional and can be shown
-                    or hidden from Settings. Hover reveals the hint; click pins it
-                    (touch / keyboard). Kept OUTSIDE the toggle button so it is not
-                    a nested interactive control, and absolutely placed to the
-                    right so the "Try demo" label stays centred. */}
-                <div className="group absolute right-2 top-1/2 -translate-y-1/2">
-                  <button
-                    type="button"
-                    aria-label={t('auth.demo_hint_aria', { defaultValue: 'About the demo sign-in block' })}
-                    onClick={() => setDemoHint((v) => !v)}
-                    className="flex h-6 w-6 items-center justify-center rounded-full text-oe-blue/50 hover:text-oe-blue hover:bg-oe-blue/[0.08] transition-colors"
-                  >
-                    <Info size={14} />
-                  </button>
-                  <div
-                    role="tooltip"
-                    className={`pointer-events-none absolute right-0 top-full z-20 mt-1.5 w-60 rounded-lg border border-border-light bg-surface-elevated px-3 py-2 text-left text-xs leading-relaxed text-content-secondary shadow-lg transition-opacity duration-150 ${demoHint ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                  >
-                    {t('auth.demo_hint', {
-                      defaultValue:
-                        'Optional demo sign-in. It only appears while demo accounts are enabled, so an administrator can turn it off.',
-                    })}
-                  </div>
-                </div>
               </div>
 
               {demoOpen && (
@@ -931,6 +907,31 @@ export function LoginPage() {
                   ))}
                 </div>
               )}
+            </div>
+            {/* Info affordance - kept OUTSIDE the overflow-hidden card above so
+                the hint popover is never clipped and always paints on top of the
+                demo accounts and the links below. Hover reveals it; click pins it
+                (touch / keyboard). Anchored to this relative wrapper at a fixed
+                top offset so it stays on the header row whether the demo list is
+                open or closed. */}
+            <div className="group absolute right-2 top-2 z-40">
+              <button
+                type="button"
+                aria-label={t('auth.demo_hint_aria', { defaultValue: 'About the demo sign-in block' })}
+                onClick={() => setDemoHint((v) => !v)}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-oe-blue/50 hover:text-oe-blue hover:bg-oe-blue/[0.08] transition-colors"
+              >
+                <Info size={14} />
+              </button>
+              <div
+                role="tooltip"
+                className={`pointer-events-none absolute right-0 top-full mt-2 w-64 rounded-xl border border-border bg-surface-elevated backdrop-blur-md px-3.5 py-2.5 text-left text-xs leading-relaxed text-content-primary shadow-2xl transition-opacity duration-150 ${demoHint ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+              >
+                {t('auth.demo_hint', {
+                  defaultValue:
+                    'Optional demo sign-in. It only appears while demo accounts are enabled, so an administrator can turn it off.',
+                })}
+              </div>
             </div>
           </div>
           )}

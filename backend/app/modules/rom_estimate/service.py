@@ -44,6 +44,8 @@ from app.modules.rom_estimate.models import RomEstimate
 from app.modules.rom_estimate.schemas import (
     RomAccuracyBand,
     RomBuildingTypeOption,
+    RomCreateBoqRequest,
+    RomCreateBoqResponse,
     RomElementBreakdown,
     RomElementOption,
     RomEstimateRequest,
@@ -335,11 +337,19 @@ def build_rom_estimate(request: RomEstimateRequest) -> RomEstimateResult:
     if gfa_canonical <= 0:
         raise ValueError("Gross floor area must be greater than zero to build an estimate.")
 
+    # Base cost per m2: the estimator's own rate when supplied (so the currency
+    # becomes a real figure rather than a neutral reference basis), else the
+    # building-type reference rate. A missing or non-positive override falls back
+    # to the reference so the number is never anchored to nonsense.
+    override = request.base_rate_per_m2_override
+    use_override = override is not None and override.is_finite() and override > 0
+    base_rate_per_m2 = override if use_override else profile.base_rate_per_m2
+
     # One elemental input per category; the quality factor is baked into the
     # per-element rate, the regional factor is applied by the shared engine so
     # the resulting notes explain it explicitly. Quantity is the canonical m2
     # area so money is always (m2 x cost-per-m2), never (ft2 x cost-per-m2).
-    quality_base = profile.base_rate_per_m2 * quality.factor
+    quality_base = base_rate_per_m2 * quality.factor
     elements: list[ElementInput] = [
         ElementInput(
             name=ELEMENT_LABELS[key],
@@ -809,4 +819,164 @@ class RomEstimateService:
             conceptual_name=baseline.name if baseline is not None else "",
             conceptual_created_at=baseline.created_at if baseline is not None else None,
             tolerance_pct=tolerance_pct,
+        )
+
+    # ── Handoff: concept -> detailed (seed a provisional BOQ) ────────────────
+
+    async def create_boq_from_rom(
+        self,
+        project_id: uuid.UUID,
+        request: RomCreateBoqRequest,
+        created_by: uuid.UUID | None,
+    ) -> RomCreateBoqResponse:
+        """Save a ROM estimate as the project baseline and seed a provisional BOQ.
+
+        This is the day-one handoff from concept to detailed estimating:
+
+        (a) The conceptual estimate is persisted as the project baseline by
+            reusing :meth:`create_estimate` (so the concept-vs-detailed
+            reconciliation immediately goes live), and
+
+        (b) a draft BOQ is created whose six elemental sections each carry one
+            provisional lump-sum line priced at the concept rate per m2
+            (quantity = gross floor area in canonical m2, unit rate = the
+            element's cost per m2, so the line total reproduces the concept
+            amount). Every row is marked ``source="rom_estimate"`` and the BOQ
+            metadata is stamped with the concept baseline (building type, GFA,
+            cost per m2, region, quality, currency and total) so the handoff is
+            fully traceable and can be refined with a detailed take-off.
+
+        Money stays Decimal-as-string end to end (no binary-float arithmetic).
+        The BOQ is built from the persisted breakdown snapshot, so it always
+        matches the saved baseline exactly.
+
+        Args:
+            project_id: The project the estimate and BOQ belong to.
+            request: The estimate inputs plus the name for the created BOQ.
+            created_by: The acting user's id (stored on the saved estimate).
+
+        Returns:
+            A :class:`RomCreateBoqResponse` with the new BOQ id, the saved
+            estimate id and the section/position counts.
+
+        Raises:
+            ValueError: When the estimate input is invalid (propagated from the
+                pure estimator so the router can turn it into a 422).
+        """
+        # (a) Persist the conceptual estimate as the project baseline.
+        row = await self.create_estimate(project_id, request, created_by)
+
+        # Local imports: the BOQ models/repositories are only needed on this
+        # write path, and a module-level import would couple module load order
+        # (mirrors the ``reconcile_with_boq`` read path above).
+        from app.modules.boq.models import BOQ, Position
+        from app.modules.boq.repository import BOQRepository, PositionRepository
+
+        boq_repo = BOQRepository(self.session)
+        position_repo = PositionRepository(self.session)
+
+        currency = row.currency or ""
+        profile = BUILDING_TYPES.get(row.building_type)
+        building_label = profile.label if profile is not None else row.building_type
+
+        # Canonical m2 for the seeded quantities so a GFA entered in ft2 still
+        # produces per-m2 line items whose total reconstructs the element amount.
+        canonical_gfa, _canonical_unit = to_canonical_quantity(
+            _parse_money(row.gross_floor_area) or Decimal("0"),
+            row.gfa_unit,
+        )
+        gfa_str = format(canonical_gfa, "f")
+
+        boq_name = (request.boq_name or "").strip() or f"{building_label} - concept estimate"
+        boq = BOQ(
+            project_id=project_id,
+            name=boq_name[:255],
+            description=(
+                "Provisional bill of quantities seeded from the conceptual (ROM) "
+                "estimate. Each section carries one concept-rate allowance to be "
+                "refined with a detailed take-off."
+            ),
+            status="draft",
+            estimate_type="order_of_magnitude",
+            metadata_={
+                "source": "rom_estimate",
+                "rom_estimate_id": str(row.id),
+                "rom_baseline": {
+                    "building_type": row.building_type,
+                    "building_type_label": building_label,
+                    "gross_floor_area": gfa_str,
+                    "gfa_unit": "m2",
+                    "cost_per_m2": row.cost_per_m2,
+                    "region": row.region,
+                    "quality": row.quality,
+                    "currency": currency,
+                    "total": row.total_cost,
+                },
+            },
+        )
+        boq = await boq_repo.create(boq)
+
+        # (b) One elemental section + one concept-rate line per element, built
+        #     from the persisted breakdown snapshot (single source of truth).
+        sections_created = 0
+        positions_created = 0
+        sort = 0
+        for idx, line in enumerate(row.breakdown or []):
+            if not isinstance(line, dict):
+                continue
+            key = str(line.get("key", "") or "")
+            label = str(line.get("label", "") or key or "Element")
+            rate = _parse_money(line.get("rate_per_m2")) or Decimal("0")
+            amount = _parse_money(line.get("amount")) or Decimal("0")
+            ordinal = f"{idx + 1:02d}"
+
+            section = Position(
+                boq_id=boq.id,
+                parent_id=None,
+                ordinal=ordinal,
+                description=label,
+                unit="section",
+                quantity="0",
+                unit_rate="0",
+                total="0",
+                classification={},
+                source="rom_estimate",
+                cad_element_ids=[],
+                validation_status="pending",
+                metadata_={"rom_element": key},
+                sort_order=sort,
+            )
+            section = await position_repo.create(section)
+            sections_created += 1
+            sort += 1
+
+            leaf = Position(
+                boq_id=boq.id,
+                parent_id=section.id,
+                ordinal=f"{ordinal}.0010",
+                description=f"{label} - concept allowance (provisional)",
+                unit="m2",
+                quantity=gfa_str,
+                unit_rate=format(rate, "f"),
+                total=format(amount, "f"),
+                classification={},
+                source="rom_estimate",
+                cad_element_ids=[],
+                validation_status="pending",
+                metadata_={
+                    "rom_element": key,
+                    "provisional": True,
+                    "rom_estimate_id": str(row.id),
+                },
+                sort_order=sort,
+            )
+            await position_repo.create(leaf)
+            positions_created += 1
+            sort += 1
+
+        return RomCreateBoqResponse(
+            boq_id=str(boq.id),
+            estimate_id=str(row.id),
+            sections_created=sections_created,
+            positions_created=positions_created,
         )

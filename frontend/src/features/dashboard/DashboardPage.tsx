@@ -49,6 +49,7 @@ import { WhatsNewCard } from '@/shared/ui/WhatsNewCard';
 import BIMCoverageCard from './BIMCoverageCard';
 import { DashboardCasesCard } from './DashboardCasesCard';
 import { FinanceSummaryCard } from './FinanceSummaryCard';
+import { EstimateResourceCard } from './EstimateResourceCard';
 import { InboxPanel } from '@/features/inbox';
 import { CompactProjectCard } from './components/CompactProjectCard';
 import { DashboardProjectsMap, type ProjectPin } from './components/DashboardProjectsMap';
@@ -2235,6 +2236,8 @@ function DashboardPageInner() {
     ),
 
     finance_summary: <FinanceSummaryCard />,
+
+    estimate_resources: <EstimateResourceCard />,
 
     projects: (
       <>

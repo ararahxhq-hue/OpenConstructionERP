@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /* ── i18n shim with interpolation (component reaches @/shared/ui -> app/i18n) ── */
@@ -37,6 +38,10 @@ const apiMocks = vi.hoisted(() => ({
   referenceMock: vi.fn(),
   generateMock: vi.fn(),
   reconciliationMock: vi.fn(),
+  createMock: vi.fn(),
+  listMock: vi.fn(),
+  deleteMock: vi.fn(),
+  createBoqMock: vi.fn(),
 }));
 const { referenceMock, generateMock } = apiMocks;
 vi.mock('./api', () => ({
@@ -44,6 +49,10 @@ vi.mock('./api', () => ({
     reference: apiMocks.referenceMock,
     generate: apiMocks.generateMock,
     reconciliation: apiMocks.reconciliationMock,
+    create: apiMocks.createMock,
+    list: apiMocks.listMock,
+    delete: apiMocks.deleteMock,
+    createBoq: apiMocks.createBoqMock,
   },
 }));
 
@@ -119,9 +128,11 @@ function renderPage() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={client}>
-      <RomEstimatePage />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <RomEstimatePage />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -174,5 +185,28 @@ describe('<RomEstimatePage>', () => {
 
     fireEvent.change(screen.getByLabelText(/Gross floor area/i), { target: { value: '1500' } });
     expect(button).not.toBeDisabled();
+  });
+
+  it('re-runs the estimate with the base cost/m² override when set on the result view', async () => {
+    referenceMock.mockResolvedValueOnce(REFERENCE);
+    generateMock.mockResolvedValue(RESULT);
+    renderPage();
+    await screen.findByRole('option', { name: 'Office building' });
+
+    fireEvent.change(screen.getByLabelText(/Gross floor area/i), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Generate estimate/i }));
+    await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1));
+    // The first run carries no override.
+    const first = generateMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(first.base_rate_per_m2_override).toBeUndefined();
+
+    // Set a real base rate on the result view and re-run.
+    fireEvent.change(await screen.findByLabelText(/base cost/i), { target: { value: '2500' } });
+    fireEvent.click(screen.getByRole('button', { name: /Update estimate/i }));
+    await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(2));
+
+    // Money override is passed through verbatim as a string (never float-mathed).
+    const second = generateMock.mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(second.base_rate_per_m2_override).toBe('2500');
   });
 });

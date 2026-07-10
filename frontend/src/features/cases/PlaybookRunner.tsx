@@ -125,7 +125,9 @@ function FlowConnector(): ReactElement {
  *  bespoke process scene when it has one, otherwise its icon scene, framed to
  *  match the stage so the strip reads as a row of pictures of the actual work. */
 function StepThumb({ step }: { step: PlaybookStep }): ReactElement {
-  const cls = "aspect-[5/3] w-full";
+  // A compact, wide 16:9 banner: small enough that the numbered title beside it
+  // stays the prominent element and the strip reads as an ordered process.
+  const cls = "aspect-[16/9] w-full";
   return step.scene && hasProcessScene(step.scene) ? (
     <StepProcessScene
       sceneId={step.scene}
@@ -499,7 +501,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               defaultValue: step.titleDefault,
             });
             return (
-              <li key={step.id} className="min-w-[8.5rem] flex-1">
+              <li key={step.id} className="min-w-[8rem] max-w-[12rem] flex-1">
                 <button
                   type="button"
                   ref={(el) => {
@@ -512,38 +514,38 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   onKeyDown={(e) => onStepKeyDown(e, i)}
                   aria-current={isCurrent ? "step" : undefined}
                   className={clsx(
-                    "group flex h-full w-full flex-col gap-1.5 rounded-xl border p-1.5 text-left transition-all",
+                    "group flex h-full w-full flex-col gap-1.5 rounded-xl border p-2 text-left transition-all",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40",
                     isCurrent
                       ? "border-oe-blue bg-oe-blue-subtle shadow-sm ring-1 ring-inset ring-oe-blue/30"
                       : "border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40",
                   )}
                 >
-                  {/* The picture of the step, with its number (or a done check)
-                      in the corner, so the strip reads as a filmstrip of the
-                      work rather than a bare list of titles. */}
-                  <div className="relative">
-                    <StepThumb step={step} />
+                  {/* A small 16:9 picture keeps the strip visual but compact; the
+                      numbered title below is the prominent element, so the strip
+                      reads as an ordered process, not a wall of pictures. */}
+                  <StepThumb step={step} />
+                  <div className="flex items-start gap-1.5">
                     <span
                       className={clsx(
-                        "absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-2xs font-bold shadow-sm",
+                        "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold",
                         done || isCurrent
                           ? "bg-oe-blue text-white"
-                          : "bg-white/90 text-content-secondary ring-1 ring-inset ring-border-light",
+                          : "bg-surface-secondary text-content-secondary ring-1 ring-inset ring-border-light",
                       )}
                       aria-hidden="true"
                     >
                       {done ? <Check size={11} strokeWidth={2.5} /> : i + 1}
                     </span>
+                    <span
+                      className={clsx(
+                        "min-w-0 text-sm font-semibold leading-snug line-clamp-2",
+                        isCurrent ? "text-oe-blue-text" : "text-content-primary",
+                      )}
+                    >
+                      {stepTitle}
+                    </span>
                   </div>
-                  <span
-                    className={clsx(
-                      "block min-w-0 px-1 pb-0.5 text-xs font-medium leading-snug line-clamp-2",
-                      isCurrent ? "text-oe-blue-text" : "text-content-primary",
-                    )}
-                  >
-                    {stepTitle}
-                  </span>
                 </button>
               </li>
             );

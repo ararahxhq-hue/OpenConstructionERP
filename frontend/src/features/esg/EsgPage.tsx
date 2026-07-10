@@ -6,19 +6,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   Activity,
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Download,
   Leaf,
+  ListFilter,
   Minus,
   Pencil,
   Plus,
+  Printer,
   ShieldCheck,
   Target,
   Trash2,
   Users,
   X,
 } from 'lucide-react';
-import { Badge, Button, Card, ConfirmDialog, EmptyState } from '@/shared/ui';
+import { Badge, Button, Card, ConfirmDialog, DismissibleInfo, EmptyState, IntroRichText } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -33,6 +40,7 @@ import {
   fetchEsgSummary,
   updateEsgEntry,
   type EsgCategory,
+  type EsgDirection,
   type EsgEntry,
   type EsgMetricDefinition,
   type EsgMetricSummary,
@@ -101,6 +109,170 @@ function statusChip(onTrack: boolean | null): string {
   if (onTrack === true) return CHIP_GOOD;
   if (onTrack === false) return CHIP_BAD;
   return CHIP_NEUTRAL;
+}
+
+/* ── CSV + print-report helpers ────────────────────────────────────────── */
+
+/**
+ * Whether a reading met its own target given the metric direction. Compares a
+ * single metric's value against that metric's target (same unit) - never
+ * blends units. Returns null when either figure is missing/unparseable.
+ */
+function meetsTarget(
+  value: string | null | undefined,
+  target: string | null | undefined,
+  direction: EsgDirection,
+): boolean | null {
+  const v = toNum(value);
+  const tg = toNum(target);
+  if (v === null || tg === null) return null;
+  return direction === 'lower_better' ? v <= tg : v >= tg;
+}
+
+/** Quote a CSV text cell and escape embedded quotes, so commas, quotes and
+ *  line breaks inside labels or notes never break the row shape. */
+function csvCell(value: string): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+/** Escape text for safe interpolation into the print-report HTML. */
+function esc(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+const PILLAR_PRINT_ACCENT: Record<EsgCategory, string> = {
+  environmental: '#059669',
+  social: '#0284c7',
+  governance: '#7c3aed',
+};
+
+interface ReportMetricRow {
+  label: string;
+  unit: string;
+  latest: string;
+  target: string;
+  deltaLabel: string;
+  status: 'ok' | 'bad' | 'muted';
+  statusLabel: string;
+}
+interface ReportPillar {
+  label: string;
+  accent: string;
+  metrics: ReportMetricRow[];
+}
+interface EsgReportModel {
+  projectName: string;
+  periodLabel: string;
+  generatedLabel: string;
+  offTrackCount: number;
+  pillars: ReportPillar[];
+  labels: {
+    title: string;
+    project: string;
+    period: string;
+    generated: string;
+    offTrack: string;
+    colMetric: string;
+    colLatest: string;
+    colTarget: string;
+    colChange: string;
+    colStatus: string;
+    footer: string;
+    empty: string;
+  };
+}
+
+/**
+ * Build a self-contained, print-friendly HTML document for one period's ESG
+ * report card (opened in a new window and printed client-side). Pure over
+ * strings; every dynamic value is pre-escaped by the caller/`esc`.
+ */
+function buildEsgReportHtml(model: EsgReportModel): string {
+  const L = model.labels;
+  const statusColor: Record<ReportMetricRow['status'], string> = {
+    ok: '#047857',
+    bad: '#b91c1c',
+    muted: '#9ca3af',
+  };
+  const pillarsHtml = model.pillars
+    .map((p) => {
+      const rows = p.metrics
+        .map(
+          (m) => `
+          <tr>
+            <td>${esc(m.label)}</td>
+            <td class="num">${esc(m.latest)} <span class="unit">${esc(m.unit)}</span></td>
+            <td class="num">${esc(m.target)}</td>
+            <td class="num">${esc(m.deltaLabel)}</td>
+            <td style="color:${statusColor[m.status]};font-weight:600">${esc(m.statusLabel)}</td>
+          </tr>`,
+        )
+        .join('');
+      return `
+        <section class="pillar" style="border-left-color:${p.accent}">
+          <h2>${esc(p.label)}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>${esc(L.colMetric)}</th>
+                <th class="num">${esc(L.colLatest)}</th>
+                <th class="num">${esc(L.colTarget)}</th>
+                <th class="num">${esc(L.colChange)}</th>
+                <th>${esc(L.colStatus)}</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </section>`;
+    })
+    .join('');
+
+  const body = model.pillars.length > 0 ? pillarsHtml : `<p class="empty">${esc(L.empty)}</p>`;
+  const offTrackHtml =
+    model.offTrackCount > 0 ? `<p class="alert">${esc(L.offTrack)}</p>` : '';
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${esc(L.title)} - ${esc(model.projectName)}</title>
+<style>
+  @page { margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111827; margin: 0; padding: 24px; font-size: 12px; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  .meta { color: #6b7280; font-size: 11px; line-height: 1.7; margin-bottom: 14px; }
+  .meta strong { color: #374151; font-weight: 600; }
+  .alert { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 600; margin: 0 0 16px; }
+  .pillar { margin: 0 0 18px; border-left: 3px solid #cccccc; padding-left: 10px; page-break-inside: avoid; }
+  .pillar h2 { font-size: 13px; margin: 0 0 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f9fafb; text-transform: uppercase; letter-spacing: .04em; font-size: 9.5px; color: #6b7280; font-weight: 600; }
+  td { font-size: 11.5px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .unit { color: #9ca3af; font-size: 10px; }
+  .empty { color: #9ca3af; font-size: 12px; }
+  footer { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 10px; }
+</style>
+</head>
+<body>
+  <h1>${esc(L.title)}</h1>
+  <div class="meta">
+    <div><strong>${esc(L.project)}:</strong> ${esc(model.projectName)}</div>
+    <div><strong>${esc(L.period)}:</strong> ${esc(model.periodLabel)}</div>
+    <div><strong>${esc(L.generated)}:</strong> ${esc(model.generatedLabel)}</div>
+  </div>
+  ${offTrackHtml}
+  ${body}
+  <footer>${esc(L.footer)}</footer>
+  <script>window.addEventListener('load',function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},250);});</script>
+</body>
+</html>`;
 }
 
 /* ── Sparkline (pure SVG, no deps) ─────────────────────────────────────── */
@@ -542,71 +714,127 @@ function RecentReadings({
   onDelete: (entry: EsgEntry) => void;
 }) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+
   const byKey = useMemo(() => {
     const map = new Map<string, EsgMetricDefinition>();
     for (const m of metrics) map.set(m.key, m);
     return map;
   }, [metrics]);
 
-  if (entries.length === 0) return null;
+  // Newest first: period is 'YYYY-MM' (sorts lexicographically = chronological),
+  // then break ties by recency. Sorting explicitly makes "recent" honest and
+  // keeps the full history ordered when expanded.
+  const sorted = useMemo(
+    () =>
+      [...entries].sort(
+        (a, b) =>
+          b.period.localeCompare(a.period) ||
+          (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+      ),
+    [entries],
+  );
 
-  const recent = entries.slice(0, 12);
+  if (sorted.length === 0) return null;
+
+  const COLLAPSED = 12;
+  const visible = expanded ? sorted : sorted.slice(0, COLLAPSED);
+  const hasMore = sorted.length > COLLAPSED;
 
   return (
     <Card padding="none" className="overflow-x-auto">
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border-light bg-surface-secondary/30 text-2xs font-medium text-content-tertiary uppercase tracking-wider min-w-[560px]">
-        <span className="flex-1">{t('esg.col_metric', { defaultValue: 'Metric' })}</span>
-        <span className="w-24">{t('esg.col_period', { defaultValue: 'Period' })}</span>
-        <span className="w-24 text-right">{t('esg.col_value', { defaultValue: 'Value' })}</span>
-        <span className="w-24 text-right">{t('esg.col_target', { defaultValue: 'Target' })}</span>
-        <span className="w-16 text-right">{t('esg.col_actions', { defaultValue: 'Actions' })}</span>
+      {/* When expanded the full history scrolls inside a capped area with a
+          sticky header, so long histories never push the page down endlessly. */}
+      <div
+        className={clsx(
+          'min-w-[560px]',
+          expanded && hasMore && 'max-h-[32rem] overflow-y-auto',
+        )}
+      >
+        <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-2.5 border-b border-border-light bg-surface-elevated text-2xs font-medium text-content-tertiary uppercase tracking-wider">
+          <span className="flex-1">{t('esg.col_metric', { defaultValue: 'Metric' })}</span>
+          <span className="w-24">{t('esg.col_period', { defaultValue: 'Period' })}</span>
+          <span className="w-24 text-right">{t('esg.col_value', { defaultValue: 'Value' })}</span>
+          <span className="w-24 text-right">{t('esg.col_target', { defaultValue: 'Target' })}</span>
+          <span className="w-16 text-right">{t('esg.col_actions', { defaultValue: 'Actions' })}</span>
+        </div>
+        {visible.map((entry) => {
+          const def = byKey.get(entry.metric_key);
+          const unit = def?.unit ?? '';
+          const label = def
+            ? t(`esg.metric_${entry.metric_key}`, { defaultValue: def.label })
+            : entry.metric_key;
+          return (
+            <div
+              key={entry.id}
+              className="flex items-center gap-3 px-4 py-2.5 border-b border-border-light last:border-b-0 hover:bg-surface-secondary/40 transition-colors"
+            >
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm text-content-primary truncate">{label}</span>
+                {entry.note && (
+                  <span className="block text-2xs text-content-tertiary truncate">{entry.note}</span>
+                )}
+              </span>
+              <span className="w-24 text-xs text-content-secondary tabular-nums">
+                {formatPeriod(entry.period)}
+              </span>
+              <span className="w-24 text-right text-sm text-content-primary tabular-nums">
+                {fmtNum(toNum(entry.value))}
+                <span className="text-2xs text-content-tertiary ml-1">{unit}</span>
+              </span>
+              <span className="w-24 text-right text-xs text-content-tertiary tabular-nums">
+                {entry.target !== null ? fmtNum(toNum(entry.target)) : '-'}
+              </span>
+              <span className="w-16 flex items-center justify-end gap-1">
+                <button
+                  onClick={() => onEdit(entry)}
+                  aria-label={t('common.edit', { defaultValue: 'Edit' })}
+                  className="p-1.5 rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={() => onDelete(entry)}
+                  aria-label={t('common.delete', { defaultValue: 'Delete' })}
+                  className="p-1.5 rounded-lg text-content-tertiary hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </span>
+            </div>
+          );
+        })}
       </div>
-      {recent.map((entry) => {
-        const def = byKey.get(entry.metric_key);
-        const unit = def?.unit ?? '';
-        const label = def
-          ? t(`esg.metric_${entry.metric_key}`, { defaultValue: def.label })
-          : entry.metric_key;
-        return (
-          <div
-            key={entry.id}
-            className="flex items-center gap-3 px-4 py-2.5 border-b border-border-light last:border-b-0 min-w-[560px] hover:bg-surface-secondary/40 transition-colors"
+      {hasMore && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-border-light bg-surface-secondary/20 min-w-[560px]">
+          <span className="text-2xs text-content-tertiary tabular-nums">
+            {t('esg.showing_readings', {
+              defaultValue: 'Showing {{shown}} of {{total}}',
+              shown: visible.length,
+              total: sorted.length,
+            })}
+          </span>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-oe-blue-text hover:bg-oe-blue/10 transition-colors"
           >
-            <span className="flex-1 min-w-0">
-              <span className="block text-sm text-content-primary truncate">{label}</span>
-              {entry.note && (
-                <span className="block text-2xs text-content-tertiary truncate">{entry.note}</span>
-              )}
-            </span>
-            <span className="w-24 text-xs text-content-secondary tabular-nums">
-              {formatPeriod(entry.period)}
-            </span>
-            <span className="w-24 text-right text-sm text-content-primary tabular-nums">
-              {fmtNum(toNum(entry.value))}
-              <span className="text-2xs text-content-tertiary ml-1">{unit}</span>
-            </span>
-            <span className="w-24 text-right text-xs text-content-tertiary tabular-nums">
-              {entry.target !== null ? fmtNum(toNum(entry.target)) : '-'}
-            </span>
-            <span className="w-16 flex items-center justify-end gap-1">
-              <button
-                onClick={() => onEdit(entry)}
-                aria-label={t('common.edit', { defaultValue: 'Edit' })}
-                className="p-1.5 rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                onClick={() => onDelete(entry)}
-                aria-label={t('common.delete', { defaultValue: 'Delete' })}
-                className="p-1.5 rounded-lg text-content-tertiary hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            </span>
-          </div>
-        );
-      })}
+            {expanded ? (
+              <>
+                {t('esg.show_fewer', { defaultValue: 'Show fewer' })}
+                <ChevronUp size={13} />
+              </>
+            ) : (
+              <>
+                {t('esg.show_all_readings', {
+                  defaultValue: 'Show all {{count}} readings',
+                  count: sorted.length,
+                })}
+                <ChevronDown size={13} />
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </Card>
   );
 }
@@ -622,6 +850,7 @@ export function EsgPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [presetMetric, setPresetMetric] = useState<string | null>(null);
   const [editEntry, setEditEntry] = useState<EsgEntry | null>(null);
+  const [onlyOffTrack, setOnlyOffTrack] = useState(false);
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -718,6 +947,176 @@ export function EsgPage() {
         : false,
     [summary],
   );
+
+  // Flatten the already-loaded summary to surface exceptions. `on_track` is a
+  // tri-state: false = missed target, true = met, null = no target/no reading.
+  const allMetrics = useMemo(
+    () => (summary ? CATEGORY_ORDER.flatMap((c) => summary.by_category[c] ?? []) : []),
+    [summary],
+  );
+  const offTrackMetrics = useMemo(
+    () => allMetrics.filter((m) => m.on_track === false),
+    [allMetrics],
+  );
+  const trackedCount = useMemo(
+    () => allMetrics.filter((m) => m.on_track !== null).length,
+    [allMetrics],
+  );
+
+  // Drop the off-target filter when the project changes or once nothing is off
+  // target, so the user is never stranded on an empty filtered view.
+  useEffect(() => {
+    setOnlyOffTrack(false);
+  }, [projectId]);
+  useEffect(() => {
+    if (onlyOffTrack && offTrackMetrics.length === 0) setOnlyOffTrack(false);
+  }, [onlyOffTrack, offTrackMetrics.length]);
+
+  const projectSlug = useMemo(() => {
+    const name = projects.find((p) => p.id === projectId)?.name ?? 'project';
+    return (
+      name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) ||
+      'project'
+    );
+  }, [projects, projectId]);
+
+  // Export every reading as CSV for a client/regulator handoff. Reuses the
+  // client-side Blob pattern (no dependency). Decimal-as-string value/target
+  // are emitted verbatim (exact, dot-decimal is CSV-safe) - no float math.
+  const handleExportCsv = useCallback(() => {
+    if (entries.length === 0) return;
+    const byKey = new Map(metrics.map((m) => [m.key, m]));
+    const rows = [...entries].sort(
+      (a, b) => a.period.localeCompare(b.period) || a.metric_key.localeCompare(b.metric_key),
+    );
+    const headers = [
+      t('esg.col_category', { defaultValue: 'Category' }),
+      t('esg.col_metric', { defaultValue: 'Metric' }),
+      t('esg.col_unit', { defaultValue: 'Unit' }),
+      t('esg.col_period', { defaultValue: 'Period' }),
+      t('esg.col_value', { defaultValue: 'Value' }),
+      t('esg.col_target', { defaultValue: 'Target' }),
+      t('esg.col_met_target', { defaultValue: 'Met target' }),
+      t('esg.col_note', { defaultValue: 'Note' }),
+    ].map(csvCell);
+    const body = rows.map((e) => {
+      const def = byKey.get(e.metric_key);
+      const catLabel = def
+        ? t(`esg.category_${def.category}`, { defaultValue: CATEGORY_META[def.category].label })
+        : '';
+      const metricLabel = def
+        ? t(`esg.metric_${e.metric_key}`, { defaultValue: def.label })
+        : e.metric_key;
+      const met = def ? meetsTarget(e.value, e.target, def.direction) : null;
+      const metStr =
+        met === null
+          ? ''
+          : met
+            ? t('common.yes', { defaultValue: 'Yes' })
+            : t('common.no', { defaultValue: 'No' });
+      return [
+        csvCell(catLabel),
+        csvCell(metricLabel),
+        csvCell(def?.unit ?? ''),
+        e.period,
+        e.value,
+        e.target ?? '',
+        csvCell(metStr),
+        csvCell(e.note ?? ''),
+      ].join(',');
+    });
+    // Prepend a UTF-8 BOM so Excel opens accented notes/units correctly.
+    const csv = '﻿' + [headers.join(','), ...body].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `esg-${projectSlug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [entries, metrics, projectSlug, t]);
+
+  // Print a compact per-period report card of all three pillars. Builds a
+  // self-contained HTML doc and prints it from a new window (fully client-side).
+  const handlePrintReport = useCallback(() => {
+    if (!summary) return;
+    const projectName =
+      projects.find((p) => p.id === projectId)?.name ??
+      t('esg.report_untitled_project', { defaultValue: 'Project' });
+    const pillars = CATEGORY_ORDER.map((cat) => ({
+      label: t(`esg.category_${cat}`, { defaultValue: CATEGORY_META[cat].label }),
+      accent: PILLAR_PRINT_ACCENT[cat],
+      metrics: (summary.by_category[cat] ?? [])
+        .filter((m) => m.latest_value !== null)
+        .map((m) => {
+          const dp = m.delta_pct;
+          return {
+            label: t(`esg.metric_${m.metric_key}`, { defaultValue: m.label }),
+            unit: m.unit,
+            latest: fmtNum(toNum(m.latest_value)),
+            target: m.target !== null ? fmtNum(toNum(m.target)) : '-',
+            deltaLabel: dp === null ? '-' : `${dp > 0 ? '+' : ''}${numberFmt.format(dp)}%`,
+            status: (m.on_track === true ? 'ok' : m.on_track === false ? 'bad' : 'muted') as
+              | 'ok'
+              | 'bad'
+              | 'muted',
+            statusLabel:
+              m.on_track === true
+                ? t('esg.status_on_track', { defaultValue: 'On track' })
+                : m.on_track === false
+                  ? t('esg.status_off_track', { defaultValue: 'Off target' })
+                  : t('esg.status_no_target', { defaultValue: 'No target' }),
+          };
+        }),
+    })).filter((p) => p.metrics.length > 0);
+
+    const html = buildEsgReportHtml({
+      projectName,
+      periodLabel: summary.latest_period
+        ? formatPeriod(summary.latest_period)
+        : t('esg.report_no_period', { defaultValue: 'No readings yet' }),
+      generatedLabel: new Date().toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+      offTrackCount: offTrackMetrics.length,
+      pillars,
+      labels: {
+        title: t('esg.report_title', { defaultValue: 'ESG Site Performance Report' }),
+        project: t('esg.report_project', { defaultValue: 'Project' }),
+        period: t('esg.report_period', { defaultValue: 'Reporting period' }),
+        generated: t('esg.report_generated', { defaultValue: 'Generated' }),
+        offTrack: t('esg.off_track_banner', {
+          defaultValue: '{{count}} metrics off target this period',
+          count: offTrackMetrics.length,
+        }),
+        colMetric: t('esg.col_metric', { defaultValue: 'Metric' }),
+        colLatest: t('esg.col_value', { defaultValue: 'Value' }),
+        colTarget: t('esg.col_target', { defaultValue: 'Target' }),
+        colChange: t('esg.report_col_change', { defaultValue: 'Change' }),
+        colStatus: t('esg.report_col_status', { defaultValue: 'Status' }),
+        footer: t('esg.report_footer', {
+          defaultValue: 'This report was generated from recorded site ESG readings.',
+        }),
+        empty: t('esg.report_empty', { defaultValue: 'No readings recorded for this project yet.' }),
+      },
+    });
+
+    const win = window.open('', '_blank', 'width=920,height=1000');
+    if (!win) {
+      addToast({
+        type: 'error',
+        title: t('esg.print_blocked_title', { defaultValue: 'Could not open print view' }),
+        message: t('esg.print_blocked_msg', {
+          defaultValue: 'Allow pop-ups for this site, then try again.',
+        }),
+      });
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  }, [summary, projects, projectId, offTrackMetrics.length, t, addToast]);
 
   return (
     <div className="space-y-6 animate-fade-in">

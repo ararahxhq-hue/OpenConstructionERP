@@ -14,6 +14,7 @@ import { getErrorMessage } from '@/shared/lib/api';
 import { findWork } from './api';
 import { selectFindWorkHint } from './findWorkHint';
 import { fmtMoney, MetaLine, Meter, pct, RegionSelect } from './parts';
+import { RowEstimateActions } from './RowEstimateActions';
 import type { CrossNav } from './types';
 
 export function FindWorkPanel({ nav }: { nav: CrossNav }) {
@@ -159,6 +160,17 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
                   >
                     <Repeat2 className="h-3.5 w-3.5" /> {t('costExplorer.actions.substitute', { defaultValue: 'Substitute' })}
                   </button>
+                  <RowEstimateActions
+                    row={{
+                      cost_item_id: row.cost_item_id,
+                      code: row.code,
+                      description: row.description,
+                      unit: row.unit,
+                      rate: row.rate,
+                      currency: row.currency,
+                      region: row.region,
+                    }}
+                  />
                 </div>
               </div>
             </div>

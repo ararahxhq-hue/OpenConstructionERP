@@ -317,7 +317,7 @@ export function FormFiller({ open, onClose, submissionId, onChanged }: FormFille
 
 /* -- Field renderers ------------------------------------------------------- */
 
-interface FieldInputProps {
+export interface FieldInputProps {
   field: FormFieldDef;
   value: AnswerValue;
   readOnly?: boolean;
@@ -360,7 +360,10 @@ function FieldInput({ field, value, readOnly, invalid, onChange }: FieldInputPro
   );
 }
 
-function FieldControl({ field, value, readOnly, onChange }: FieldInputProps) {
+// Exported so the compact checklist runner can reuse the exact field controls
+// (a lighter FormFiller) without duplicating every field type. Rendering is
+// identical; only the surrounding layout differs.
+export function FieldControl({ field, value, readOnly, onChange }: FieldInputProps) {
   const { t } = useTranslation();
   const disabled = !!readOnly;
 

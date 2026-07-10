@@ -5,6 +5,8 @@ import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
 import {
   Boxes,
+  AlertTriangle,
+  Download,
   Plus,
   X,
   ArrowRight,
@@ -140,6 +142,133 @@ function stageMeta(stage: string): StageMeta {
 
 const inputCls =
   'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
+
+/* ── Install-date risk helpers ─────────────────────────────────────────── */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Upcoming window (calendar days) for the "due soon" lookahead. */
+const LOOKAHEAD_DAYS = 14;
+/**
+ * Production lead time. A unit still in production or QA whose install date
+ * falls within this many days is "at risk": it must yet clear QA, dispatch,
+ * delivery and install before it can go up on site.
+ */
+const LEAD_TIME_DAYS = 21;
+
+type RiskFilter = 'all' | 'overdue' | 'due_soon' | 'at_risk';
+
+/** Parse a `YYYY-MM-DD` (or ISO) string to local midnight, or null if unusable. */
+function parseInstallDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+/** Whole days from today to the install date; negative = past. Null if unset. */
+function daysUntilInstall(value: string | null | undefined): number | null {
+  const target = parseInstallDate(value);
+  if (!target) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target.getTime() - today.getTime()) / DAY_MS);
+}
+
+/** Dated, not-yet-installed unit whose install date is already in the past. */
+function isUnitOverdue(unit: PrefabUnit): boolean {
+  if (unit.status === 'installed') return false;
+  const days = daysUntilInstall(unit.target_install_date);
+  return days != null && days < 0;
+}
+
+/** Not-yet-installed unit due today or within the lookahead window. */
+function isUnitDueSoon(unit: PrefabUnit): boolean {
+  if (unit.status === 'installed') return false;
+  const days = daysUntilInstall(unit.target_install_date);
+  return days != null && days >= 0 && days <= LOOKAHEAD_DAYS;
+}
+
+/** Still in production or QA yet due within the production lead time. */
+function isUnitAtRisk(unit: PrefabUnit): boolean {
+  if (unit.status !== 'in_production' && unit.status !== 'qa') return false;
+  const days = daysUntilInstall(unit.target_install_date);
+  return days != null && days <= LEAD_TIME_DAYS;
+}
+
+/** Ascending install-date comparator; undated units sort to the bottom. */
+function compareByInstallDate(a: PrefabUnit, b: PrefabUnit): number {
+  const da = parseInstallDate(a.target_install_date);
+  const db = parseInstallDate(b.target_install_date);
+  if (da && db) return da.getTime() - db.getTime();
+  if (da) return -1;
+  if (db) return 1;
+  return 0;
+}
+
+function matchesRiskFilter(unit: PrefabUnit, filter: RiskFilter): boolean {
+  switch (filter) {
+    case 'overdue':
+      return isUnitOverdue(unit);
+    case 'due_soon':
+      return isUnitDueSoon(unit);
+    case 'at_risk':
+      return isUnitAtRisk(unit);
+    default:
+      return true;
+  }
+}
+
+/** A compact count tile in the risk strip that doubles as a board filter. */
+function RiskTile({
+  active,
+  count,
+  onToggle,
+  icon,
+  label,
+  tone,
+  hint,
+}: {
+  active: boolean;
+  count: number;
+  onToggle: () => void;
+  icon: React.ReactNode;
+  label: string;
+  tone: 'danger' | 'warning';
+  hint?: string;
+}) {
+  const zero = count === 0;
+  const toneActive =
+    tone === 'danger'
+      ? 'border-red-400 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300'
+      : 'border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300';
+  const toneIdle =
+    tone === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400';
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={zero}
+      aria-pressed={active}
+      title={hint}
+      className={clsx(
+        'inline-flex items-center gap-2 rounded-xl border px-3 py-2 shadow-xs transition-colors',
+        active ? toneActive : 'border-border-light bg-surface-elevated/90 hover:border-oe-blue/40',
+        zero && 'cursor-default opacity-50 hover:border-border-light',
+      )}
+    >
+      <span className={active ? undefined : toneIdle}>{icon}</span>
+      <span className="text-lg font-bold tabular-nums">{count}</span>
+      <span
+        className={clsx(
+          'text-2xs font-medium uppercase tracking-wide',
+          !active && 'text-content-tertiary',
+        )}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
 
 /* ── Create Unit Modal ─────────────────────────────────────────────────── */
 
@@ -334,10 +463,18 @@ const UnitCard = React.memo(function UnitCard({
   const typeLabel = t(`prefab.type_${unit.unit_type}`, {
     defaultValue: (UNIT_TYPE_LABELS as Record<string, string>)[unit.unit_type] ?? unit.unit_type,
   });
+  const overdue = isUnitOverdue(unit);
+  const dueSoon = !overdue && isUnitDueSoon(unit);
+  const days = daysUntilInstall(unit.target_install_date);
   return (
     <button
       onClick={() => onOpen(unit)}
-      className="w-full text-left rounded-lg border border-border-light bg-surface-primary p-3 shadow-xs hover:shadow-sm hover:border-oe-blue/40 transition-all"
+      className={clsx(
+        'w-full text-left rounded-lg border p-3 shadow-xs transition-all hover:shadow-sm',
+        overdue
+          ? 'border-red-300 bg-red-50/50 hover:border-red-400 dark:border-red-900/50 dark:bg-red-950/15'
+          : 'border-border-light bg-surface-primary hover:border-oe-blue/40',
+      )}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-mono font-semibold text-content-primary truncate">
@@ -352,8 +489,14 @@ const UnitCard = React.memo(function UnitCard({
       )}
       <div className="mt-2 flex items-center gap-3 text-2xs text-content-tertiary">
         {unit.target_install_date && (
-          <span className="inline-flex items-center gap-1">
-            <Calendar size={11} />
+          <span
+            className={clsx(
+              'inline-flex items-center gap-1',
+              overdue && 'font-medium text-semantic-error',
+              dueSoon && 'font-medium text-amber-600 dark:text-amber-400',
+            )}
+          >
+            {overdue ? <AlertTriangle size={11} /> : <Calendar size={11} />}
             <DateDisplay value={unit.target_install_date} />
           </span>
         )}
@@ -364,6 +507,31 @@ const UnitCard = React.memo(function UnitCard({
           </span>
         )}
       </div>
+      {(overdue || dueSoon) && (
+        <div className="mt-2">
+          {overdue ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-2xs font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">
+              <AlertTriangle size={11} className="shrink-0" />
+              {days != null
+                ? t('prefab.overdue_by_days', {
+                    defaultValue: 'Overdue by {{count}}d',
+                    count: Math.abs(days),
+                  })
+                : t('prefab.overdue', { defaultValue: 'Overdue' })}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              <Clock size={11} className="shrink-0" />
+              {days === 0
+                ? t('prefab.due_today', { defaultValue: 'Due today' })
+                : t('prefab.due_in_days', {
+                    defaultValue: 'Due in {{count}}d',
+                    count: days ?? 0,
+                  })}
+            </span>
+          )}
+        </div>
+      )}
       {unit.cost_basis != null && (
         <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-2xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
           <Coins size={11} className="shrink-0" />
@@ -859,6 +1027,7 @@ export function PrefabPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<PrefabUnit | null>(null);
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -1008,22 +1177,100 @@ export function PrefabPage() {
     [confirm, deleteMut, t],
   );
 
-  // Filter columns by the client-side search box.
+  // Flat list of every unit on the board, for board-level risk KPIs + export.
+  const allUnits = useMemo<PrefabUnit[]>(
+    () => (board?.columns ?? []).flatMap((c) => c.units),
+    [board],
+  );
+
+  // Board-level risk tallies, computed from the full register (never narrowed
+  // by the search box) so the tiles stay stable, trustworthy KPIs.
+  const riskCounts = useMemo(() => {
+    let overdue = 0;
+    let dueSoon = 0;
+    let atRisk = 0;
+    for (const u of allUnits) {
+      if (isUnitOverdue(u)) overdue += 1;
+      if (isUnitDueSoon(u)) dueSoon += 1;
+      if (isUnitAtRisk(u)) atRisk += 1;
+    }
+    return { overdue, dueSoon, atRisk };
+  }, [allUnits]);
+
+  // Export the whole register as a CSV, sorted by soonest install date.
+  const handleExportCsv = useCallback(() => {
+    if (!allUnits.length) return;
+    const headers = [
+      t('prefab.csv_ref', { defaultValue: 'Reference' }),
+      t('prefab.csv_type', { defaultValue: 'Type' }),
+      t('prefab.csv_stage', { defaultValue: 'Stage' }),
+      t('prefab.csv_install_date', { defaultValue: 'Target install date' }),
+      t('prefab.csv_days_to_install', { defaultValue: 'Days to install' }),
+      t('prefab.csv_risk', { defaultValue: 'Risk' }),
+      t('prefab.csv_cost_basis', { defaultValue: 'Cost basis' }),
+      t('prefab.csv_earned_value', { defaultValue: 'Earned value' }),
+    ];
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const rows = [...allUnits].sort(compareByInstallDate).map((u) => {
+      const days = daysUntilInstall(u.target_install_date);
+      const risk = isUnitOverdue(u)
+        ? t('prefab.risk_overdue', { defaultValue: 'Overdue' })
+        : isUnitDueSoon(u)
+          ? t('prefab.risk_due_soon', { defaultValue: 'Due soon' })
+          : isUnitAtRisk(u)
+            ? t('prefab.risk_at_risk', { defaultValue: 'At risk' })
+            : t('prefab.risk_on_track', { defaultValue: 'On track' });
+      // cost_basis / earned_value are Decimal strings - emitted verbatim, never
+      // parsed or re-formatted, so no precision is lost and no float math runs.
+      return [
+        esc(u.ref),
+        esc(
+          t(`prefab.type_${u.unit_type}`, {
+            defaultValue:
+              (UNIT_TYPE_LABELS as Record<string, string>)[u.unit_type] ?? String(u.unit_type),
+          }),
+        ),
+        esc(t(`prefab.stage_${u.status}`, { defaultValue: stageMeta(u.status).label })),
+        u.target_install_date ?? '',
+        days == null ? '' : String(days),
+        esc(risk),
+        u.cost_basis ?? '',
+        u.earned_value ?? '',
+      ].join(',');
+    });
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `prefab_register_${(projectName || 'project').replace(/[^\w.-]+/g, '_')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [allUnits, projectName, t]);
+
+  // Filter columns by the search box + active risk filter, then sort each
+  // column by soonest target install date (undated units sink to the bottom).
   const columns = useMemo<PrefabBoardColumn[]>(() => {
     const src: PrefabBoardColumn[] =
       board?.columns ?? STAGE_ORDER.map((stage) => ({ stage, count: 0, units: [] }));
-    if (!search.trim()) return src;
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     return src.map((col) => {
-      const units = col.units.filter(
-        (u) =>
-          u.ref.toLowerCase().includes(q) ||
-          Boolean(u.drawing_ref && u.drawing_ref.toLowerCase().includes(q)) ||
-          Boolean(u.notes && u.notes.toLowerCase().includes(q)),
-      );
+      let units = col.units;
+      if (q) {
+        units = units.filter(
+          (u) =>
+            u.ref.toLowerCase().includes(q) ||
+            Boolean(u.drawing_ref && u.drawing_ref.toLowerCase().includes(q)) ||
+            Boolean(u.notes && u.notes.toLowerCase().includes(q)),
+        );
+      }
+      if (riskFilter !== 'all') {
+        units = units.filter((u) => matchesRiskFilter(u, riskFilter));
+      }
+      units = [...units].sort(compareByInstallDate);
       return { ...col, units, count: units.length };
     });
-  }, [board, search]);
+  }, [board, search, riskFilter]);
 
   const total = stats?.total ?? board?.total ?? 0;
 
@@ -1043,29 +1290,41 @@ export function PrefabPage() {
             'Track every off-site unit from design to installation, with a hard quality gate before anything ships.',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              if (!projectId) {
-                addToast({
-                  type: 'info',
-                  title: t('prefab.select_project_first_title', {
-                    defaultValue: 'Select a project first',
-                  }),
-                  message: t('prefab.select_project_first', {
-                    defaultValue: 'Pick a project from the top bar, then add a unit.',
-                  }),
-                });
-                return;
-              }
-              setShowCreate(true);
-            }}
-            className="shrink-0 whitespace-nowrap"
-          >
-            <Plus size={14} className="mr-1 shrink-0" />
-            <span>{t('prefab.new_unit', { defaultValue: 'New Unit' })}</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportCsv}
+              disabled={!projectId || allUnits.length === 0}
+              className="shrink-0 whitespace-nowrap"
+            >
+              <Download size={14} className="mr-1 shrink-0" />
+              <span>{t('prefab.export_register', { defaultValue: 'Export register (CSV)' })}</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                if (!projectId) {
+                  addToast({
+                    type: 'info',
+                    title: t('prefab.select_project_first_title', {
+                      defaultValue: 'Select a project first',
+                    }),
+                    message: t('prefab.select_project_first', {
+                      defaultValue: 'Pick a project from the top bar, then add a unit.',
+                    }),
+                  });
+                  return;
+                }
+                setShowCreate(true);
+              }}
+              className="shrink-0 whitespace-nowrap"
+            >
+              <Plus size={14} className="mr-1 shrink-0" />
+              <span>{t('prefab.new_unit', { defaultValue: 'New Unit' })}</span>
+            </Button>
+          </div>
         }
       />
 
@@ -1108,6 +1367,58 @@ export function PrefabPage() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Risk strip: overdue / due-soon / at-risk tallies that double as
+          one-click board filters. Counts come from the full register. */}
+      {projectId && total > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <RiskTile
+            active={riskFilter === 'overdue'}
+            count={riskCounts.overdue}
+            onToggle={() => setRiskFilter((f) => (f === 'overdue' ? 'all' : 'overdue'))}
+            icon={<AlertTriangle size={14} className="shrink-0" />}
+            label={t('prefab.risk_overdue', { defaultValue: 'Overdue' })}
+            tone="danger"
+            hint={t('prefab.overdue_hint', {
+              defaultValue: 'Past target install date and not yet installed',
+            })}
+          />
+          <RiskTile
+            active={riskFilter === 'due_soon'}
+            count={riskCounts.dueSoon}
+            onToggle={() => setRiskFilter((f) => (f === 'due_soon' ? 'all' : 'due_soon'))}
+            icon={<Clock size={14} className="shrink-0" />}
+            label={t('prefab.due_soon_window', { defaultValue: 'Due soon (2 wks)' })}
+            tone="warning"
+            hint={t('prefab.due_soon_hint', {
+              defaultValue: 'Not yet installed and due within {{count}} days',
+              count: LOOKAHEAD_DAYS,
+            })}
+          />
+          <RiskTile
+            active={riskFilter === 'at_risk'}
+            count={riskCounts.atRisk}
+            onToggle={() => setRiskFilter((f) => (f === 'at_risk' ? 'all' : 'at_risk'))}
+            icon={<ShieldCheck size={14} className="shrink-0" />}
+            label={t('prefab.at_risk_tile', { defaultValue: 'At risk in production' })}
+            tone="warning"
+            hint={t('prefab.at_risk_hint', {
+              defaultValue:
+                'Still in production or QA and due within the {{count}}-day lead time',
+              count: LEAD_TIME_DAYS,
+            })}
+          />
+          {riskFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setRiskFilter('all')}
+              className="px-2 py-1 text-2xs font-medium text-oe-blue hover:underline"
+            >
+              {t('prefab.clear_filter', { defaultValue: 'Clear filter' })}
+            </button>
+          )}
         </div>
       )}
 

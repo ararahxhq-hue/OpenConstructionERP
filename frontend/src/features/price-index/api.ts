@@ -8,7 +8,7 @@
  * slash.
  */
 
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete, triggerDownload } from '@/shared/lib/api';
 
 const BASE = '/v1/price-index';
 
@@ -263,6 +263,12 @@ export interface EscalatePreviewInput {
 export interface EscalatePreviewLine {
   cost_item_id: string;
   code: string;
+  /**
+   * Optional human-readable description. The current escalate-preview payload
+   * does not carry one, so the CSV export omits the column unless a description
+   * is present (forward-compatible if the backend starts sending it).
+   */
+  description?: string | null;
   unit: string;
   region: string | null;
   currency: string;
@@ -342,6 +348,70 @@ export async function escalatePreview(
     payload.cost_item_ids = input.cost_item_ids;
   }
   return apiPost<EscalatePreviewResponse>(`${BASE}/escalate-preview/`, payload);
+}
+
+/* -- Escalate export (client-side CSV) ------------------------------------ */
+
+/**
+ * Build a spreadsheet-friendly CSV from the fetched escalate-preview rows.
+ *
+ * Pure and client-side: no server round-trip. Base rate, escalation factor and
+ * escalated rate are the exact Decimal strings the backend served, written
+ * verbatim so a cent is never lost to a float. A `Description` column is emitted
+ * only when at least one row carries one ("if present"), and a trailing
+ * `Currency` column carries the money's currency so the rates read
+ * unambiguously. Any comma / quote / newline / semicolon in a field is escaped
+ * so it stays a single field, and rows use CRLF for maximal spreadsheet
+ * compatibility.
+ */
+export function buildEscalatePreviewCsv(result: EscalatePreviewResponse): string {
+  const cell = (val: string | number | null | undefined): string => {
+    const s = val === null || val === undefined ? '' : String(val);
+    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = result.results;
+  const withDescription = rows.some((r) => (r.description ?? '').trim() !== '');
+
+  const header = ['Code'];
+  if (withDescription) header.push('Description');
+  header.push('Unit', 'Base rate', 'Base date', 'Escalation factor', 'Escalated rate', 'Currency');
+
+  const lines: string[] = [header.map(cell).join(',')];
+  for (const r of rows) {
+    const record: (string | number | null | undefined)[] = [r.code];
+    if (withDescription) record.push(r.description ?? '');
+    record.push(
+      r.unit,
+      r.base_rate ?? '',
+      r.base_date ?? '',
+      r.factor ?? '',
+      r.escalated_rate ?? '',
+      r.currency,
+    );
+    lines.push(record.map(cell).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+/** Deterministic download filename for an escalate-preview CSV. */
+export function escalatePreviewCsvName(result: EscalatePreviewResponse): string {
+  const safe = (value: string | null | undefined, max: number): string =>
+    String(value ?? '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, max);
+  const period = safe(result.target_period, 7);
+  const scopeTag =
+    result.scope === 'project' && result.project_id ? safe(result.project_id, 12) || 'project' : 'catalogue';
+  return `escalated-rates-${scopeTag}${period ? `-${period}` : ''}.csv`;
+}
+
+/**
+ * Download the escalate-preview results as CSV, built entirely on the client
+ * from the already-fetched rows (the money strings are printed verbatim). A
+ * UTF-8 BOM is prepended so spreadsheets open non-ASCII codes / units correctly.
+ */
+export function downloadEscalatePreviewCsv(result: EscalatePreviewResponse): void {
+  const csv = buildEscalatePreviewCsv(result);
+  const blob = new Blob([String.fromCharCode(0xfeff), csv], { type: 'text/csv;charset=utf-8;' });
+  triggerDownload(blob, escalatePreviewCsvName(result));
 }
 
 /* -- Cost-catalogue facets (populate the escalate selectors) -------------- */

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
   AlertTriangle,
@@ -8,12 +9,22 @@ import {
   TrendingUp,
   TrendingDown,
   CheckCircle2,
+  Save,
+  ArrowRight,
+  Trash2,
+  SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@/shared/ui';
 import { formatCurrency, toNum } from '@/shared/lib/money';
 import { useActiveProjectId } from '@/shared/hooks/useActiveProjectId';
-import { romEstimateApi, type RomEstimateResult, type RomReconciliation } from './api';
+import {
+  romEstimateApi,
+  type RomEstimateRequest,
+  type RomEstimateResult,
+  type RomEstimateRecord,
+  type RomReconciliation,
+} from './api';
 
 /**
  * Conceptual (ROM) estimate page.
@@ -40,6 +51,9 @@ function formatPct(value: string): string {
 
 export function RomEstimatePage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const projectId = useActiveProjectId();
 
   const referenceQuery = useQuery({
     queryKey: ['rom-estimate', 'reference'],
@@ -52,6 +66,9 @@ export function RomEstimatePage() {
   const [region, setRegion] = useState('global');
   const [area, setArea] = useState('');
   const [currency, setCurrency] = useState('');
+  // Optional real base cost/m2. When set, the total is anchored to it so the
+  // currency label becomes a real figure rather than a neutral reference basis.
+  const [baseRate, setBaseRate] = useState('');
 
   // Seed the selectors from the reference table once it loads.
   const reference = referenceQuery.data;
@@ -62,16 +79,47 @@ export function RomEstimatePage() {
     setRegion((prev) => prev || reference.default_region || 'global');
   }, [reference]);
 
+  // Assemble the request from the current form. The base-rate override is sent
+  // only when set; blank keeps the building-type reference basis. Money stays a
+  // string end to end - never coerced to a float here.
+  const buildRequest = (): RomEstimateRequest => {
+    const body: RomEstimateRequest = {
+      building_type: buildingType,
+      gross_floor_area: area,
+      quality,
+      region,
+      gfa_unit: 'm2',
+      currency: currency.trim().toUpperCase(),
+    };
+    const override = baseRate.trim();
+    if (override) body.base_rate_per_m2_override = override;
+    return body;
+  };
+
   const generate = useMutation({
-    mutationFn: () =>
-      romEstimateApi.generate({
-        building_type: buildingType,
-        gross_floor_area: area,
-        quality,
-        region,
-        gfa_unit: 'm2',
-        currency: currency.trim().toUpperCase(),
-      }),
+    mutationFn: () => romEstimateApi.generate(buildRequest()),
+  });
+
+  const refreshProjectQueries = () => {
+    if (!projectId) return;
+    queryClient.invalidateQueries({ queryKey: ['rom-estimate', 'saved', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['rom-estimate', 'reconciliation', projectId] });
+  };
+
+  // Save the current estimate as the project baseline (makes the reconciliation
+  // panel live).
+  const save = useMutation({
+    mutationFn: () => romEstimateApi.create(projectId, buildRequest()),
+    onSuccess: refreshProjectQueries,
+  });
+
+  // Save the estimate as the baseline AND seed a provisional BOQ, then jump to it.
+  const createBoq = useMutation({
+    mutationFn: () => romEstimateApi.createBoq(projectId, { ...buildRequest(), boq_name: '' }),
+    onSuccess: (res) => {
+      refreshProjectQueries();
+      navigate(`/boq/${res.boq_id}`);
+    },
   });
 
   const areaNum = parseFloat(area);
@@ -218,15 +266,119 @@ export function RomEstimatePage() {
         </CardContent>
       </Card>
 
-      {result && <RomResultView result={result} />}
+      {result && (
+        <RomResultView
+          result={result}
+          baseRate={baseRate}
+          onBaseRateChange={setBaseRate}
+          onApplyBaseRate={() => {
+            if (canGenerate) generate.mutate();
+          }}
+          applying={generate.isPending}
+        />
+      )}
+
+      {result && projectId && (
+        <Card>
+          <CardHeader
+            title={t('romEstimate.actions_title', { defaultValue: 'Save and hand off' })}
+          />
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <button
+                type="button"
+                onClick={() => save.mutate()}
+                disabled={!canGenerate || save.isPending}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-primary px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Save size={16} />
+                {save.isPending
+                  ? t('romEstimate.saving', { defaultValue: 'Saving…' })
+                  : t('romEstimate.save_baseline', { defaultValue: 'Save as baseline' })}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => createBoq.mutate()}
+                disabled={!canGenerate || createBoq.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-oe-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-oe-blue/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {createBoq.isPending
+                  ? t('romEstimate.creating_boq', { defaultValue: 'Creating BOQ…' })
+                  : t('romEstimate.create_boq', { defaultValue: 'Create BOQ from this estimate' })}
+                <ArrowRight size={16} />
+              </button>
+            </div>
+
+            <p className="mt-3 text-2xs text-content-tertiary">
+              {t('romEstimate.actions_hint', {
+                defaultValue:
+                  'Saving sets the concept baseline the detailed design is tracked against. Creating a BOQ seeds one provisional allowance per element to refine with a take-off.',
+              })}
+            </p>
+
+            {save.isSuccess && !save.isPending && (
+              <p className="mt-2 text-2xs font-medium text-emerald-600 dark:text-emerald-400">
+                {t('romEstimate.saved_ok', { defaultValue: 'Saved as the project baseline.' })}
+              </p>
+            )}
+            {save.isError && (
+              <p className="mt-2 text-2xs text-semantic-error">
+                {t('romEstimate.save_error', { defaultValue: 'Could not save the estimate. Try again.' })}
+              </p>
+            )}
+            {createBoq.isError && (
+              <p className="mt-2 text-2xs text-semantic-error">
+                {t('romEstimate.create_boq_error', {
+                  defaultValue: 'Could not create the BOQ. Try again.',
+                })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {result && !projectId && (
+        <p className="text-2xs text-content-tertiary">
+          {t('romEstimate.select_project_hint', {
+            defaultValue:
+              'Select a project in the top bar to save this estimate as a baseline and create a BOQ from it.',
+          })}
+        </p>
+      )}
+
+      {projectId && <RomSavedEstimates projectId={projectId} />}
     </div>
   );
 }
 
 /** Read-only rendering of a computed estimate: total, band and breakdown. */
-function RomResultView({ result }: { result: RomEstimateResult }) {
+function RomResultView({
+  result,
+  baseRate,
+  onBaseRateChange,
+  onApplyBaseRate,
+  applying,
+}: {
+  result: RomEstimateResult;
+  baseRate: string;
+  onBaseRateChange: (v: string) => void;
+  onApplyBaseRate: () => void;
+  applying: boolean;
+}) {
   const { t } = useTranslation();
   const currency = result.currency || '';
+
+  // Display-only low / base / high cost-per-m2 band. The base is the backend
+  // cost/m2 string (shown verbatim via formatCurrency); the low/high are a
+  // display band derived from the accuracy percentages using Number() on the
+  // RATIO only - never float math on money we persist. formatCurrency does the
+  // final coercion for display.
+  const baseRateNum = toNum(result.cost_per_m2);
+  const lowRatio = 1 + toNum(result.accuracy.low_pct) / 100;
+  const highRatio = 1 + toNum(result.accuracy.high_pct) / 100;
+  const lowPerM2 = baseRateNum * lowRatio;
+  const highPerM2 = baseRateNum * highRatio;
 
   const gfaLabel = useMemo(() => {
     const n = toNum(result.gfa_canonical_m2);
@@ -300,6 +452,77 @@ function RomResultView({ result }: { result: RomEstimateResult }) {
               </span>
             </div>
           )}
+
+          {/* Low / base / high cost-per-m2 band (display-only). */}
+          <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-surface-secondary p-3 text-center">
+            <div>
+              <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+                {t('romEstimate.rate_low', { defaultValue: 'Low / m²' })}
+              </div>
+              <div className="mt-0.5 text-sm font-semibold tabular-nums text-content-secondary">
+                {formatCurrency(lowPerM2, currency)}
+              </div>
+            </div>
+            <div className="border-x border-border-light">
+              <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+                {t('romEstimate.rate_base', { defaultValue: 'Base / m²' })}
+              </div>
+              <div className="mt-0.5 text-sm font-bold tabular-nums text-content-primary">
+                {formatCurrency(result.cost_per_m2, currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+                {t('romEstimate.rate_high', { defaultValue: 'High / m²' })}
+              </div>
+              <div className="mt-0.5 text-sm font-semibold tabular-nums text-content-secondary">
+                {formatCurrency(highPerM2, currency)}
+              </div>
+            </div>
+          </div>
+
+          {/* Anchor the estimate to a real base cost/m2 in the chosen currency. */}
+          <div className="mt-4 rounded-xl border border-border-light p-3">
+            <label
+              htmlFor="rom-base-rate"
+              className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-content-secondary"
+            >
+              <SlidersHorizontal size={14} />
+              {t('romEstimate.base_rate_override', {
+                defaultValue: 'Your base cost / m² (optional)',
+              })}
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id="rom-base-rate"
+                type="number"
+                min={0}
+                step="any"
+                value={baseRate}
+                onChange={(e) => onBaseRateChange(e.target.value)}
+                placeholder={t('romEstimate.base_rate_placeholder', {
+                  defaultValue: 'e.g. 2200 (in your currency)',
+                })}
+                className={`${INPUT_CLASS} tabular-nums sm:max-w-xs`}
+              />
+              <button
+                type="button"
+                onClick={onApplyBaseRate}
+                disabled={applying}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-primary px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {applying
+                  ? t('romEstimate.applying', { defaultValue: 'Updating…' })
+                  : t('romEstimate.apply_rate', { defaultValue: 'Update estimate' })}
+              </button>
+            </div>
+            <p className="mt-1.5 text-2xs text-content-tertiary">
+              {t('romEstimate.base_rate_help', {
+                defaultValue:
+                  'Enter a real cost per m² to anchor the total to your own rate. Quality and region factors still apply on top. Leave blank to use the neutral reference basis.',
+              })}
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -567,5 +790,138 @@ function RomReconciliationView({ rec }: { rec: RomReconciliation }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Format an ISO timestamp as a short local date, guarding null / bad input. */
+function shortDate(value: string | null): string {
+  if (!value) return '';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+}
+
+/**
+ * A small list of the project's saved conceptual estimates, with delete.
+ *
+ * Gives the saved baselines (the most-recent of which the reconciliation panel
+ * tracks against) a visible, manageable home. Renders nothing until at least
+ * one estimate exists. All money comes from the API as Decimal strings and is
+ * only ever formatted, never float-mathed, here.
+ */
+function RomSavedEstimates({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const listQuery = useQuery({
+    queryKey: ['rom-estimate', 'saved', projectId],
+    queryFn: () => romEstimateApi.list(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 30 * 1000,
+  });
+
+  const del = useMutation({
+    mutationFn: (estimateId: string) => romEstimateApi.delete(projectId, estimateId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rom-estimate', 'saved', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['rom-estimate', 'reconciliation', projectId] });
+    },
+  });
+
+  const rows: RomEstimateRecord[] = listQuery.data ?? [];
+
+  // Keep the page clean when nothing has been saved yet.
+  if (!listQuery.isLoading && rows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('romEstimate.saved_title', { defaultValue: 'Saved conceptual estimates' })}
+      />
+      <CardContent>
+        {listQuery.isLoading && (
+          <p className="text-sm text-content-tertiary">
+            {t('romEstimate.saved_loading', { defaultValue: 'Loading saved estimates…' })}
+          </p>
+        )}
+        {rows.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-2xs uppercase tracking-wider text-content-tertiary">
+                  <th className="py-2 pr-4 font-medium">
+                    {t('romEstimate.saved_col_name', { defaultValue: 'Name / type' })}
+                  </th>
+                  <th className="py-2 pr-4 text-right font-medium">
+                    {t('romEstimate.saved_col_rate', { defaultValue: 'Cost / m²' })}
+                  </th>
+                  <th className="py-2 pr-4 text-right font-medium">
+                    {t('romEstimate.saved_col_total', { defaultValue: 'Total' })}
+                  </th>
+                  <th className="py-2 pr-4 font-medium">
+                    {t('romEstimate.saved_col_date', { defaultValue: 'Saved' })}
+                  </th>
+                  <th className="py-2 text-right font-medium">
+                    <span className="sr-only">
+                      {t('romEstimate.saved_col_actions', { defaultValue: 'Actions' })}
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const isDeleting = del.isPending && del.variables === row.id;
+                  return (
+                    <tr key={row.id} className="border-b border-border-light last:border-0">
+                      <td className="py-2 pr-4 text-content-primary">
+                        <div className="font-medium">
+                          {row.name ||
+                            t(`romEstimate.type_${row.building_type}`, {
+                              defaultValue: row.building_type_label,
+                            })}
+                        </div>
+                        <div className="text-2xs text-content-tertiary">
+                          {t(`romEstimate.type_${row.building_type}`, {
+                            defaultValue: row.building_type_label,
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-content-secondary">
+                        {formatCurrency(row.cost_per_m2, row.currency)}
+                      </td>
+                      <td className="py-2 pr-4 text-right font-medium tabular-nums text-content-primary">
+                        {formatCurrency(row.total, row.currency, undefined, {
+                          maximumFractionDigits: 0,
+                        })}
+                      </td>
+                      <td className="py-2 pr-4 text-2xs text-content-tertiary">
+                        {shortDate(row.created_at)}
+                      </td>
+                      <td className="py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => del.mutate(row.id)}
+                          disabled={isDeleting}
+                          aria-label={t('romEstimate.saved_delete', { defaultValue: 'Delete estimate' })}
+                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-content-tertiary transition-colors hover:bg-surface-secondary hover:text-semantic-error disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {del.isError && (
+          <p className="mt-2 text-2xs text-semantic-error">
+            {t('romEstimate.saved_delete_error', {
+              defaultValue: 'Could not delete the estimate. Try again.',
+            })}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

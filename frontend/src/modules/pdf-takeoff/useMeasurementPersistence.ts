@@ -41,6 +41,12 @@ interface Measurement {
   /** Per-measurement stroke width override in CSS px (issue #312). Round-trips
    *  via metadata; falls back to the 2px hairline when unset. */
   strokeWidth?: number;
+  /** Per-measurement stroke width in canonical METRES (issue #339). When set (and
+   *  the page is calibrated) the band renders at the element's true real-world
+   *  width via ``strokeWidthReal * pixelsPerUnit``, staying consistent across
+   *  pages calibrated at different scales. Round-trips via metadata as
+   *  ``stroke_width_real``; mutually exclusive with `strokeWidth`. */
+  strokeWidthReal?: number;
   /** Per-measurement STROKE (line) opacity for linear types (issue #332).
    *  Round-trips via metadata; falls back to fully opaque when unset. */
   strokeAlpha?: number;
@@ -316,6 +322,9 @@ function toApiFormat(
       // so a re-styled measurement survives a server sync.
       fill_alpha: m.fillAlpha,
       stroke_width: m.strokeWidth,
+      // Real-world stroke width in canonical metres (issue #339); round-trips so a
+      // true-width line survives a server sync and renders per each page's scale.
+      stroke_width_real: m.strokeWidthReal,
       stroke_alpha: m.strokeAlpha,
       // Reported-quantity adjustments (issue #332 wave): slope / wastage /
       // typical-multiplier ride the metadata blob like the appearance overrides
@@ -370,6 +379,9 @@ function syncSignature(m: Measurement): string {
     // edit must re-sync so the server copy carries it.
     fa: m.fillAlpha ?? null,
     sw: m.strokeWidth ?? null,
+    // Real-world stroke width (issue #339): a true-width edit is appearance-only
+    // (no geometry move), so include it here or the PATCH would never fire.
+    swr: m.strokeWidthReal ?? null,
     sa: m.strokeAlpha ?? null,
     // Reported-quantity adjustments (issue #332 wave): a slope / wastage /
     // multiplier edit changes the reported quantity, so it must re-sync.
@@ -429,6 +441,9 @@ function toApiUpdate(
     // PATCH because the server replaces the metadata blob wholesale.
     fill_alpha: m.fillAlpha,
     stroke_width: m.strokeWidth,
+    // Real-world stroke width in canonical metres (issue #339); re-sent on PATCH
+    // because the server replaces the metadata blob wholesale.
+    stroke_width_real: m.strokeWidthReal,
     stroke_alpha: m.strokeAlpha,
     // Reported-quantity adjustments (issue #332 wave); re-sent on PATCH for
     // the same reason (the server replaces the metadata blob wholesale).
@@ -503,6 +518,7 @@ function fromApiFormat(r: MeasurementResponse): Measurement {
     height: (meta.height as number) ?? undefined,
     fillAlpha: (meta.fill_alpha as number) ?? undefined,
     strokeWidth: (meta.stroke_width as number) ?? undefined,
+    strokeWidthReal: (meta.stroke_width_real as number) ?? undefined,
     strokeAlpha: (meta.stroke_alpha as number) ?? undefined,
     slopeFactor: (meta.slope_factor as number) ?? undefined,
     wastagePct: (meta.wastage_pct as number) ?? undefined,

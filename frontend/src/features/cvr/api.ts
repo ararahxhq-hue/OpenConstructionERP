@@ -169,6 +169,14 @@ export interface CreateCashflowPointPayload {
   label?: string;
 }
 
+/** Partial update for a cashflow point. period / project_id are immutable. */
+export interface UpdateCashflowPointPayload {
+  cash_in?: string;
+  cash_out?: string;
+  currency?: string;
+  label?: string;
+}
+
 export interface CreatePaymentApplicationPayload {
   project_id: string;
   period: string;
@@ -246,6 +254,13 @@ export async function createCashflowPoint(
   data: CreateCashflowPointPayload,
 ): Promise<CashflowPoint> {
   return apiPost<CashflowPoint>(`${BASE}/cashflow/`, data);
+}
+
+export async function updateCashflowPoint(
+  id: string,
+  data: UpdateCashflowPointPayload,
+): Promise<CashflowPoint> {
+  return apiPatch<CashflowPoint>(`${BASE}/cashflow/${id}`, data);
 }
 
 export async function deleteCashflowPoint(id: string): Promise<void> {

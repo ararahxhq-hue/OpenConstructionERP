@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { Plus, Trash2, Save, Users, Calculator, ArrowDownToLine } from 'lucide-react';
+import { Plus, Trash2, Save, Users, Calculator, ArrowDownToLine, Database } from 'lucide-react';
 
 import { Button } from '@/shared/ui';
 import { formatCurrency } from '@/shared/lib/money';
@@ -16,6 +16,7 @@ import {
   type OnCostRowInput,
   type CrewRowInput,
   type LaborRateTemplate,
+  type CostItemPayload,
 } from './api';
 
 /** Debounce any value so the live compute does not fire on every keystroke. */
@@ -29,12 +30,16 @@ function useDebounced<T>(value: T, delay: number): T {
 }
 
 const inputClass =
-  'w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 ' +
-  'focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ' +
-  'dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100';
+  'w-full rounded-md border border-border bg-surface-primary px-2.5 py-1.5 text-sm text-content-primary ' +
+  'placeholder:text-content-quaternary focus:border-oe-blue focus:outline-none focus:ring-1 focus:ring-oe-blue';
 
 const cardClass =
-  'rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900';
+  'rounded-xl border border-border bg-surface-elevated p-4 sm:p-5 shadow-sm';
+
+// Composition-bar palette: the base wage is brand blue, each on-cost cycles a
+// distinct muted hue so the stacked "where the rate goes" bar reads clearly.
+const BASE_COLOR = 'var(--oe-blue)';
+const ONCOST_COLORS = ['#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
 
 /**
  * All-in labor and crew rate build-up.
@@ -138,19 +143,175 @@ export function LaborRatesPage() {
 
   const crewBreakdown = breakdown?.crew ?? null;
 
+  // Display-only ratios for the headline + composition bar. These drive a CSS
+  // width and a percentage label, never a money figure, so Number() is safe
+  // here (the authoritative Decimals still come from the backend everywhere a
+  // currency value is shown via formatCurrency).
+  const baseNum = Number(breakdown?.base_wage ?? baseWage);
+  const allInNum = Number(allInRate);
+  const burdenPct =
+    baseNum > 0 && allInNum > 0 ? ((allInNum - baseNum) / baseNum) * 100 : null;
+
+  // ── Publish computed rates as reusable cost items ──────────────────────────
+  // The all-in rate (and, when a crew is composed, the blended crew rate) can
+  // be saved into the cost catalogue as COST ITEMS, so they flow onward into
+  // BOQ / assemblies via the existing costs->BOQ path. Money stays a
+  // Decimal-string end to end: the authoritative Decimals the compute endpoint
+  // returned are forwarded verbatim; the client never re-derives a rate with
+  // float math.
+  const saveCostItemMutation = useMutation({
+    mutationFn: (args: { variant: 'all_in' | 'crew'; payload: CostItemPayload }) =>
+      laborRatesApi.saveAsCostItem(args.payload),
+    onSuccess: (created) => {
+      addToast({
+        type: 'success',
+        title: t('laborRates.cost_item_saved_title', {
+          defaultValue: 'Saved to cost catalogue',
+        }),
+        message: t('laborRates.cost_item_saved_msg', {
+          defaultValue: '"{{code}}" is now a cost item you can add to a BOQ.',
+          code: created?.code ?? '',
+        }),
+      });
+      // Best-effort refresh of any mounted cost-database view.
+      queryClient.invalidateQueries({ queryKey: ['costs'] });
+    },
+    onError: (err: unknown) => {
+      addToast({
+        type: 'error',
+        title: t('laborRates.cost_item_failed', {
+          defaultValue: 'Could not save cost item',
+        }),
+        message: getErrorMessage(err),
+      });
+    },
+  });
+
+  // A bounded, catalogue-safe, unique code derived from the template name (or a
+  // default prefix). The base-36 timestamp suffix keeps repeated saves from
+  // colliding on the cost item's unique-code constraint.
+  const buildCostItemCode = (prefix: string): string => {
+    const slug = templateName
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40);
+    const suffix = Date.now().toString(36).toUpperCase();
+    return slug ? `${prefix}-${slug}-${suffix}` : `${prefix}-${suffix}`;
+  };
+
+  const saveAllInAsCostItem = () => {
+    if (!(allInNum > 0)) return;
+    const name = templateName.trim();
+    // Components mirror the build-up: the base wage plus each on-cost line, so
+    // the component costs sum to the all-in rate and the downstream BOQ
+    // unit_rate (Σ of resource totals) matches this item's rate. Money values
+    // are the backend's Decimal-strings, passed through untouched.
+    const components: CostItemPayload['components'] = [
+      {
+        name: t('laborRates.base_wage', { defaultValue: 'Base hourly wage' }),
+        type: 'labor',
+        unit: 'h',
+        quantity: 1,
+        unit_rate: breakdown?.base_wage ?? allInRate,
+        cost: breakdown?.base_wage ?? allInRate,
+      },
+      ...(breakdown?.lines ?? []).map((line) => ({
+        name: line.label,
+        type: 'labor',
+        unit: 'h',
+        quantity: 1,
+        unit_rate: line.amount,
+        cost: line.amount,
+      })),
+    ];
+    saveCostItemMutation.mutate({
+      variant: 'all_in',
+      payload: {
+        code: buildCostItemCode('LABOR'),
+        description:
+          name ||
+          t('laborRates.cost_item_default_desc', { defaultValue: 'All-in labor rate' }),
+        unit: 'h',
+        rate: allInRate,
+        currency,
+        source: 'manual',
+        region: 'CUSTOM',
+        classification: { collection: 'Labor' },
+        components,
+        tags: ['labor', 'labor-rate'],
+      },
+    });
+  };
+
+  const saveCrewAsCostItem = () => {
+    if (!crewBreakdown || crewBreakdown.headcount <= 0) return;
+    const name = templateName.trim();
+    saveCostItemMutation.mutate({
+      variant: 'crew',
+      payload: {
+        code: buildCostItemCode('CREW'),
+        description: name
+          ? t('laborRates.crew_cost_item_named_desc', {
+              defaultValue: '{{name}} - blended crew rate',
+              name,
+            })
+          : t('laborRates.crew_cost_item_desc', { defaultValue: 'Blended crew rate' }),
+        unit: 'h',
+        // Blended per-person-hour rate (crew total / headcount), an authoritative
+        // Decimal-string from the backend. Saved as a flat rate item (no
+        // components) so the downstream BOQ unit_rate equals the blended rate.
+        rate: crewBreakdown.blended_hourly_rate,
+        currency,
+        source: 'manual',
+        region: 'CUSTOM',
+        classification: { collection: 'Labor' },
+        tags: ['labor', 'crew-rate'],
+      },
+    });
+  };
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
-      <header className="space-y-1">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">
-          <Calculator size={22} className="text-blue-600 dark:text-blue-400" />
-          {t('laborRates.title', { defaultValue: 'Labor & crew rate build-up' })}
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {t('laborRates.subtitle', {
-            defaultValue:
-              'Build a fully loaded hourly rate from a base wage plus on-costs, then blend trades into a crew rate.',
-          })}
-        </p>
+    <div className="space-y-6 animate-fade-in">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue">
+            <Calculator size={22} />
+          </span>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-content-primary">
+              {t('laborRates.title', { defaultValue: 'Labor & crew rate build-up' })}
+            </h1>
+            <p className="max-w-2xl text-sm text-content-secondary">
+              {t('laborRates.subtitle', {
+                defaultValue:
+                  'Build a fully loaded hourly rate from a base wage plus on-costs, then blend trades into a crew rate.',
+              })}
+            </p>
+          </div>
+        </div>
+        {/* Live headline - all-in rate + labour burden, always in view */}
+        <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-elevated px-4 py-2.5 shadow-sm">
+          <div className="text-right">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
+              {t('laborRates.all_in_rate', { defaultValue: 'All-in hourly rate' })}
+            </div>
+            <div className="text-xl font-bold text-oe-blue-text">
+              {formatCurrency(allInRate, currency)}
+            </div>
+          </div>
+          {burdenPct !== null && (
+            <div className="border-l border-border pl-4 text-right">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
+                {t('laborRates.burden', { defaultValue: 'Labor burden' })}
+              </div>
+              <div className="text-xl font-bold text-content-primary">
+                +{burdenPct.toFixed(0)}%
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Template picker */}
@@ -418,6 +579,47 @@ export function LaborRatesPage() {
               </div>
             </dl>
 
+            {/* Composition bar - what share of the all-in rate is wage vs each
+                on-cost. Widths are display-only ratios of the backend Decimals. */}
+            {breakdown && allInNum > 0 && (
+              <div className="mt-4">
+                <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-secondary">
+                  {[
+                    { label: t('laborRates.base_wage', { defaultValue: 'Base hourly wage' }), amount: breakdown.base_wage, color: BASE_COLOR },
+                    ...(breakdown.lines ?? []).map((line, i) => ({
+                      label: line.label,
+                      amount: line.amount,
+                      color: ONCOST_COLORS[i % ONCOST_COLORS.length]!,
+                    })),
+                  ].map((seg, i) => {
+                    const pct = (Number(seg.amount) / allInNum) * 100;
+                    if (!(pct > 0)) return null;
+                    return (
+                      <div
+                        key={`${seg.label}-${i}`}
+                        style={{ width: `${pct}%`, backgroundColor: seg.color }}
+                        title={`${seg.label} · ${pct.toFixed(0)}%`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-content-tertiary">
+                  {[
+                    { label: t('laborRates.base_wage', { defaultValue: 'Base hourly wage' }), color: BASE_COLOR },
+                    ...(breakdown.lines ?? []).map((line, i) => ({
+                      label: line.label,
+                      color: ONCOST_COLORS[i % ONCOST_COLORS.length]!,
+                    })),
+                  ].map((seg, i) => (
+                    <span key={`${seg.label}-lg-${i}`} className="inline-flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: seg.color }} />
+                      {seg.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {computeQuery.isError && (
               <p className="mt-3 text-xs text-red-600 dark:text-red-400">
                 {t('laborRates.compute_error', {
@@ -447,6 +649,51 @@ export function LaborRatesPage() {
               >
                 {t('laborRates.save_template', { defaultValue: 'Save as template' })}
               </Button>
+            </div>
+
+            {/* Save as cost item: publish the computed rate(s) into the cost
+                catalogue so they flow into BOQ / assemblies via costs to BOQ. */}
+            <div className="mt-4 space-y-2 border-t border-gray-200 pt-4 dark:border-gray-800">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('laborRates.publish_hint', {
+                  defaultValue:
+                    'Publish this rate to the cost catalogue so it can be applied in a BOQ or assembly.',
+                })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Database size={14} />}
+                  loading={
+                    saveCostItemMutation.isPending &&
+                    saveCostItemMutation.variables?.variant === 'all_in'
+                  }
+                  disabled={!(allInNum > 0) || saveCostItemMutation.isPending}
+                  onClick={saveAllInAsCostItem}
+                >
+                  {t('laborRates.save_cost_item', { defaultValue: 'Save as cost item' })}
+                </Button>
+                {crewBreakdown &&
+                  crewBreakdown.headcount > 0 &&
+                  Number(crewBreakdown.blended_hourly_rate) > 0 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<Database size={14} />}
+                      loading={
+                        saveCostItemMutation.isPending &&
+                        saveCostItemMutation.variables?.variant === 'crew'
+                      }
+                      disabled={saveCostItemMutation.isPending}
+                      onClick={saveCrewAsCostItem}
+                    >
+                      {t('laborRates.save_crew_cost_item', {
+                        defaultValue: 'Save crew rate as cost item',
+                      })}
+                    </Button>
+                  )}
+              </div>
             </div>
           </div>
         </div>

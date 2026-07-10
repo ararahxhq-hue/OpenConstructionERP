@@ -12,36 +12,63 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Phone, Users, Mic, MessageSquare, Clock, ListChecks, Inbox, Sparkles, ClipboardCheck } from 'lucide-react';
-import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo } from '@/shared/ui';
+import {
+  Phone,
+  Users,
+  Mic,
+  MessageSquare,
+  Clock,
+  ListChecks,
+  Inbox,
+  Sparkles,
+  ClipboardCheck,
+  Pencil,
+  Trash2,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
+import {
+  Card,
+  Badge,
+  EmptyState,
+  SkeletonTable,
+  DismissibleInfo,
+  IntroRichText,
+  ConfirmDialog,
+} from '@/shared/ui';
 import { getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
-import { listPhoneLogs, createPhoneLog } from './api';
+import { useToastStore } from '@/stores/useToastStore';
+import { listPhoneLogs, createPhoneLog, deletePhoneLog } from './api';
 import { RecordingProtocolCard } from './RecordingProtocolCard';
 import { RecordingPlayer } from './RecordingPlayer';
+import { LinkToRecordMenu } from './LinkToRecordMenu';
+import { PhoneLogEditDialog } from './PhoneLogEditDialog';
+import {
+  PhoneLogFilters,
+  filterPhoneLogs,
+  EMPTY_FILTER,
+  type PhoneLogFilterState,
+} from './PhoneLogFilters';
+import { exportPhoneLogsCsv } from './exportCsv';
+import {
+  CHANNEL_VARIANT,
+  CHANNELS,
+  DIRECTION_VARIANT,
+  DIRECTIONS,
+  channelLabel,
+  directionLabel,
+  formatDuration,
+} from './labels';
 import { hasRecording, isRecordingDraft, readProtocol } from './protocol';
 import type { PhoneChannel, PhoneDirection, PhoneLog } from './types';
 
-type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
+// Badge variants, picker sets, translated labels, and formatDuration live in
+// ./labels so the filter bar and the edit dialog render a call the same way.
 
-const DIRECTION_VARIANT: Record<PhoneDirection, BadgeVariant> = {
-  inbound: 'blue',
-  outbound: 'success',
-  internal: 'neutral',
-  unknown: 'neutral',
-};
-
-const CHANNEL_VARIANT: Record<PhoneChannel, BadgeVariant> = {
-  phone: 'neutral',
-  voice_note: 'warning',
-  chat: 'blue',
-  other: 'neutral',
-};
-
-// The canonical values the form submits. The server also accepts informal
-// synonyms, but the picker offers the clean set so the stored value is exact.
-const DIRECTIONS: PhoneDirection[] = ['inbound', 'outbound', 'internal'];
-const CHANNELS: PhoneChannel[] = ['phone', 'voice_note', 'chat'];
+// How many confirmed calls to show per page in the history below.
+const PAGE_SIZE = 6;
 
 interface FormState {
   raw_parties: string;
@@ -63,27 +90,17 @@ const EMPTY_FORM: FormState = {
   summary: '',
 };
 
-function directionLabel(t: (k: string, o: { defaultValue: string }) => string, d: PhoneDirection): string {
-  return t(`phonelog.direction_${d}`, {
-    defaultValue: { inbound: 'Inbound', outbound: 'Outbound', internal: 'Internal', unknown: 'Unknown' }[d],
-  });
-}
-
-function channelLabel(t: (k: string, o: { defaultValue: string }) => string, c: PhoneChannel): string {
-  return t(`phonelog.channel_${c}`, {
-    defaultValue: { phone: 'Phone call', voice_note: 'Voice note', chat: 'Chat', other: 'Other' }[c],
-  });
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || seconds <= 0) return '-';
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (mins === 0) return `${secs}s`;
-  return secs === 0 ? `${mins}m` : `${mins}m ${secs}s`;
-}
-
-function PhoneLogCard({ log }: { log: PhoneLog }) {
+function PhoneLogCard({
+  log,
+  projectId,
+  onEdit,
+  onDelete,
+}: {
+  log: PhoneLog;
+  projectId: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const { t } = useTranslation();
   const proto = readProtocol(log);
   return (
@@ -185,6 +202,26 @@ function PhoneLogCard({ log }: { log: PhoneLog }) {
           <RecordingPlayer id={log.id} />
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border-light/60 pt-2">
+        <LinkToRecordMenu projectId={projectId} />
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary hover:bg-surface-secondary"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          {t('phonelog.edit', { defaultValue: 'Edit' })}
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {t('phonelog.delete', { defaultValue: 'Delete' })}
+        </button>
+      </div>
     </Card>
   );
 }
@@ -197,10 +234,17 @@ export function PhoneLogPage() {
   const projectId = routeProjectId ?? activeProjectId ?? '';
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [filter, setFilter] = useState<PhoneLogFilterState>(EMPTY_FILTER);
+  const [page, setPage] = useState(0);
+  const [editing, setEditing] = useState<PhoneLog | null>(null);
+  const [deleting, setDeleting] = useState<PhoneLog | null>(null);
+  const addToast = useToastStore((s) => s.addToast);
 
   const logsQuery = useQuery({
     queryKey: ['phonelog', 'list', projectId],
-    queryFn: () => listPhoneLogs(projectId),
+    // Fetch a fuller page (server caps at 100) so search, filtering, and
+    // pagination below work over a real history, not just the newest few.
+    queryFn: () => listPhoneLogs(projectId, { limit: 100 }),
     enabled: !!projectId,
     retry: false,
     staleTime: 30_000,
@@ -230,10 +274,37 @@ export function PhoneLogPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deletePhoneLog(id),
+    onSuccess: () => {
+      addToast({ type: 'success', title: t('phonelog.deleted', { defaultValue: 'Call deleted' }) });
+      setDeleting(null);
+      void queryClient.invalidateQueries({ queryKey: ['phonelog', 'list', projectId] });
+    },
+    onError: (err) => {
+      addToast({
+        type: 'error',
+        title: t('phonelog.delete_error', { defaultValue: 'Could not delete the call' }),
+        message: getErrorMessage(err),
+      });
+    },
+  });
+
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const canSubmit = !!projectId && (form.transcript.trim() !== '' || form.summary.trim() !== '');
+
+  // Search / filter runs over the fetched calls; pagination then pages the
+  // matches. safePage clamps the page when a filter shrinks the result set.
+  const filtered = filterPhoneLogs(logs, filter);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const paged = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const applyFilter = (next: PhoneLogFilterState) => {
+    setFilter(next);
+    setPage(0);
+  };
 
   if (!projectId) {
     return (
@@ -266,6 +337,14 @@ export function PhoneLogPage() {
       <DismissibleInfo
         storageKey="phonelog-intro"
         title={t('phonelog.intro_title', { defaultValue: 'Why log a call' })}
+        more={
+          <IntroRichText
+            text={t('phonelog.intro_more', {
+              defaultValue:
+                'Each entry keeps who was on the call, which way it went, when it happened, and the exact instruction sentences pulled from what was said, so weeks later there is a dated, searchable record instead of a memory.\n\nWhen a call settles a question or changes the work, use Link to record on the call to open the matching RFI or change order and raise the formal record there. The call then stands as the evidence behind it. Search and the filters find any call by party, direction, channel, or date, and Export CSV hands the whole log to a claim or an audit.',
+            })}
+          />
+        }
       >
         {t('phonelog.intro_body', {
           defaultValue:
@@ -410,13 +489,100 @@ export function PhoneLogPage() {
             })}
           />
         ) : (
-          <div className="space-y-3">
-            {logs.map((log) => (
-              <PhoneLogCard key={log.id} log={log} />
-            ))}
-          </div>
+          <>
+            <PhoneLogFilters
+              value={filter}
+              onChange={applyFilter}
+              total={logs.length}
+              shown={filtered.length}
+              onExport={() => exportPhoneLogsCsv(filtered, t)}
+            />
+
+            {filtered.length === 0 ? (
+              <EmptyState
+                icon={<Search className="h-6 w-6" />}
+                title={t('phonelog.no_matches_title', { defaultValue: 'No calls match your filters' })}
+                description={t('phonelog.no_matches_desc', {
+                  defaultValue: 'Try a different search, direction, channel, or date range.',
+                })}
+                action={{
+                  label: t('phonelog.clear_filters', { defaultValue: 'Clear' }),
+                  onClick: () => applyFilter(EMPTY_FILTER),
+                }}
+              />
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {paged.map((log) => (
+                    <PhoneLogCard
+                      key={log.id}
+                      log={log}
+                      projectId={projectId}
+                      onEdit={() => setEditing(log)}
+                      onDelete={() => setDeleting(log)}
+                    />
+                  ))}
+                </div>
+
+                {pageCount > 1 && (
+                  <div className="flex items-center justify-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      disabled={safePage === 0}
+                      onClick={() => setPage(safePage - 1)}
+                      className="inline-flex items-center gap-1 rounded-md border border-border-light px-2.5 py-1.5 text-sm text-content-secondary hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      {t('phonelog.prev', { defaultValue: 'Previous' })}
+                    </button>
+                    <span className="text-xs text-content-tertiary">
+                      {t('phonelog.page_of', {
+                        defaultValue: 'Page {{page}} of {{count}}',
+                        page: safePage + 1,
+                        count: pageCount,
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safePage >= pageCount - 1}
+                      onClick={() => setPage(safePage + 1)}
+                      className="inline-flex items-center gap-1 rounded-md border border-border-light px-2.5 py-1.5 text-sm text-content-secondary hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {t('phonelog.next', { defaultValue: 'Next' })}
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
       </div>
+
+      {editing && (
+        <PhoneLogEditDialog
+          key={editing.id}
+          log={editing}
+          open
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void queryClient.invalidateQueries({ queryKey: ['phonelog', 'list', projectId] });
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!deleting}
+        title={t('phonelog.delete_title', { defaultValue: 'Delete this call?' })}
+        message={t('phonelog.delete_message', {
+          defaultValue: 'This removes the logged call and any stored recording. This cannot be undone.',
+        })}
+        confirmLabel={t('phonelog.delete_confirm', { defaultValue: 'Delete call' })}
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleting && deleteMutation.mutate(deleting.id)}
+        onCancel={() => setDeleting(null)}
+      />
     </div>
   );
 }

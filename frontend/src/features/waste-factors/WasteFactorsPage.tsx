@@ -13,10 +13,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Layers, Wand2, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Layers, Wand2, Sparkles, ArrowRight, Loader2, Package } from 'lucide-react';
 import { Button, Badge, Card, CardHeader, EmptyState, ErrorState, Input, PageHeader } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
+import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { getErrorMessage } from '@/shared/lib/api';
+import { getResourceStatement } from '@/features/resource-summary/api';
 import {
   listFactors,
   createFactor,
@@ -24,7 +26,9 @@ import {
   seedDefaults,
   applyFactors,
   parseApplyInput,
+  materialLinesToApplyInput,
   trimQty,
+  type ApplyLineInput,
   type ApplyResponse,
 } from './api';
 
@@ -53,6 +57,7 @@ function WasteFactorsContent() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
 
   const factorsQ = useQuery({ queryKey: QK.factors, queryFn: () => listFactors() });
   const factors = useMemo(() => factorsQ.data ?? [], [factorsQ.data]);
@@ -118,12 +123,38 @@ function WasteFactorsContent() {
   const parsedLines = useMemo(() => parseApplyInput(applyText), [applyText]);
 
   const applyMut = useMutation({
-    mutationFn: () => applyFactors(parsedLines),
+    mutationFn: (lines: ApplyLineInput[]) => applyFactors(lines),
     onSuccess: (res) => setApplyResult(res),
     onError,
   });
 
   const canApply = parsedLines.length > 0 && !applyMut.isPending;
+
+  // Prefill the calculator from the active project's estimate: read its
+  // resource statement (READ-ONLY), turn the material group's { name, quantity }
+  // rows into net lines, drop them into the paste box and run the existing
+  // net-to-gross flow. This only feeds the calculator - no billed quantity is
+  // touched.
+  const loadMaterialsMut = useMutation({
+    mutationFn: () => getResourceStatement(activeProjectId as string),
+    onSuccess: (statement) => {
+      const materialGroup = statement.groups.find((g) => g.kind === 'material');
+      const lines = materialLinesToApplyInput(materialGroup?.lines ?? []);
+      if (lines.length === 0) {
+        addToast({
+          type: 'info',
+          title: t('waste_factors.no_materials_title', { defaultValue: 'No materials to load' }),
+          message: t('waste_factors.no_materials_msg', {
+            defaultValue: "This project's estimate has no material quantities yet.",
+          }),
+        });
+        return;
+      }
+      setApplyText(lines.map((l) => `${l.category} ${trimQty(l.net_qty)}`).join('\n'));
+      applyMut.mutate(lines);
+    },
+    onError,
+  });
 
   if (factorsQ.isError) {
     return (
@@ -280,6 +311,31 @@ function WasteFactorsContent() {
           })}
         />
         <div className="mt-4 space-y-4">
+          {/* Prefill the box from the active project's estimate (read-only). */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Package className="h-4 w-4" />}
+              disabled={!activeProjectId || loadMaterialsMut.isPending || applyMut.isPending}
+              loading={loadMaterialsMut.isPending}
+              onClick={() => loadMaterialsMut.mutate()}
+            >
+              {t('waste_factors.load_project_materials', {
+                defaultValue: "Load this project's materials",
+              })}
+            </Button>
+            <span className="text-xs text-content-tertiary">
+              {activeProjectId
+                ? t('waste_factors.load_project_hint', {
+                    defaultValue: "Fills the box with this project's net material quantities, then converts.",
+                  })
+                : t('waste_factors.load_needs_project', {
+                    defaultValue: 'Select a project to load its material quantities.',
+                  })}
+            </span>
+          </div>
+
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-content-primary">
               {t('waste_factors.net_lines', { defaultValue: 'Net quantities' })}
@@ -300,7 +356,7 @@ function WasteFactorsContent() {
               icon={<Wand2 className="h-4 w-4" />}
               disabled={!canApply}
               loading={applyMut.isPending}
-              onClick={() => applyMut.mutate()}
+              onClick={() => applyMut.mutate(parsedLines)}
             >
               {t('waste_factors.run_apply', { defaultValue: 'Convert to gross' })}
             </Button>

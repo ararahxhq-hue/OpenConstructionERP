@@ -22,8 +22,10 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.rom_estimate.models import RomEstimate
+from app.modules.rom_estimate.schemas import RomCreateBoqRequest
 from app.modules.rom_estimate.service import (
     STATUS_NO_BASELINE,
+    STATUS_ON_TRACK,
     STATUS_OVER,
     STATUS_UNDER,
     RomEstimateService,
@@ -173,3 +175,79 @@ async def test_reconcile_detailed_zero_when_no_boq(session: AsyncSession) -> Non
     assert rec.variance_pct == Decimal("-100.00")
     assert rec.status == STATUS_UNDER
     assert rec.boq_count == 0
+
+
+# ── Handoff: create_boq_from_rom ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_boq_from_rom_seeds_baseline_and_provisional_boq(session: AsyncSession) -> None:
+    """The handoff saves the baseline and seeds a six-section provisional BOQ."""
+    from app.modules.boq.repository import BOQRepository, PositionRepository
+
+    project_id = await _make_project(session, currency="EUR")
+    request = RomCreateBoqRequest(
+        building_type="office",
+        gross_floor_area=Decimal("1000"),
+        quality="standard",
+        region="north_america",
+        currency="EUR",
+        boq_name="Concept BOQ",
+    )
+
+    resp = await RomEstimateService(session).create_boq_from_rom(project_id, request, OWNER_ID)
+    await session.commit()
+
+    assert resp.sections_created == 6
+    assert resp.positions_created == 6
+    assert resp.estimate_id  # the conceptual baseline was persisted
+
+    # The BOQ exists in the project and is stamped with the concept baseline.
+    boq = await BOQRepository(session).get_by_id(uuid.UUID(resp.boq_id))
+    assert boq is not None
+    assert boq.project_id == project_id
+    assert boq.metadata_["source"] == "rom_estimate"
+    assert boq.metadata_["rom_estimate_id"] == resp.estimate_id
+
+    # Six section headers (no money) + six concept-rate leaves nested under them.
+    positions = await PositionRepository(session).list_all_for_boq(boq.id)
+    sections = [p for p in positions if p.unit == "section"]
+    leaves = [p for p in positions if p.unit != "section"]
+    assert len(sections) == 6
+    assert len(leaves) == 6
+    section_ids = {s.id for s in sections}
+    assert all(leaf.parent_id in section_ids for leaf in leaves)
+    assert all(Decimal(s.total) == Decimal("0") for s in sections)
+    assert all(Decimal(leaf.quantity) == Decimal("1000") for leaf in leaves)
+    assert all(leaf.source == "rom_estimate" for leaf in leaves)
+
+    # The seeded leaf totals reproduce the saved concept total exactly (Decimal).
+    baseline = await RomEstimateService(session).latest_estimate(project_id)
+    assert baseline is not None
+    assert sum(Decimal(leaf.total) for leaf in leaves) == Decimal(baseline.total_cost)
+    assert Decimal(baseline.total_cost) > 0
+
+
+@pytest.mark.asyncio
+async def test_create_boq_from_rom_makes_the_reconciliation_live(session: AsyncSession) -> None:
+    """After the handoff the concept-vs-detailed reconciliation is on track (not dead)."""
+    project_id = await _make_project(session, currency="EUR")
+    request = RomCreateBoqRequest(
+        building_type="warehouse",
+        gross_floor_area=Decimal("2500"),
+        quality="standard",
+        region="global",
+        currency="EUR",
+        boq_name="Shed",
+    )
+    await RomEstimateService(session).create_boq_from_rom(project_id, request, OWNER_ID)
+    await session.commit()
+
+    rec = await RomEstimateService(session).reconcile_with_boq(project_id)
+
+    # The seeded BOQ total equals the concept, so the design is on track - the
+    # previously dead reconciliation panel now has a live baseline.
+    assert rec.status == STATUS_ON_TRACK
+    assert rec.conceptual_total is not None
+    assert rec.variance_amount == Decimal("0")
+    assert rec.boq_count == 1

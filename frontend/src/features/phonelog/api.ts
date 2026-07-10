@@ -12,11 +12,15 @@ const BASE = '/v1/phonelog';
 
 export function listPhoneLogs(
   projectId: string,
-  opts?: { direction?: string; channel?: string },
+  opts?: { direction?: string; channel?: string; limit?: number; offset?: number },
 ): Promise<PhoneLog[]> {
   const params = new URLSearchParams({ project_id: projectId });
   if (opts?.direction) params.set('direction', opts.direction);
   if (opts?.channel) params.set('channel', opts.channel);
+  // The backend caps limit at 100; pass it so a fuller history is fetched for
+  // client-side search, filtering, and pagination.
+  if (opts?.limit != null) params.set('limit', String(opts.limit));
+  if (opts?.offset != null) params.set('offset', String(opts.offset));
   return apiGet<PhoneLog[]>(`${BASE}/?${params.toString()}`);
 }
 

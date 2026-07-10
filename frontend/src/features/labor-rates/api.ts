@@ -267,6 +267,52 @@ export function normalizeRateBreakdown(raw: RateBreakdown): RateBreakdown {
   };
 }
 
+// ── Cost-item publishing (labor-rates -> costs interoperability) ────────────
+//
+// The all-in labor rate and the blended crew rate can be published as reusable
+// COST ITEMS so they flow into the cost catalogue and onward into BOQ /
+// assemblies via the existing costs->BOQ path. Every money field stays a
+// Decimal-encoded string end to end (the platform money contract): the
+// authoritative Decimals the compute endpoint returned are forwarded verbatim,
+// so no float arithmetic ever touches a rate on its way to /v1/costs/.
+
+/** One assembly-component line of a published cost item (a rate build-up row). */
+export interface CostItemComponentInput {
+  name: string;
+  type: string;
+  unit: string;
+  quantity: number;
+  /** Decimal-string per the money contract (never a float). */
+  unit_rate: string;
+  /** Decimal-string per the money contract (never a float). */
+  cost: string;
+}
+
+/** Payload for ``POST /v1/costs/`` (a subset of the backend ``CostItemCreate``). */
+export interface CostItemPayload {
+  code: string;
+  description: string;
+  unit: string;
+  /** All-in / blended rate as a Decimal-string (the backend promotes it to Decimal). */
+  rate: string;
+  currency: string;
+  source: string;
+  region?: string;
+  classification?: Record<string, string>;
+  components?: CostItemComponentInput[];
+  tags?: string[];
+}
+
+/** Slim shape of the created cost item we read back for the success toast. */
+export interface CostItemCreated {
+  id: string;
+  code: string;
+  description: string;
+  unit: string;
+  rate: string;
+  currency: string;
+}
+
 export const laborRatesApi = {
   compute: (req: ComputeRequest) =>
     apiPost<RateBreakdown>('/v1/labor-rates/compute', req).then(normalizeRateBreakdown),
@@ -280,4 +326,13 @@ export const laborRatesApi = {
   saveCrew: (data: CrewSavePayload) => apiPost<CrewResponse>('/v1/labor-rates/crews/', data),
   getCrew: (crewId: string) => apiGet<CrewResponse>(`/v1/labor-rates/crews/${crewId}`),
   deleteCrew: (crewId: string) => apiDelete(`/v1/labor-rates/crews/${crewId}`),
+  /**
+   * Publish a computed rate as a reusable cost item.
+   *
+   * POSTs to ``/v1/costs/`` through the shared api client so the rate lands in
+   * the cost catalogue and can be applied to a BOQ / assembly like any other
+   * cost item. The payload carries only Decimal-string money values.
+   */
+  saveAsCostItem: (payload: CostItemPayload) =>
+    apiPost<CostItemCreated>('/v1/costs/', payload),
 };

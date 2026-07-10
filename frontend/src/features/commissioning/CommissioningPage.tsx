@@ -16,6 +16,8 @@ import {
   AlertTriangle,
   ShieldCheck,
   Trash2,
+  FileText,
+  Download,
 } from 'lucide-react';
 import {
   Button,
@@ -40,12 +42,15 @@ import {
   fetchCxStats,
   fetchChecklists,
   createChecklist,
+  deleteChecklist,
   fetchItems,
   createItem,
   setItemResult,
+  deleteItem,
   fetchIssues,
   createIssue,
   updateIssue,
+  deleteIssue,
   type CxSystem,
   type CxSystemStatus,
   type CxSystemType,
@@ -57,6 +62,16 @@ import {
   type ReadinessLevel,
   type CreateSystemPayload,
 } from './api';
+import {
+  gatherCertificateData,
+  buildCertificateHtml,
+  openCertificatePrint,
+  buildCertificateCsv,
+  downloadCsv,
+  certFileSlug,
+  type Tr,
+  type CertMaps,
+} from './certificate';
 
 /* ── Config maps ───────────────────────────────────────────────────────── */
 
@@ -92,6 +107,17 @@ const STATUS_CONFIG: Record<
   in_progress: { variant: 'warning', label: 'In progress' },
   tests_complete: { variant: 'blue', label: 'Tests complete' },
   commissioned: { variant: 'success', label: 'Commissioned' },
+};
+
+/** English fallback labels for the certificate builder (i18n keys win). */
+const CERT_MAPS: CertMaps = {
+  typeLabels: TYPE_LABELS,
+  statusLabels: {
+    not_started: STATUS_CONFIG.not_started.label,
+    in_progress: STATUS_CONFIG.in_progress.label,
+    tests_complete: STATUS_CONFIG.tests_complete.label,
+    commissioned: STATUS_CONFIG.commissioned.label,
+  },
 };
 
 const LEVEL_DOT: Record<ReadinessLevel, string> = {
@@ -155,6 +181,32 @@ function ReadinessLight({ system }: { system: CxSystem }) {
   );
 }
 
+/* ── Readiness detail stat ─────────────────────────────────────────────── */
+
+const READINESS_TONE: Record<'success' | 'error' | 'warning' | 'neutral', string> = {
+  success: 'text-semantic-success',
+  error: 'text-semantic-error',
+  warning: 'text-semantic-warning',
+  neutral: 'text-content-secondary',
+};
+
+function ReadinessStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: 'success' | 'error' | 'warning' | 'neutral';
+}) {
+  return (
+    <div className="flex flex-col items-center rounded-md border border-border-light bg-surface-primary py-1.5">
+      <span className={clsx('text-base font-bold tabular-nums', READINESS_TONE[tone])}>{value}</span>
+      <span className="text-2xs leading-tight text-content-tertiary text-center">{label}</span>
+    </div>
+  );
+}
+
 /* ── Item row (pass / fail / na) ───────────────────────────────────────── */
 
 const RESULTS: { key: ItemResult; icon: typeof Check; on: string; off: string; label: string }[] = [
@@ -184,11 +236,15 @@ const RESULTS: { key: ItemResult; icon: typeof Check; on: string; off: string; l
 function ItemRow({
   item,
   onResult,
+  onDelete,
   disabled,
+  deleting,
 }: {
   item: CxChecklistItem;
   onResult: (itemId: string, result: ItemResult) => void;
+  onDelete: (itemId: string) => void;
   disabled: boolean;
+  deleting: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -215,6 +271,16 @@ function ItemRow({
             </button>
           );
         })}
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={() => onDelete(item.id)}
+          title={t('commissioning.remove_item', { defaultValue: 'Remove check' })}
+          aria-label={t('commissioning.remove_item', { defaultValue: 'Remove check' })}
+          className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary transition-colors hover:bg-semantic-error-bg hover:text-semantic-error disabled:opacity-50"
+        >
+          <Trash2 size={12} />
+        </button>
       </div>
     </div>
   );
@@ -225,9 +291,11 @@ function ItemRow({
 function ChecklistBlock({
   checklist,
   onAfterChange,
+  onDelete,
 }: {
   checklist: CxChecklist;
   onAfterChange: () => void;
+  onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -262,6 +330,13 @@ function ChecklistBlock({
       addToast({ type: 'error', title: t('commissioning.add_item_failed', { defaultValue: 'Could not add item' }), message: e.message }),
   });
 
+  const deleteItemMut = useMutation({
+    mutationFn: (itemId: string) => deleteItem(itemId),
+    onSuccess: invalidate,
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('commissioning.delete_item_failed', { defaultValue: 'Could not remove check' }), message: e.message }),
+  });
+
   const passed = items.filter((i) => i.status === 'pass').length;
 
   return (
@@ -275,9 +350,20 @@ function ChecklistBlock({
           </Badge>
           <span className="text-sm font-medium text-content-primary truncate">{checklist.title}</span>
         </div>
-        <span className="text-2xs text-content-tertiary tabular-nums shrink-0">
-          {passed}/{items.length} {t('commissioning.passed', { defaultValue: 'passed' })}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-2xs text-content-tertiary tabular-nums">
+            {passed}/{items.length} {t('commissioning.passed', { defaultValue: 'passed' })}
+          </span>
+          <button
+            type="button"
+            onClick={onDelete}
+            title={t('commissioning.delete_checklist', { defaultValue: 'Delete checklist' })}
+            aria-label={t('commissioning.delete_checklist', { defaultValue: 'Delete checklist' })}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-content-tertiary transition-colors hover:bg-semantic-error-bg hover:text-semantic-error"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -293,7 +379,9 @@ function ChecklistBlock({
               key={item.id}
               item={item}
               disabled={resultMut.isPending}
+              deleting={deleteItemMut.isPending}
               onResult={(itemId, result) => resultMut.mutate({ itemId, result })}
+              onDelete={(itemId) => deleteItemMut.mutate(itemId)}
             />
           ))}
         </div>
@@ -324,6 +412,7 @@ function ChecklistsPanel({ systemId, onAfterChange }: { systemId: string; onAfte
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const { confirm, ...confirmProps } = useConfirm();
   const [newKind, setNewKind] = useState<ChecklistKind>('functional');
   const [newTitle, setNewTitle] = useState('');
 
@@ -342,6 +431,32 @@ function ChecklistsPanel({ systemId, onAfterChange }: { systemId: string; onAfte
       addToast({ type: 'error', title: t('commissioning.add_checklist_failed', { defaultValue: 'Could not add checklist' }), message: e.message }),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (checklistId: string) => deleteChecklist(checklistId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cx-checklists', systemId] });
+      onAfterChange();
+    },
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('commissioning.delete_checklist_failed', { defaultValue: 'Could not delete checklist' }), message: e.message }),
+  });
+
+  const handleDeleteChecklist = useCallback(
+    async (c: CxChecklist) => {
+      const ok = await confirm({
+        title: t('commissioning.delete_checklist_title', { defaultValue: 'Delete this checklist?' }),
+        message: t('commissioning.delete_checklist_msg', {
+          defaultValue: 'This removes "{{title}}" and all of its checks.',
+          title: c.title,
+        }),
+        confirmLabel: t('commissioning.delete', { defaultValue: 'Delete' }),
+        variant: 'danger',
+      });
+      if (ok) deleteMut.mutate(c.id);
+    },
+    [confirm, deleteMut, t],
+  );
+
   return (
     <div className="space-y-2">
       <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
@@ -358,7 +473,12 @@ function ChecklistsPanel({ systemId, onAfterChange }: { systemId: string; onAfte
       ) : (
         <div className="space-y-2">
           {checklists.map((c) => (
-            <ChecklistBlock key={c.id} checklist={c} onAfterChange={onAfterChange} />
+            <ChecklistBlock
+              key={c.id}
+              checklist={c}
+              onAfterChange={onAfterChange}
+              onDelete={() => handleDeleteChecklist(c)}
+            />
           ))}
         </div>
       )}
@@ -392,6 +512,8 @@ function ChecklistsPanel({ systemId, onAfterChange }: { systemId: string; onAfte
           {t('commissioning.add', { defaultValue: 'Add' })}
         </Button>
       </form>
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   );
 }
@@ -431,6 +553,13 @@ function IssuesPanel({ systemId, onAfterChange }: { systemId: string; onAfterCha
     onSuccess: invalidate,
     onError: (e: Error) =>
       addToast({ type: 'error', title: t('commissioning.close_issue_failed', { defaultValue: 'Could not close issue' }), message: e.message }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (issueId: string) => deleteIssue(issueId),
+    onSuccess: invalidate,
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('commissioning.delete_issue_failed', { defaultValue: 'Could not delete issue' }), message: e.message }),
   });
 
   return (
@@ -477,6 +606,16 @@ function IssuesPanel({ systemId, onAfterChange }: { systemId: string; onAfterCha
                   {t('commissioning.closed', { defaultValue: 'Closed' })}
                 </Badge>
               )}
+              <button
+                type="button"
+                onClick={() => deleteMut.mutate(issue.id)}
+                disabled={deleteMut.isPending}
+                title={t('commissioning.delete_issue', { defaultValue: 'Delete issue' })}
+                aria-label={t('commissioning.delete_issue', { defaultValue: 'Delete issue' })}
+                className="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary transition-colors hover:bg-semantic-error-bg hover:text-semantic-error disabled:opacity-50"
+              >
+                <Trash2 size={12} />
+              </button>
             </div>
           ))}
         </div>
@@ -520,23 +659,79 @@ function IssuesPanel({ systemId, onAfterChange }: { systemId: string; onAfterCha
 
 const SystemCard = React.memo(function SystemCard({
   system,
+  projectName,
   canCommission,
   onCommission,
   onDelete,
   onAfterChange,
 }: {
   system: CxSystem;
+  projectName: string;
   canCommission: boolean;
   onCommission: (system: CxSystem) => void;
   onDelete: (system: CxSystem) => void;
   onAfterChange: () => void;
 }) {
   const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
   const [expanded, setExpanded] = useState(false);
+  const [busy, setBusy] = useState<'cert' | 'csv' | null>(null);
   const statusCfg = STATUS_CONFIG[system.status] ?? STATUS_CONFIG.not_started;
   const readiness = system.readiness;
   const commissionable =
     canCommission && system.status !== 'commissioned' && !!readiness?.can_commission;
+
+  // Bridge react-i18next `t` to the certificate builder's small translate
+  // signature (key, English fallback, optional interpolation vars).
+  const tr = useCallback<Tr>(
+    (key, defaultValue, vars) => t(key, { defaultValue, ...(vars ?? {}) }),
+    [t],
+  );
+
+  const handleCertificate = useCallback(async () => {
+    setBusy('cert');
+    try {
+      const data = await gatherCertificateData(system, projectName);
+      const opened = openCertificatePrint(buildCertificateHtml(data, tr, CERT_MAPS));
+      if (!opened) {
+        addToast({
+          type: 'error',
+          title: t('commissioning.cert_popup_blocked', {
+            defaultValue: 'Allow pop-ups to open the certificate',
+          }),
+        });
+      }
+    } catch (e) {
+      addToast({
+        type: 'error',
+        title: t('commissioning.cert_failed', { defaultValue: 'Could not build the certificate' }),
+        message: (e as Error).message,
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [system, projectName, tr, addToast, t]);
+
+  const handleExportCsv = useCallback(async () => {
+    setBusy('csv');
+    try {
+      const data = await gatherCertificateData(system, projectName);
+      downloadCsv(
+        `commissioning_${certFileSlug(system.name)}.csv`,
+        buildCertificateCsv(data, tr, CERT_MAPS),
+      );
+    } catch (e) {
+      addToast({
+        type: 'error',
+        title: t('commissioning.cert_export_failed', {
+          defaultValue: 'Could not export the certificate',
+        }),
+        message: (e as Error).message,
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [system, projectName, tr, addToast, t]);
 
   return (
     <div className="border-b border-border-light last:border-b-0">
@@ -612,6 +807,30 @@ const SystemCard = React.memo(function SystemCard({
               )
             )}
             <div className="flex-1" />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleCertificate}
+              disabled={busy !== null}
+              title={t('commissioning.certificate_hint', {
+                defaultValue: 'Open a printable commissioning certificate',
+              })}
+            >
+              <FileText size={14} className="mr-1" />
+              {t('commissioning.certificate', { defaultValue: 'Certificate' })}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleExportCsv}
+              disabled={busy !== null}
+              title={t('commissioning.export_csv_hint', {
+                defaultValue: 'Download this system as a spreadsheet',
+              })}
+            >
+              <Download size={14} className="mr-1" />
+              {t('commissioning.export_csv', { defaultValue: 'Export CSV' })}
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => onDelete(system)}>
               <Trash2 size={13} className="mr-1" />
               {t('commissioning.delete', { defaultValue: 'Delete' })}
@@ -630,6 +849,54 @@ const SystemCard = React.memo(function SystemCard({
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {readiness && readiness.defined && (
+            <div className="rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2.5">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t('commissioning.readiness', { defaultValue: 'Readiness' })}
+                </p>
+                <span className="text-2xs tabular-nums text-content-secondary">
+                  {t('commissioning.readiness_summary', {
+                    defaultValue: '{{passed}}/{{applicable}} passed · {{pct}}%',
+                    passed: readiness.functional_passed,
+                    applicable: readiness.applicable,
+                    pct: Math.round(readiness.readiness_pct),
+                  })}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                <ReadinessStat
+                  label={t('commissioning.result_pass', { defaultValue: 'Pass' })}
+                  value={readiness.functional_passed}
+                  tone="success"
+                />
+                <ReadinessStat
+                  label={t('commissioning.result_fail', { defaultValue: 'Fail' })}
+                  value={readiness.functional_failed}
+                  tone="error"
+                />
+                <ReadinessStat
+                  label={t('commissioning.item_pending', { defaultValue: 'Pending' })}
+                  value={readiness.functional_pending}
+                  tone="warning"
+                />
+                <ReadinessStat
+                  label={t('commissioning.result_na', { defaultValue: 'N/A' })}
+                  value={readiness.functional_na}
+                  tone="neutral"
+                />
+                <ReadinessStat
+                  label={t('commissioning.stat_open_critical', { defaultValue: 'Open critical' })}
+                  value={readiness.open_critical_issues}
+                  tone={readiness.open_critical_issues > 0 ? 'error' : 'neutral'}
+                />
+              </div>
+              {readiness.formula && (
+                <p className="mt-2 text-2xs text-content-quaternary">{readiness.formula}</p>
+              )}
             </div>
           )}
 
@@ -795,6 +1062,10 @@ export function CommissioningPage() {
     staleTime: 5 * 60_000,
   });
   const projectId = activeProjectId || projects[0]?.id || '';
+  const projectName = useMemo(
+    () => projects.find((p) => p.id === projectId)?.name ?? '',
+    [projects, projectId],
+  );
 
   const {
     data: systems = [],
@@ -815,6 +1086,60 @@ export function CommissioningPage() {
     qc.invalidateQueries({ queryKey: ['cx-systems'] });
     qc.invalidateQueries({ queryKey: ['cx-stats'] });
   }, [qc]);
+
+  // Export the current (filtered) systems as a spreadsheet register. Surfaces
+  // the readiness verdict and commissioning sign-off that otherwise only live
+  // inside each expanded card. Mirrors the CSV blob download used elsewhere.
+  const handleExportRegister = useCallback(() => {
+    if (!systems.length) return;
+    const yes = t('common.yes', { defaultValue: 'Yes' });
+    const no = t('common.no', { defaultValue: 'No' });
+    const cell = (v: string | number | null | undefined): string =>
+      `"${(v == null ? '' : String(v)).replace(/"/g, '""')}"`;
+    const fmt = (iso: string | null): string => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
+    };
+    const header = [
+      t('commissioning.field_name', { defaultValue: 'System name' }),
+      t('commissioning.field_type', { defaultValue: 'System type' }),
+      t('commissioning.field_tag', { defaultValue: 'Tag' }),
+      t('commissioning.field_location', { defaultValue: 'Location' }),
+      t('commissioning.cert_status', { defaultValue: 'Status' }),
+      t('commissioning.cert_readiness', { defaultValue: 'Readiness' }),
+      t('commissioning.cert_can_commission', { defaultValue: 'Can commission' }),
+      t('commissioning.stat_open_critical', { defaultValue: 'Open critical' }),
+      t('commissioning.cert_commissioned_at', { defaultValue: 'Commissioned at' }),
+      t('commissioning.cert_commissioned_by_col', { defaultValue: 'Commissioned by' }),
+    ]
+      .map(cell)
+      .join(',');
+    const rows = systems.map((s) => {
+      const r = s.readiness;
+      return [
+        cell(s.name),
+        cell(
+          t(`commissioning.type_${s.system_type}`, {
+            defaultValue: TYPE_LABELS[s.system_type as CxSystemType] ?? s.system_type,
+          }),
+        ),
+        cell(s.tag ?? ''),
+        cell(s.location ?? ''),
+        cell(
+          t(`commissioning.status_${s.status}`, {
+            defaultValue: STATUS_CONFIG[s.status]?.label ?? s.status,
+          }),
+        ),
+        cell(r && r.defined ? `${Math.round(r.readiness_pct)}%` : ''),
+        cell(r && r.defined ? (r.can_commission ? yes : no) : ''),
+        cell(r ? r.open_critical_issues : ''),
+        cell(fmt(s.commissioned_at)),
+        cell(s.commissioned_by ?? ''),
+      ].join(',');
+    });
+    downloadCsv('commissioning_register.csv', [header, ...rows].join('\n'));
+  }, [systems, t]);
 
   const createMut = useMutation({
     mutationFn: (data: Omit<CreateSystemPayload, 'project_id'>) =>
@@ -901,23 +1226,40 @@ export function CommissioningPage() {
             'Track each building system through prefunctional and functional checks, log issues, and commission a system only when every functional test has passed and no critical issue is open.',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              if (!projectId) {
-                addToast({
-                  type: 'info',
-                  title: t('commissioning.select_project_first', { defaultValue: 'Select a project first' }),
-                });
-                return;
-              }
-              setShowCreate(true);
-            }}
-          >
-            <Plus size={14} className="mr-1" />
-            {t('commissioning.new_system', { defaultValue: 'New system' })}
-          </Button>
+          <div className="flex items-center gap-2">
+            {systems.length > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExportRegister}
+                title={t('commissioning.export_register_hint', {
+                  defaultValue: 'Download every system in this project as a spreadsheet',
+                })}
+              >
+                <Download size={14} className="mr-1" />
+                {t('commissioning.export_register', { defaultValue: 'Export register' })}
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                if (!projectId) {
+                  addToast({
+                    type: 'info',
+                    title: t('commissioning.select_project_first', {
+                      defaultValue: 'Select a project first',
+                    }),
+                  });
+                  return;
+                }
+                setShowCreate(true);
+              }}
+            >
+              <Plus size={14} className="mr-1" />
+              {t('commissioning.new_system', { defaultValue: 'New system' })}
+            </Button>
+          </div>
         }
       />
 
@@ -987,6 +1329,7 @@ export function CommissioningPage() {
             <SystemCard
               key={system.id}
               system={system}
+              projectName={projectName}
               canCommission={commissionAllowed}
               onCommission={handleCommission}
               onDelete={handleDelete}

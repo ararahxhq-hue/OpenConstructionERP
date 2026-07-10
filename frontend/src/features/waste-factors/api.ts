@@ -123,6 +123,32 @@ export function parseApplyInput(text: string): ParsedApplyLine[] {
   return out;
 }
 
+/**
+ * Map a project's material resource lines onto net apply-lines for the
+ * net-to-gross calculator: the material name becomes the category and the
+ * server's exact quantity string is preserved verbatim (never parsed through a
+ * float), so a loaded quantity matches the estimate to the last digit. Lines
+ * with no name, or whose quantity is not a plain non-negative number, are
+ * skipped. Read-only helper: it fills the calculator input, it never edits the
+ * estimate or its billed quantities.
+ *
+ * @example
+ * materialLinesToApplyInput([{ name: 'Concrete C30/37', quantity: '12.5000' }])
+ * // [{ category: 'Concrete C30/37', net_qty: '12.5000' }]
+ */
+export function materialLinesToApplyInput(
+  lines: ReadonlyArray<{ name: string; quantity: string }>,
+): ApplyLineInput[] {
+  const out: ApplyLineInput[] = [];
+  for (const line of lines) {
+    const category = (line.name ?? '').trim();
+    const net_qty = (line.quantity ?? '').trim();
+    if (!category || !QTY_TOKEN_RE.test(net_qty)) continue;
+    out.push({ category, net_qty });
+  }
+  return out;
+}
+
 /* -- Factor library CRUD -------------------------------------------------- */
 
 export async function listFactors(category?: string): Promise<WasteFactor[]> {

@@ -6,4 +6,8 @@ export type {
   RomReference,
   RomElementBreakdown,
   RomAccuracyBand,
+  RomEstimateRecord,
+  RomCreateBoqRequest,
+  RomCreateBoqResponse,
+  RomReconciliation,
 } from './api';

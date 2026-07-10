@@ -112,6 +112,10 @@ const PdfComparePage = lazy(() =>
 const PunchListPage = lazy(() =>
   import('@/features/punchlist/PunchListPage').then((m) => ({ default: m.PunchListPage }))
 );
+const IssuesHubPage = lazy(() =>
+  import('@/features/issues/IssuesHubPage').then((m) => ({ default: m.IssuesHubPage }))
+);
+const BcfPage = lazy(() => import('@/features/bcf/BcfPage').then((m) => ({ default: m.BcfPage })));
 const CloseoutPage = lazy(() => import('@/features/closeout/CloseoutPage'));
 const InboxPage = lazy(() =>
   import('@/features/inbox').then((m) => ({ default: m.InboxPage })),
@@ -834,7 +838,13 @@ export default function App() {
   // immediately sees their workspace brand.
   useEffect(() => {
     void useBrandingStore.getState().hydrateFromServer();
-    void usePreferencesStore.getState().hydrateFromServer();
+    // Account-level preferences are a user-scoped endpoint, so only pull them
+    // once the user is authenticated. Firing this before sign-in 401s on
+    // /v1/users/me/preferences/ and, though the store swallows the error, the
+    // failed request still lands in the in-app bug-report buffer (issue #340).
+    if (isAuthenticated) {
+      void usePreferencesStore.getState().hydrateFromServer();
+    }
   }, [isAuthenticated]);
 
   // Onboarding-tour migration (one-shot). The app used to mount two
@@ -984,6 +994,7 @@ export default function App() {
         <Route path="/clash/profiles" element={<P title="Clash Profiles"><ClashProfileManager /></P>} />
         <Route path="/projects/:projectId/clash/profiles" element={<P title="Clash Profiles"><ClashProfileManager /></P>} />
         <Route path="/coordination" element={<P title="Model Coordination"><CoordinationHubPage /></P>} />
+        <Route path="/bcf" element={<P title="Model Issues"><BcfPage /></P>} />
         <Route path="/assets" element={<P title="Asset Register"><AssetsPage /></P>} />
         <Route path="/bim/:modelId" element={<P title="BIM Viewer"><BIMPage /></P>} />
         <Route path="/projects/:projectId/bim" element={<P title="BIM Viewer"><BIMPage /></P>} />
@@ -1082,6 +1093,7 @@ export default function App() {
         <Route path="/markups" element={<P title="Markups"><MarkupsPage /></P>} />
         <Route path="/markups/compare" element={<P title="Compare Revisions"><PdfComparePage /></P>} />
         <Route path="/punchlist" element={<P title="Punch List"><PunchListPage /></P>} />
+        <Route path="/issues" element={<P title="Issues"><IssuesHubPage /></P>} />
         <Route path="/closeout" element={<P title="Handover & Closeout"><CloseoutPage /></P>} />
         <Route path="/field-reports" element={<P title="Field Reports"><FieldReportsPage /></P>} />
 

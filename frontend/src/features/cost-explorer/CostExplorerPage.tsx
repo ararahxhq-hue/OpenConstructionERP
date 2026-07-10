@@ -9,11 +9,23 @@
 // to "how is it priced elsewhere" to "what if I swap it" without re-entering
 // anything.
 
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Boxes, GitCompareArrows, RefreshCw, Repeat2, Scale, Search } from 'lucide-react';
-import { Button, PageHeader, TabBar, tabIds } from '@/shared/ui';
+import { Link } from 'react-router-dom';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Boxes,
+  GitCompareArrows,
+  ListPlus,
+  Network,
+  RefreshCw,
+  Repeat2,
+  Scale,
+  Search,
+} from 'lucide-react';
+import { Button, Card, PageHeader, TabBar, tabIds } from '@/shared/ui';
 import { getErrorMessage } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { getIndexStatus, reindex } from './api';
@@ -56,13 +68,15 @@ export function CostExplorerPage() {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 animate-fade-in">
       <PageHeader
         srTitle={t('costExplorer.title', { defaultValue: 'Cost Explorer' })}
         subtitle={t('costExplorer.subtitle', {
           defaultValue: 'Find priced work by the resources it uses, search the catalogs, compare price bases and test substitutions.',
         })}
       />
+
+      <HowCostExplorerWorks />
 
       <IndexStatusNote />
 
@@ -97,6 +111,127 @@ export function CostExplorerPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── How-it-works flow + module integrations ───────────────────────────── */
+
+/** A compact inline link to a sibling module (keeps the flow copy readable). */
+function ModLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link to={to} className="font-medium text-oe-blue-text hover:underline">
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * Explains, in one glance, what Cost Explorer is and how it connects to the rest
+ * of the platform: start from the resources you know (or a plain description),
+ * search across every loaded price base, compare the same code across regions or
+ * test a substitution, then push the result straight into a BOQ or save it as a
+ * reusable assembly. The founder's ask was that the module make its purpose and
+ * its integrations obvious, so every connected module is a link.
+ */
+function HowCostExplorerWorks() {
+  const { t } = useTranslation();
+
+  const steps: { icon: ReactNode; title: string; desc: string }[] = [
+    {
+      icon: <Boxes size={14} className="text-oe-blue" />,
+      title: t('costExplorer.flow_1_title', { defaultValue: 'Start from what you know' }),
+      desc: t('costExplorer.flow_1_desc', {
+        defaultValue: 'Pick the resources a work consumes, or just describe the work in plain words.',
+      }),
+    },
+    {
+      icon: <Search size={14} className="text-oe-blue" />,
+      title: t('costExplorer.flow_2_title', { defaultValue: 'Search the price bases' }),
+      desc: t('costExplorer.flow_2_desc', {
+        defaultValue: 'Search across every loaded price base at once, or narrow to one region.',
+      }),
+    },
+    {
+      icon: <GitCompareArrows size={14} className="text-oe-blue" />,
+      title: t('costExplorer.flow_3_title', { defaultValue: 'Compare and test' }),
+      desc: t('costExplorer.flow_3_desc', {
+        defaultValue:
+          'Compare the same code across regions, or test a material substitution to see the rate move.',
+      }),
+    },
+    {
+      icon: <ListPlus size={14} className="text-oe-blue" />,
+      title: t('costExplorer.flow_4_title', { defaultValue: 'Use it in an estimate' }),
+      desc: t('costExplorer.flow_4_desc', {
+        defaultValue: 'Add the priced work onto a BOQ position, or save it as a reusable assembly.',
+      }),
+    },
+  ];
+
+  return (
+    <Card padding="md">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-content-primary">
+        <Network size={15} className="text-oe-blue" />
+        {t('costExplorer.flow_title', { defaultValue: 'How Cost Explorer fits together' })}
+      </h2>
+      <p className="mt-1 text-xs text-content-tertiary">
+        {t('costExplorer.flow_intro', {
+          defaultValue:
+            'Cost Explorer is your search-first workspace over every loaded price base - look up priced work by the resources it consumes, search the catalogs, compare the same code across regions, and test material substitutions, then push what you find straight into an estimate.',
+        })}
+      </p>
+
+      <ol className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-stretch">
+        {steps.map((s, i) => (
+          <Fragment key={s.title}>
+            <li className="flex-1 rounded-lg border border-border-light bg-surface-secondary/40 p-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-oe-blue-subtle text-2xs font-bold text-oe-blue-text">
+                  {i + 1}
+                </span>
+                <span className="flex items-center gap-1 text-xs font-semibold text-content-primary">
+                  {s.icon}
+                  {s.title}
+                </span>
+              </div>
+              <p className="mt-1.5 text-2xs leading-relaxed text-content-tertiary">{s.desc}</p>
+            </li>
+            {i < steps.length - 1 && (
+              <li
+                aria-hidden="true"
+                className="hidden shrink-0 items-center self-center text-content-quaternary lg:flex"
+              >
+                <ArrowRight size={16} />
+              </li>
+            )}
+          </Fragment>
+        ))}
+      </ol>
+
+      <div className="mt-3 flex flex-col gap-1.5 border-t border-border-light pt-3 text-2xs text-content-tertiary sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-1">
+        <span>
+          <span className="font-medium text-content-secondary">
+            {t('costExplorer.flow_searches', { defaultValue: 'Searches:' })}
+          </span>{' '}
+          <ModLink to="/costs">
+            {t('costExplorer.mod_costs', { defaultValue: 'Cost Database' })}
+          </ModLink>{' '}
+          ·{' '}
+          <ModLink to="/catalog">
+            {t('costExplorer.mod_catalog', { defaultValue: 'Catalog' })}
+          </ModLink>
+        </span>
+        <span>
+          <span className="font-medium text-content-secondary">
+            {t('costExplorer.flow_feeds', { defaultValue: 'Feeds:' })}
+          </span>{' '}
+          <ModLink to="/boq">{t('costExplorer.mod_boq', { defaultValue: 'BOQ' })}</ModLink> ·{' '}
+          <ModLink to="/assemblies">
+            {t('costExplorer.mod_assemblies', { defaultValue: 'Assemblies' })}
+          </ModLink>
+        </span>
+      </div>
+    </Card>
   );
 }
 
@@ -146,15 +281,26 @@ function IndexStatusNote() {
   const show = isEmpty || staleRegions.length > 0;
   if (!show) return null;
 
-  const message = isEmpty
-    ? t('costExplorer.index.empty', {
-        defaultValue: 'The resource index is empty, so by-resources search has nothing to match yet. Rebuild it to index the loaded cost bases.',
-      })
-    : t('costExplorer.index.stale', {
+  // The empty message links "import a base" to the Cost Database, so the empty
+  // path points straight to where cost bases are loaded (see /costs/import too).
+  const message: ReactNode = isEmpty ? (
+    <>
+      {t('costExplorer.index.emptyPre', {
         defaultValue:
-          'Some loaded cost bases are not in the resource index yet ({{regions}}), so by-resources search will miss them. Rebuild to index them.',
-        regions: staleRegions.join(', '),
-      });
+          'The resource index is empty, so by-resources search has nothing to match yet. Rebuild it to index the loaded cost bases, or ',
+      })}
+      <ModLink to="/costs">
+        {t('costExplorer.index.emptyImportLink', { defaultValue: 'import a base' })}
+      </ModLink>
+      {t('costExplorer.index.emptyPost', { defaultValue: ' if none is loaded yet.' })}
+    </>
+  ) : (
+    t('costExplorer.index.stale', {
+      defaultValue:
+        'Some loaded cost bases are not in the resource index yet ({{regions}}), so by-resources search will miss them. Rebuild to index them.',
+      regions: staleRegions.join(', '),
+    })
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-semantic-warning/30 bg-semantic-warning/10 px-3 py-2.5">

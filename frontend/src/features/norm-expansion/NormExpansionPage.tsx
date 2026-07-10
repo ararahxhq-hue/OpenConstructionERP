@@ -13,7 +13,7 @@
  * arithmetic on the wire value.
  */
 
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -28,6 +28,13 @@ import {
   Coins,
   AlertTriangle,
   ArrowRight,
+  ListPlus,
+  X,
+  Search,
+  Network,
+  Library,
+  Calculator,
+  Wallet,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, RecoveryCard, SkeletonTable } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -44,6 +51,11 @@ import {
   expandWork,
   isValidQuantity,
   buildBuildAssemblyPayload,
+  buildNormResourceSplit,
+  addNormSplitToBoqPosition,
+  listBoqPickerProjects,
+  listBoqPickerBoqs,
+  listBoqPickerPositions,
   resourceBadge,
   withCurrency,
   type ProductionNorm,
@@ -60,6 +72,141 @@ const INPUT_CLS =
   'focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-900/40';
 
 const NORMS_KEY = ['norm-expansion-norms'];
+
+/* ── How-it-works flow + module integrations ───────────────────────────── */
+
+/** A compact inline link to a sibling module (keeps the flow copy readable). */
+function ModLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link to={to} className="font-medium text-oe-blue-text hover:underline">
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * Explains, in one glance, what a production norm is and how this page connects
+ * to the rest of the platform: the norm is expanded into an unpriced takeoff,
+ * priced from the Labour Rates / Waste Factors / Cost Database, saved as a
+ * reusable Assembly, and applied to a BOQ. The founder's ask was that the
+ * module make its integrations obvious, so every connected module is a link.
+ */
+function HowNormsWork() {
+  const { t } = useTranslation();
+
+  const steps: { icon: ReactNode; title: string; desc: string }[] = [
+    {
+      icon: <Library size={14} className="text-oe-blue" />,
+      title: t('normExpansion.flow_1_title', { defaultValue: 'Norm library' }),
+      desc: t('normExpansion.flow_1_desc', {
+        defaultValue: 'Labour-hours, machine-hours and materials per unit of a work item.',
+      }),
+    },
+    {
+      icon: <Calculator size={14} className="text-oe-blue" />,
+      title: t('normExpansion.flow_2_title', { defaultValue: 'Expand' }),
+      desc: t('normExpansion.flow_2_desc', {
+        defaultValue: 'Enter a quantity to see the unpriced hours and material takeoff behind it.',
+      }),
+    },
+    {
+      icon: <Wallet size={14} className="text-oe-blue" />,
+      title: t('normExpansion.flow_3_title', { defaultValue: 'Price it' }),
+      desc: t('normExpansion.flow_3_desc', {
+        defaultValue:
+          'Hours priced from your labour rates, materials matched to the cost database and grossed up for waste.',
+      }),
+    },
+    {
+      icon: <Coins size={14} className="text-oe-blue" />,
+      title: t('normExpansion.flow_4_title', { defaultValue: 'Save as assembly' }),
+      desc: t('normExpansion.flow_4_desc', {
+        defaultValue: 'The built-up unit rate is saved as a reusable assembly.',
+      }),
+    },
+    {
+      icon: <ListPlus size={14} className="text-oe-blue" />,
+      title: t('normExpansion.flow_5_title', { defaultValue: 'Use in a BOQ' }),
+      desc: t('normExpansion.flow_5_desc', {
+        defaultValue: 'Drop the assembly or the raw resource split onto a BOQ position.',
+      }),
+    },
+  ];
+
+  return (
+    <Card padding="md">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-content-primary">
+        <Network size={15} className="text-oe-blue" />
+        {t('normExpansion.flow_title', { defaultValue: 'How production norms fit together' })}
+      </h2>
+      <p className="mt-1 text-xs text-content-tertiary">
+        {t('normExpansion.flow_intro', {
+          defaultValue:
+            'A production norm turns one unit of work into the hours and materials behind it, then into a priced rate you can reuse across estimates. This page is where that build-up starts.',
+        })}
+      </p>
+
+      <ol className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-stretch">
+        {steps.map((s, i) => (
+          <Fragment key={s.title}>
+            <li className="flex-1 rounded-lg border border-border-light bg-surface-secondary/40 p-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-oe-blue-subtle text-2xs font-bold text-oe-blue-text">
+                  {i + 1}
+                </span>
+                <span className="flex items-center gap-1 text-xs font-semibold text-content-primary">
+                  {s.icon}
+                  {s.title}
+                </span>
+              </div>
+              <p className="mt-1.5 text-2xs leading-relaxed text-content-tertiary">{s.desc}</p>
+            </li>
+            {i < steps.length - 1 && (
+              <li
+                aria-hidden="true"
+                className="hidden shrink-0 items-center self-center text-content-quaternary lg:flex"
+              >
+                <ArrowRight size={16} />
+              </li>
+            )}
+          </Fragment>
+        ))}
+      </ol>
+
+      <div className="mt-3 flex flex-col gap-1.5 border-t border-border-light pt-3 text-2xs text-content-tertiary sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-1">
+        <span>
+          <span className="font-medium text-content-secondary">
+            {t('normExpansion.flow_pulls', { defaultValue: 'Pulls from:' })}
+          </span>{' '}
+          <ModLink to="/labor-rates">
+            {t('normExpansion.mod_labor_rates', { defaultValue: 'Labour rates' })}
+          </ModLink>{' '}
+          ·{' '}
+          <ModLink to="/waste-factors">
+            {t('normExpansion.mod_waste', { defaultValue: 'Waste factors' })}
+          </ModLink>{' '}
+          ·{' '}
+          <ModLink to="/costs">
+            {t('normExpansion.mod_costs', { defaultValue: 'Cost database' })}
+          </ModLink>
+        </span>
+        <span>
+          <span className="font-medium text-content-secondary">
+            {t('normExpansion.flow_feeds', { defaultValue: 'Feeds:' })}
+          </span>{' '}
+          <ModLink to="/assemblies">
+            {t('normExpansion.mod_assemblies', { defaultValue: 'Assemblies' })}
+          </ModLink>{' '}
+          ·{' '}
+          <ModLink to="/boq">{t('normExpansion.mod_boq', { defaultValue: 'BOQ' })}</ModLink> ·{' '}
+          <ModLink to="/resource-summary">
+            {t('normExpansion.mod_resource_summary', { defaultValue: 'Resource summary' })}
+          </ModLink>
+        </span>
+      </div>
+    </Card>
+  );
+}
 
 /* ── Expand panel ──────────────────────────────────────────────────────── */
 
@@ -152,7 +299,7 @@ function ExpandPanel({ norms }: { norms: ProductionNorm[] }) {
         </Button>
       </div>
 
-      {result && <ExpansionResultView result={result} />}
+      {result && <ExpansionResultView result={result} norm={selectedNorm} />}
     </Card>
   );
 }
@@ -182,7 +329,13 @@ function ResourceTile({
   );
 }
 
-function ExpansionResultView({ result }: { result: ExpansionResult }) {
+function ExpansionResultView({
+  result,
+  norm,
+}: {
+  result: ExpansionResult;
+  norm?: ProductionNorm;
+}) {
   const { t } = useTranslation();
   const hoursUnit = t('normExpansion.hours_unit', { defaultValue: 'h' });
 
@@ -240,6 +393,251 @@ function ExpansionResultView({ result }: { result: ExpansionResult }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {norm && <AddToBoqPanel norm={norm} />}
+    </div>
+  );
+}
+
+/* ── Add-to-BOQ panel (interoperability F5: norm split → BOQ position) ──── */
+
+/**
+ * Attach the norm's per-unit resource split (labour-hours, machine-hours,
+ * materials) onto an EXISTING BOQ position, without first building a priced
+ * assembly. The estimator picks project → BOQ → position; the split is written
+ * to that position's ``metadata.resources`` in the same shape the costs → BOQ
+ * path uses. The lines are unpriced, so the BOQ shows them ready to be priced.
+ */
+function AddToBoqPanel({ norm }: { norm: ProductionNorm }) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [open, setOpen] = useState(false);
+  const [projectId, setProjectId] = useState('');
+  const [boqId, setBoqId] = useState('');
+  const [positionId, setPositionId] = useState('');
+
+  // The per-unit split is derived once from the norm's coefficients (verbatim
+  // Decimal strings). Materials keep their own name; labour / machine use
+  // localized labels.
+  const resources = useMemo(
+    () =>
+      buildNormResourceSplit(norm, {
+        labor: t('normExpansion.res_labor', { defaultValue: 'Labour' }),
+        machine: t('normExpansion.res_machine', { defaultValue: 'Machine' }),
+        hoursUnit: t('normExpansion.hours_unit', { defaultValue: 'h' }),
+      }),
+    [norm, t],
+  );
+
+  const projectsQuery = useQuery({
+    queryKey: ['norm-boq-projects'],
+    queryFn: listBoqPickerProjects,
+    enabled: open,
+  });
+  const boqsQuery = useQuery({
+    queryKey: ['norm-boq-boqs', projectId],
+    queryFn: () => listBoqPickerBoqs(projectId),
+    enabled: open && projectId !== '',
+  });
+  const positionsQuery = useQuery({
+    queryKey: ['norm-boq-positions', boqId],
+    queryFn: () => listBoqPickerPositions(boqId),
+    enabled: open && boqId !== '',
+  });
+
+  // Auto-select the first project / BOQ so the picker lands ready to use; the
+  // target POSITION is always chosen explicitly (never auto-picked).
+  useEffect(() => {
+    const list = projectsQuery.data;
+    if (open && list && list.length > 0 && projectId === '') setProjectId(list[0]!.id);
+  }, [open, projectsQuery.data, projectId]);
+  useEffect(() => {
+    const list = boqsQuery.data;
+    if (list && list.length > 0 && boqId === '') setBoqId(list[0]!.id);
+  }, [boqsQuery.data, boqId]);
+
+  const addMut = useMutation({
+    mutationFn: () => addNormSplitToBoqPosition(positionId, resources),
+    onSuccess: () => {
+      addToast({
+        type: 'success',
+        title: t('normExpansion.boq_attach_success', {
+          defaultValue: 'Resource breakdown added to the BOQ position',
+        }),
+        message: t('normExpansion.boq_attach_success_hint', {
+          defaultValue: 'Open the BOQ to price the labour, machine and material lines.',
+        }),
+      });
+      setOpen(false);
+      setPositionId('');
+    },
+    onError: (err) =>
+      addToast({
+        type: 'error',
+        title: t('normExpansion.boq_attach_failed', {
+          defaultValue: 'Could not add to the BOQ position',
+        }),
+        message: getErrorMessage(err),
+      }),
+  });
+
+  const projects = projectsQuery.data ?? [];
+  const boqs = boqsQuery.data ?? [];
+  const positions = positionsQuery.data ?? [];
+  const canAdd = positionId !== '' && resources.length > 0 && !addMut.isPending;
+
+  const close = () => {
+    setOpen(false);
+    setPositionId('');
+  };
+
+  // Nothing to attach (norm has no positive labour, machine or material lines).
+  if (resources.length === 0) return null;
+
+  return (
+    <div className="mt-3 border-t border-border-light pt-3">
+      {!open ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setOpen(true)}
+          data-testid="norm-add-to-boq"
+        >
+          <ListPlus size={14} className="mr-1 shrink-0" />
+          {t('normExpansion.add_to_boq', { defaultValue: 'Add to BOQ position...' })}
+        </Button>
+      ) : (
+        <div className="space-y-3 rounded-lg border border-border-light bg-surface-secondary/40 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-content-primary">
+                {t('normExpansion.add_to_boq_title', {
+                  defaultValue: 'Add resource breakdown to a BOQ position',
+                })}
+              </h3>
+              <p className="mt-0.5 text-2xs text-content-tertiary">
+                {t('normExpansion.add_to_boq_help', {
+                  defaultValue:
+                    'Attaches the per-unit labour, machine and material lines to the chosen position. The lines are unpriced - price them in the BOQ to build up the position rate.',
+                })}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={close}
+              className="rounded p-1 text-content-tertiary hover:bg-surface-secondary"
+              aria-label={t('normExpansion.add_to_boq_close', { defaultValue: 'Close' })}
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-content-secondary">
+                {t('normExpansion.boq_project', { defaultValue: 'Project' })}
+              </label>
+              <select
+                className={INPUT_CLS}
+                value={projectId}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  setBoqId('');
+                  setPositionId('');
+                }}
+                data-testid="norm-boq-project"
+              >
+                <option value="">
+                  {projectsQuery.isLoading
+                    ? t('normExpansion.loading', { defaultValue: 'Loading...' })
+                    : t('normExpansion.boq_choose_project', { defaultValue: 'Choose a project...' })}
+                </option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-content-secondary">
+                {t('normExpansion.boq_boq', { defaultValue: 'BOQ' })}
+              </label>
+              <select
+                className={INPUT_CLS}
+                value={boqId}
+                onChange={(e) => {
+                  setBoqId(e.target.value);
+                  setPositionId('');
+                }}
+                disabled={projectId === ''}
+                data-testid="norm-boq-boq"
+              >
+                <option value="">
+                  {boqsQuery.isLoading
+                    ? t('normExpansion.loading', { defaultValue: 'Loading...' })
+                    : t('normExpansion.boq_choose_boq', { defaultValue: 'Choose a BOQ...' })}
+                </option>
+                {boqs.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-content-secondary">
+                {t('normExpansion.boq_position', { defaultValue: 'Position' })}
+              </label>
+              <select
+                className={INPUT_CLS}
+                value={positionId}
+                onChange={(e) => setPositionId(e.target.value)}
+                disabled={boqId === ''}
+                data-testid="norm-boq-position"
+              >
+                <option value="">
+                  {positionsQuery.isLoading
+                    ? t('normExpansion.loading', { defaultValue: 'Loading...' })
+                    : t('normExpansion.boq_choose_position', {
+                        defaultValue: 'Choose a position...',
+                      })}
+                </option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.description ? `${p.ordinal} · ${p.description}` : p.ordinal} ({p.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {boqId !== '' && !positionsQuery.isLoading && positions.length === 0 && (
+            <p className="text-2xs text-content-tertiary">
+              {t('normExpansion.boq_no_positions', {
+                defaultValue:
+                  'This BOQ has no priceable positions yet. Add a position in the BOQ first.',
+              })}
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!canAdd}
+              onClick={() => addMut.mutate()}
+              data-testid="norm-boq-add"
+            >
+              <ListPlus size={14} className="mr-1 shrink-0" />
+              {t('normExpansion.boq_add_action', { defaultValue: 'Add to position' })}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={close}>
+              {t('normExpansion.boq_cancel', { defaultValue: 'Cancel' })}
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -307,11 +705,32 @@ function BuildAssemblyPanel({ norms }: { norms: ProductionNorm[] }) {
         <Coins size={15} className="text-oe-blue" />
         {t('normExpansion.build_title', { defaultValue: 'Build priced assembly' })}
       </h2>
-      <p className="mb-3 text-xs text-content-tertiary">
+      <p className="mb-2 text-xs text-content-tertiary">
         {t('normExpansion.build_help', {
           defaultValue:
             'Turn a norm into a saved, priced unit rate: labour priced from a labour rate, materials matched to cost items and grossed up for waste. You can then apply the assembly to a BOQ position.',
         })}
+      </p>
+      <p className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs text-content-tertiary">
+        <span className="font-medium text-content-secondary">
+          {t('normExpansion.build_uses', { defaultValue: 'Uses' })}
+        </span>
+        <ModLink to="/labor-rates">
+          {t('normExpansion.mod_labor_rates', { defaultValue: 'Labour rates' })}
+        </ModLink>
+        <span>{t('normExpansion.build_uses_hours', { defaultValue: 'for hours,' })}</span>
+        <ModLink to="/costs">
+          {t('normExpansion.mod_costs', { defaultValue: 'Cost database' })}
+        </ModLink>
+        <span>{t('normExpansion.build_uses_prices', { defaultValue: 'for material prices,' })}</span>
+        <ModLink to="/waste-factors">
+          {t('normExpansion.mod_waste', { defaultValue: 'Waste factors' })}
+        </ModLink>
+        <span>{t('normExpansion.build_uses_gross', { defaultValue: 'for gross quantities.' })}</span>
+        <span>{t('normExpansion.build_uses_saved', { defaultValue: 'Saved to' })}</span>
+        <ModLink to="/assemblies">
+          {t('normExpansion.mod_assemblies', { defaultValue: 'Assemblies' })}
+        </ModLink>
       </p>
 
       <div className="space-y-3">
@@ -863,6 +1282,8 @@ function NormLibrary({
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
 
   const deleteMut = useMutation({
     mutationFn: (normId: string) => deleteNorm(normId),
@@ -881,6 +1302,28 @@ function NormLibrary({
       }),
   });
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of norms) {
+      const c = n.category?.trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [norms]);
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return norms.filter((n) => {
+      if (category && n.category !== category) return false;
+      if (!q) return true;
+      return (
+        n.work_key.toLowerCase().includes(q) ||
+        (n.name ?? '').toLowerCase().includes(q) ||
+        (n.category ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [norms, search, category]);
+
   if (norms.length === 0) {
     return (
       <EmptyState
@@ -894,11 +1337,56 @@ function NormLibrary({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b border-border-light text-left text-2xs uppercase tracking-wide text-content-tertiary">
-            <th className="py-2 pr-3 font-medium" />
+    <div className="space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-content-tertiary"
+          />
+          <input
+            className={`${INPUT_CLS} pl-8`}
+            placeholder={t('normExpansion.search_ph', {
+              defaultValue: 'Search work key, name or category',
+            })}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label={t('normExpansion.search_ph', {
+              defaultValue: 'Search work key, name or category',
+            })}
+            data-testid="norm-library-search"
+          />
+        </div>
+        {categories.length > 0 && (
+          <select
+            className={`${INPUT_CLS} sm:w-56`}
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            aria-label={t('normExpansion.filter_category', { defaultValue: 'Filter by category' })}
+            data-testid="norm-library-category"
+          >
+            <option value="">
+              {t('normExpansion.all_categories', { defaultValue: 'All categories' })}
+            </option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="py-6 text-center text-xs text-content-tertiary">
+          {t('normExpansion.no_matches', { defaultValue: 'No norms match your search.' })}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b border-border-light text-left text-2xs uppercase tracking-wide text-content-tertiary">
+                <th className="py-2 pr-3 font-medium" />
             <th className="py-2 pr-3 font-medium">
               {t('normExpansion.col_work_key', { defaultValue: 'Work key' })}
             </th>
@@ -921,7 +1409,7 @@ function NormLibrary({
           </tr>
         </thead>
         <tbody>
-          {norms.map((n) => {
+          {visible.map((n) => {
             const isOpen = expandedId === n.id;
             return (
               <Fragment key={n.id}>
@@ -972,8 +1460,10 @@ function NormLibrary({
               </Fragment>
             );
           })}
-        </tbody>
-      </table>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1020,13 +1510,19 @@ export function NormExpansionPage() {
         <RecoveryCard error={error} onRetry={() => refetch()} />
       ) : (
         <>
-          <ExpandPanel norms={norms} />
+          <HowNormsWork />
 
-          <BuildAssemblyPanel norms={norms} />
+          {norms.length > 0 && (
+            <>
+              <ExpandPanel norms={norms} />
+              <BuildAssemblyPanel norms={norms} />
+            </>
+          )}
 
           <Card padding="md">
             <h2 className="mb-3 text-sm font-semibold text-content-primary">
               {t('normExpansion.library', { defaultValue: 'Norm library' })}
+              {norms.length > 0 ? ` (${norms.length})` : ''}
             </h2>
             {showCreate && (
               <div className="mb-3">
