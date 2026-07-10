@@ -432,9 +432,7 @@ async def _run_source_cost_catalog(ctx: NodeContext) -> dict[str, Any]:
         "row_ids": all_ids[:_ROW_IDS_CAP],
         "count": len(rows),
         "sample_truncated": len(rows) > _SAMPLE_LIMIT,
-        "summary": (
-            f"{len(rows)} cost items" + (f" matching '{query}'" if query else "")
-        ),
+        "summary": (f"{len(rows)} cost items" + (f" matching '{query}'" if query else "")),
     }
 
 
@@ -503,9 +501,7 @@ async def _run_transform_aggregate(ctx: NodeContext) -> dict[str, Any]:
         grand += line
 
     grouped = sorted(buckets.values(), key=lambda b: b["_total"], reverse=True)
-    out_rows = [
-        {"group": b["group"], "count": b["count"], "total": str(b["_total"])} for b in grouped
-    ]
+    out_rows = [{"group": b["group"], "count": b["count"], "total": str(b["_total"])} for b in grouped]
     return {
         "rows": out_rows[:_SAMPLE_LIMIT],
         "count": len(out_rows),
@@ -513,9 +509,7 @@ async def _run_transform_aggregate(ctx: NodeContext) -> dict[str, Any]:
         "grand_total": str(grand),
         "row_count": len(rows),
         "mutated": True,
-        "summary": (
-            f"{len(out_rows)} groups by '{group_by}' over {len(rows)} rows, total {grand}"
-        ),
+        "summary": (f"{len(out_rows)} groups by '{group_by}' over {len(rows)} rows, total {grand}"),
     }
 
 
@@ -575,10 +569,7 @@ async def _run_gate_budget(ctx: NodeContext) -> dict[str, Any]:
 
     if cap is not None and cap > 0 and total > cap:
         over = total - cap
-        raise ValueError(
-            f"Budget gate failed: total {total} exceeds cap {cap} by {over} "
-            f"(over {len(rows)} rows)"
-        )
+        raise ValueError(f"Budget gate failed: total {total} exceeds cap {cap} by {over} (over {len(rows)} rows)")
 
     return {
         "rows": (upstream.get("rows") or [])[:_SAMPLE_LIMIT],
@@ -586,9 +577,7 @@ async def _run_gate_budget(ctx: NodeContext) -> dict[str, Any]:
         "count": len(rows),
         "total": str(total),
         "budget": str(cap) if cap is not None else None,
-        "summary": (
-            f"Within budget: total {total}" + (f" of {cap}" if cap is not None and cap > 0 else "")
-        ),
+        "summary": (f"Within budget: total {total}" + (f" of {cap}" if cap is not None and cap > 0 else "")),
     }
 
 
@@ -636,8 +625,7 @@ async def _run_gate_completeness(ctx: NodeContext) -> dict[str, Any]:
             f"Complete: all {len(rows)} rows have a quantity and a rate"
             if incomplete == 0
             else (
-                f"{incomplete} of {len(rows)} rows incomplete "
-                f"({len(missing_qty)} no qty, {len(missing_rate)} no rate)"
+                f"{incomplete} of {len(rows)} rows incomplete ({len(missing_qty)} no qty, {len(missing_rate)} no rate)"
             )
         ),
     }

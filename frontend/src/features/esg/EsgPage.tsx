@@ -1026,7 +1026,7 @@ export function EsgPage() {
       ].join(',');
     });
     // Prepend a UTF-8 BOM so Excel opens accented notes/units correctly.
-    const csv = '﻿' + [headers.join(','), ...body].join('\r\n');
+    const csv = '' + [headers.join(','), ...body].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1127,29 +1127,77 @@ export function EsgPage() {
             'Track operational site ESG each period - energy, water, waste, site CO2e, local labour, training and safety - against your targets.',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              if (!projectId) {
-                addToast({
-                  type: 'info',
-                  title: t('esg.select_project_first_title', { defaultValue: 'Select a project first' }),
-                  message: t('esg.select_project_first', {
-                    defaultValue: 'Pick a project from the top bar, then add a reading.',
-                  }),
-                });
-                return;
-              }
-              openAdd(null);
-            }}
-            className="shrink-0 whitespace-nowrap"
-          >
-            <Plus size={14} className="mr-1 shrink-0" />
-            <span>{t('esg.add_reading', { defaultValue: 'Add reading' })}</span>
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportCsv}
+              disabled={entries.length === 0}
+              title={t('esg.export_csv_hint', {
+                defaultValue: 'Download every recorded reading as a CSV file',
+              })}
+              className="shrink-0 whitespace-nowrap"
+            >
+              <Download size={14} className="mr-1 shrink-0" />
+              <span>{t('esg.export_csv', { defaultValue: 'Export CSV' })}</span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handlePrintReport}
+              disabled={!hasAnyReading}
+              title={t('esg.print_report_hint', {
+                defaultValue: 'Open a printable report card for the latest period',
+              })}
+              className="shrink-0 whitespace-nowrap"
+            >
+              <Printer size={14} className="mr-1 shrink-0" />
+              <span>{t('esg.print_report', { defaultValue: 'Print report' })}</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                if (!projectId) {
+                  addToast({
+                    type: 'info',
+                    title: t('esg.select_project_first_title', { defaultValue: 'Select a project first' }),
+                    message: t('esg.select_project_first', {
+                      defaultValue: 'Pick a project from the top bar, then add a reading.',
+                    }),
+                  });
+                  return;
+                }
+                openAdd(null);
+              }}
+              className="shrink-0 whitespace-nowrap"
+            >
+              <Plus size={14} className="mr-1 shrink-0" />
+              <span>{t('esg.add_reading', { defaultValue: 'Add reading' })}</span>
+            </Button>
+          </>
         }
       />
+
+      <DismissibleInfo
+        storageKey="esg"
+        title={t('esg.intro_title', {
+          defaultValue: 'How ESG site performance works',
+        })}
+        more={
+          <IntroRichText
+            text={t('esg.intro_more', {
+              defaultValue:
+                'ESG site performance turns everyday site facts into a simple per-period scorecard.\n\n**What you put in:** one reading per metric each period, for example energy used, water drawn, waste sent to landfill versus recycled, site CO2e, the share of local labour, training hours and safety incidents. Set a target next to each metric so the card knows what good looks like.\n\n**What you get back:**\n\n- The latest value with the change versus the previous period.\n- An on-track or off-target flag for every metric that has a target.\n- A trend line that appears once you have two or more periods.\n\n**Sharing:** export every reading as CSV for a client or regulator, or print a one-page report card covering the environmental, social and governance pillars.',
+            })}
+          />
+        }
+      >
+        {t('esg.intro_body', {
+          defaultValue:
+            'Record one reading per metric each period and set a target for each. The cards roll up your latest value, the change versus the previous period and whether you are on or off track against that target.',
+        })}
+      </DismissibleInfo>
 
       {!projectId ? (
         <RequiresProject>{null}</RequiresProject>
@@ -1168,22 +1216,77 @@ export function EsgPage() {
         </Card>
       ) : (
         <>
-          {/* Latest period strip */}
-          {summary?.latest_period && (
-            <div className="flex items-center gap-2 text-sm text-content-secondary">
-              <Activity size={15} className="text-oe-blue shrink-0" />
-              <span>
-                {t('esg.latest_period', { defaultValue: 'Latest reporting period' })}:{' '}
-                <span className="font-semibold text-content-primary">
-                  {formatPeriod(summary.latest_period)}
-                </span>
-              </span>
+          {/* Status strip: latest period, how many metrics are tracked against
+              a target, and how many missed it - with a one-click filter to
+              focus on the exceptions. */}
+          {hasAnyReading && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-content-secondary">
+                {summary?.latest_period && (
+                  <span className="inline-flex items-center gap-2">
+                    <Activity size={15} className="text-oe-blue shrink-0" />
+                    <span>
+                      {t('esg.latest_period', { defaultValue: 'Latest reporting period' })}:{' '}
+                      <span className="font-semibold text-content-primary">
+                        {formatPeriod(summary.latest_period)}
+                      </span>
+                    </span>
+                  </span>
+                )}
+                {trackedCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 text-content-tertiary">
+                    <Target size={14} className="shrink-0" />
+                    {t('esg.tracked_against_target', {
+                      defaultValue: '{{count}} tracked against target',
+                      count: trackedCount,
+                    })}
+                  </span>
+                )}
+                {trackedCount > 0 &&
+                  (offTrackMetrics.length > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-red-600 dark:text-red-400">
+                      <AlertTriangle size={14} className="shrink-0" />
+                      {t('esg.n_off_target', {
+                        defaultValue: '{{count}} off target',
+                        count: offTrackMetrics.length,
+                      })}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 size={14} className="shrink-0" />
+                      {t('esg.all_on_track', { defaultValue: 'All metrics on track' })}
+                    </span>
+                  ))}
+              </div>
+              {offTrackMetrics.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOnlyOffTrack((v) => !v)}
+                  aria-pressed={onlyOffTrack}
+                  className={clsx(
+                    'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                    onlyOffTrack
+                      ? 'border-oe-blue bg-oe-blue/10 text-oe-blue-text'
+                      : 'border-border-light text-content-secondary hover:bg-surface-secondary hover:text-content-primary',
+                  )}
+                >
+                  <ListFilter size={14} className="shrink-0" />
+                  {onlyOffTrack
+                    ? t('esg.show_all_metrics', { defaultValue: 'Show all metrics' })
+                    : t('esg.show_off_target_only', { defaultValue: 'Show off target only' })}
+                </button>
+              )}
             </div>
           )}
 
           {/* Pillars */}
           {CATEGORY_ORDER.map((cat) => {
-            const cards = summary?.by_category[cat] ?? [];
+            const allCards = summary?.by_category[cat] ?? [];
+            // When the off-target filter is on, keep only metrics that missed
+            // their target so the exceptions are easy to act on.
+            const cards = onlyOffTrack
+              ? allCards.filter((m) => m.on_track === false)
+              : allCards;
             if (cards.length === 0) return null;
             const meta = CATEGORY_META[cat];
             const Icon = meta.icon;

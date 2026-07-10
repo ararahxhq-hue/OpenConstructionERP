@@ -1740,9 +1740,10 @@ export function MoCPage() {
             </div>
           </div>
 
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="relative flex-1 max-w-sm">
+          {/* Toolbar: search, status / category / risk filters, sort, reset,
+              and a CSV export of the visible register. */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary" />
               <input
                 value={searchQuery}
@@ -1757,7 +1758,7 @@ export function MoCPage() {
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as MoCStatus | '')}
                 aria-label={t('moc.filter_all_statuses', { defaultValue: 'All statuses' })}
-                className="h-10 appearance-none rounded-lg border border-border bg-surface-primary pl-3 pr-9 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue sm:w-44"
+                className={selectCls + ' sm:w-44'}
               >
                 <option value="">{t('moc.filter_all_statuses', { defaultValue: 'All statuses' })}</option>
                 {STATUS_FLOW.map((s) => (
@@ -1770,7 +1771,85 @@ export function MoCPage() {
                 <ChevronDown size={14} />
               </div>
             </div>
+            <div className="relative">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value as MoCChangeCategory | '')}
+                aria-label={t('moc.filter_all_categories', { defaultValue: 'All categories' })}
+                className={selectCls + ' sm:w-44'}
+              >
+                <option value="">{t('moc.filter_all_categories', { defaultValue: 'All categories' })}</option>
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {t(`moc.category_${c}`, { defaultValue: cap(c) })}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+                <ChevronDown size={14} />
+              </div>
+            </div>
+            <div className="relative">
+              <select
+                value={riskFilter}
+                onChange={(e) => setRiskFilter(e.target.value as MoCRiskLevel | '')}
+                aria-label={t('moc.filter_all_risks', { defaultValue: 'All risk levels' })}
+                className={selectCls + ' sm:w-44'}
+              >
+                <option value="">{t('moc.filter_all_risks', { defaultValue: 'All risk levels' })}</option>
+                {RISK_LEVELS.map((r) => (
+                  <option key={r} value={r}>
+                    {t(`moc.risk_${r}`, { defaultValue: cap(r) })}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+                <ChevronDown size={14} />
+              </div>
+            </div>
+            {/* Register sort. ArrowUpDown is the control affordance. */}
+            <div className="relative">
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as MoCSortMode)}
+                aria-label={t('moc.sort_label', { defaultValue: 'Sort changes' })}
+                className={selectCls + ' sm:w-56'}
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.mode} value={o.mode}>
+                    {t(o.labelKey, { defaultValue: o.labelDefault })}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+                <ArrowUpDown size={14} />
+              </div>
+            </div>
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                icon={<RotateCcw size={14} />}
+              >
+                {t('moc.reset_filters', { defaultValue: 'Reset filters' })}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportCSV}
+              disabled={!sorted.length}
+              icon={<Download size={14} />}
+            >
+              {t('moc.export_csv', { defaultValue: 'Export CSV' })}
+            </Button>
           </div>
+
+          {/* Cost and schedule exposure rollup across the visible register. */}
+          {exposureHasFigures && (
+            <MoCExposureBand rows={exposure} declinedCount={declinedCount} />
+          )}
 
           {/* List */}
           <div>
@@ -1778,7 +1857,7 @@ export function MoCPage() {
               <SkeletonTable rows={5} columns={5} />
             ) : isError ? (
               <RecoveryCard error={error} onRetry={() => refetch()} />
-            ) : filtered.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <EmptyState
                 icon={<Replace size={28} strokeWidth={1.5} />}
                 title={
@@ -1808,7 +1887,7 @@ export function MoCPage() {
             ) : (
               <>
                 <p className="mb-3 text-sm text-content-tertiary">
-                  {t('moc.showing_count', { defaultValue: '{{count}} change requests', count: filtered.length })}
+                  {t('moc.showing_count', { defaultValue: '{{count}} change requests', count: sorted.length })}
                 </p>
                 <Card padding="none" className="overflow-x-auto">
                   <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border-light bg-surface-secondary/30 text-2xs font-medium text-content-tertiary uppercase tracking-wider min-w-[640px]">
@@ -1820,7 +1899,7 @@ export function MoCPage() {
                     <span className="w-28 text-right hidden md:block">{t('moc.col_cost', { defaultValue: 'Cost impact' })}</span>
                     <span className="w-28 text-center">{t('moc.col_status', { defaultValue: 'Status' })}</span>
                   </div>
-                  {filtered.map((entry) => (
+                  {sorted.map((entry) => (
                     <MoCRow
                       key={entry.id}
                       entry={entry}

@@ -364,17 +364,13 @@ async def test_node_transform_markup() -> None:
 
     from app.modules.pipelines.pipeline_nodes import _run_transform_markup
 
-    out = await _run_transform_markup(
-        _ctx(params={"percent": 10}, inputs={"up": {"rows": _SAMPLE_ROWS, "count": 3}})
-    )
+    out = await _run_transform_markup(_ctx(params={"percent": 10}, inputs={"up": {"rows": _SAMPLE_ROWS, "count": 3}}))
     assert out["mutated"] is True
     first = out["rows"][0]
     assert Decimal(first["unit_rate"]) == Decimal("110")
     assert Decimal(first["total"]) == Decimal("1100")
     # A negative percent is a discount.
-    disc = await _run_transform_markup(
-        _ctx(params={"percent": -50}, inputs={"up": {"rows": _SAMPLE_ROWS}})
-    )
+    disc = await _run_transform_markup(_ctx(params={"percent": -50}, inputs={"up": {"rows": _SAMPLE_ROWS}}))
     assert Decimal(disc["rows"][0]["unit_rate"]) == Decimal("50")
 
 
@@ -384,9 +380,7 @@ async def test_node_transform_aggregate() -> None:
 
     from app.modules.pipelines.pipeline_nodes import _run_transform_aggregate
 
-    out = await _run_transform_aggregate(
-        _ctx(params={"group_by": "unit"}, inputs={"up": {"rows": _SAMPLE_ROWS}})
-    )
+    out = await _run_transform_aggregate(_ctx(params={"group_by": "unit"}, inputs={"up": {"rows": _SAMPLE_ROWS}}))
     assert out["count"] == 2  # m3 + m2
     assert Decimal(out["grand_total"]) == Decimal("1105")
     # Largest group first (m3 = 10*100 + 2*50 = 1100).
@@ -413,14 +407,10 @@ async def test_node_gate_budget_passes_and_blocks() -> None:
 
     from app.modules.pipelines.pipeline_nodes import _run_gate_budget
 
-    ok = await _run_gate_budget(
-        _ctx(params={"max_total": 2000}, inputs={"up": {"rows": _SAMPLE_ROWS}})
-    )
+    ok = await _run_gate_budget(_ctx(params={"max_total": 2000}, inputs={"up": {"rows": _SAMPLE_ROWS}}))
     assert Decimal(ok["total"]) == Decimal("1105")
     with pytest.raises(ValueError, match="Budget gate failed"):
-        await _run_gate_budget(
-            _ctx(params={"max_total": 1000}, inputs={"up": {"rows": _SAMPLE_ROWS}})
-        )
+        await _run_gate_budget(_ctx(params={"max_total": 1000}, inputs={"up": {"rows": _SAMPLE_ROWS}}))
 
 
 @pytest.mark.asyncio
@@ -431,16 +421,12 @@ async def test_node_gate_completeness_warn_and_block() -> None:
         {"ordinal": "01", "quantity": "10", "unit_rate": "100"},
         {"ordinal": "02", "quantity": "0", "unit_rate": "0"},
     ]
-    warn = await _run_gate_completeness(
-        _ctx(params={"mode": "warn"}, inputs={"up": {"rows": rows}})
-    )
+    warn = await _run_gate_completeness(_ctx(params={"mode": "warn"}, inputs={"up": {"rows": rows}}))
     assert warn["complete"] is False
     assert warn["missing_quantity"] == 1
     assert warn["missing_unit_rate"] == 1
     with pytest.raises(ValueError, match="Completeness gate failed"):
-        await _run_gate_completeness(
-            _ctx(params={"mode": "block"}, inputs={"up": {"rows": rows}})
-        )
+        await _run_gate_completeness(_ctx(params={"mode": "block"}, inputs={"up": {"rows": rows}}))
 
 
 @pytest.mark.asyncio
@@ -469,9 +455,7 @@ async def test_node_transform_sort() -> None:
         _ctx(params={"field": "unit_rate", "descending": True}, inputs={"u": {"rows": _SAMPLE_ROWS}})
     )
     assert [r["id"] for r in hi["rows"]] == ["1", "2", "3"]  # 100, 50, 5
-    lo = await _run_transform_sort(
-        _ctx(params={"field": "unit_rate"}, inputs={"u": {"rows": _SAMPLE_ROWS}})
-    )
+    lo = await _run_transform_sort(_ctx(params={"field": "unit_rate"}, inputs={"u": {"rows": _SAMPLE_ROWS}}))
     assert [r["id"] for r in lo["rows"]] == ["3", "2", "1"]
 
 
@@ -479,9 +463,7 @@ async def test_node_transform_sort() -> None:
 async def test_node_transform_limit() -> None:
     from app.modules.pipelines.pipeline_nodes import _run_transform_limit
 
-    out = await _run_transform_limit(
-        _ctx(params={"count": 2}, inputs={"u": {"rows": _SAMPLE_ROWS}})
-    )
+    out = await _run_transform_limit(_ctx(params={"count": 2}, inputs={"u": {"rows": _SAMPLE_ROWS}}))
     assert out["count"] == 2
     assert [r["id"] for r in out["rows"]] == ["1", "2"]
 
@@ -505,9 +487,7 @@ async def test_node_gate_count() -> None:
     )
     assert ok["count"] == 3
     with pytest.raises(ValueError, match="Count gate failed"):
-        await _run_gate_count(
-            _ctx(params={"min_rows": 5}, inputs={"u": {"rows": _SAMPLE_ROWS, "count": 3}})
-        )
+        await _run_gate_count(_ctx(params={"min_rows": 5}, inputs={"u": {"rows": _SAMPLE_ROWS, "count": 3}}))
 
 
 @pytest.mark.asyncio
@@ -515,9 +495,7 @@ async def test_node_action_export_csv() -> None:
     from app.modules.pipelines.pipeline_nodes import _run_action_export_csv
 
     rows = [{"ordinal": "01", "description": "X", "unit": "m3", "quantity": "1", "unit_rate": "2"}]
-    out = await _run_action_export_csv(
-        _ctx(params={"filename": "o.csv"}, inputs={"u": {"rows": rows}})
-    )
+    out = await _run_action_export_csv(_ctx(params={"filename": "o.csv"}, inputs={"u": {"rows": rows}}))
     assert out["file"]["filename"] == "o.csv"
     assert out["file"]["row_count"] == 1
     assert out["file"]["size_bytes"] > 0

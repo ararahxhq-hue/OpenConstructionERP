@@ -140,9 +140,7 @@ def test_currency_label_is_carried_through() -> None:
 def test_base_rate_override_anchors_the_total() -> None:
     """A base-rate override replaces the reference basis, so the number is real."""
     reference = build_rom_estimate(_req(region="global", quality="standard"))
-    override = build_rom_estimate(
-        _req(region="global", quality="standard", base_rate_per_m2_override=Decimal("1000"))
-    )
+    override = build_rom_estimate(_req(region="global", quality="standard", base_rate_per_m2_override=Decimal("1000")))
     # Standard / global: cost per m2 equals the override exactly (Decimal-exact).
     assert override.cost_per_m2 == Decimal("1000")
     assert override.total == Decimal("1000") * Decimal("1000")  # rate x 1000 m2 GFA
@@ -161,9 +159,7 @@ def test_base_rate_override_still_scales_with_quality_and_region() -> None:
         _req(region="north_america", quality="premium", base_rate_per_m2_override=Decimal("1000"))
     )
     assert std_global.cost_per_m2 == Decimal("1000")
-    assert prem_na.cost_per_m2 == (
-        Decimal("1000") * QUALITY_LEVELS["premium"].factor * REGIONS["north_america"].factor
-    )
+    assert prem_na.cost_per_m2 == (Decimal("1000") * QUALITY_LEVELS["premium"].factor * REGIONS["north_america"].factor)
 
 
 def test_missing_or_non_positive_override_keeps_the_reference_basis() -> None:

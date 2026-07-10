@@ -1672,6 +1672,11 @@ export function ContactsPage() {
         })}
       </DismissibleInfo>
 
+      {/* Visual four-step explainer: add/import, classify, prequalify, reuse.
+          Complements the dismissible intro above and stays visible once the
+          intro is closed, so the workflow is always one glance away. */}
+      <HowContactsWork />
+
       {/* KPI strip — surfaces the /stats/ aggregate (total directory size
           and the count of contacts whose prequalification is expiring, the
           most actionable signal for a procurement / bid team). */}
